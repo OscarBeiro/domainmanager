@@ -31,6 +31,8 @@
 
 namespace GlpiPlugin\Domainmanager;
 
+use Domain;
+use DomainRecord;
 use Supplier;
 
 /**
@@ -58,5 +60,46 @@ class HookHandler
         $DB->delete(SupplierConfig::getTable(), ['suppliers_id' => $suppliers_id]);
 
         DomainState::onSupplierPurge($suppliers_id);
+    }
+
+    /**
+     * item_purge on Domain: drop its state row, record ownership map and locks
+     *
+     * @param  Domain $domain
+     * @return void
+     */
+    public static function domainPurged(Domain $domain): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $domains_id = (int) $domain->getID();
+        if ($domains_id <= 0) {
+            return;
+        }
+
+        $DB->delete(DomainState::getTable(), ['domains_id' => $domains_id]);
+        $DB->delete(ImportedRecord::getTable(), ['domains_id' => $domains_id]);
+        ImportLock::deleteForItem(Domain::class, $domains_id);
+    }
+
+    /**
+     * item_purge on DomainRecord (by an unlock right holder): drop its
+     * ownership row so the next sync can re-import it
+     *
+     * @param  DomainRecord $record
+     * @return void
+     */
+    public static function domainRecordPurged(DomainRecord $record): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $records_id = (int) $record->getID();
+        if ($records_id <= 0) {
+            return;
+        }
+
+        $DB->delete(ImportedRecord::getTable(), ['domainrecords_id' => $records_id]);
     }
 }

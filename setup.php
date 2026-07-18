@@ -31,6 +31,7 @@
 
 use Glpi\Plugin\Hooks;
 use GlpiPlugin\Domainmanager\HookHandler;
+use GlpiPlugin\Domainmanager\LockEnforcer;
 use GlpiPlugin\Domainmanager\Profile as DomainmanagerProfile;
 use GlpiPlugin\Domainmanager\SupplierTab;
 
@@ -78,7 +79,20 @@ function plugin_init_domainmanager(): void
         Plugin::registerClass(SupplierTab::class, ['addtabon' => Supplier::class]);
 
         $PLUGIN_HOOKS[Hooks::ITEM_PURGE]['domainmanager'] = [
-            Supplier::class => [HookHandler::class, 'supplierPurged'],
+            Supplier::class     => [HookHandler::class, 'supplierPurged'],
+            Domain::class       => [HookHandler::class, 'domainPurged'],
+            DomainRecord::class => [HookHandler::class, 'domainRecordPurged'],
+        ];
+
+        $PLUGIN_HOOKS[Hooks::PRE_ITEM_UPDATE]['domainmanager'] = [
+            Domain::class       => [LockEnforcer::class, 'domainPreUpdate'],
+            DomainRecord::class => [LockEnforcer::class, 'domainRecordPreUpdate'],
+        ];
+        $PLUGIN_HOOKS[Hooks::PRE_ITEM_DELETE]['domainmanager'] = [
+            DomainRecord::class => [LockEnforcer::class, 'domainRecordPreDelete'],
+        ];
+        $PLUGIN_HOOKS[Hooks::PRE_ITEM_PURGE]['domainmanager'] = [
+            DomainRecord::class => [LockEnforcer::class, 'domainRecordPrePurge'],
         ];
     }
 }

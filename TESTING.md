@@ -180,7 +180,109 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
   line is appended to `files/_log/plugin_domainmanager.log`.
 - [ ] Pass
 
+---
+
+## Phase 3 — Drivers, sync engine, reconciliation, lock enforcement
+
+### 3.1 Zone record validation (§5 sanitisation)
+- **Steps:** construct `Dto\ZoneRecord` with an unsupported type (`SRV`), an
+  oversized name (>255 chars), and a valid lowercase type (`a`).
+- **Expected:** the first two throw `InvalidArgumentException` (drivers skip such
+  records); the third normalizes to `A`; `getHash()` is identical for equal
+  type/name/data/ttl regardless of remote id.
+- [ ] Pass
+
+### 3.2 Idempotent record import (§5.4)
+- **Steps:** call `RecordReconciler::reconcile()` on a domain with a fixed
+  upstream snapshot (A + MX + TXT); run it twice.
+- **Expected:** first run adds 3 native records with ownership rows
+  (`glpi_plugin_domainmanager_records`); second run reports 3 unchanged, 0
+  added — never duplicates.
+- [ ] Pass
+
+### 3.3 Upstream change updates in place (§5.4)
+- **Steps:** change the content of a record that has a `remote_id` and re-reconcile.
+- **Expected:** the same native record row is updated (no new row); the ownership
+  hash is refreshed.
+- [ ] Pass
+
+### 3.4 Upstream removal flags stale, never deletes (§5.4)
+- **Steps:** drop one record from the upstream snapshot and re-reconcile.
+- **Expected:** native record still exists; its comment gains the
+  "[Domain Manager] Not present upstream since <date>" marker; ownership row has
+  `is_stale = 1`.
+- [ ] Pass
+
+### 3.5 Reappearance restores (§5.4)
+- **Steps:** re-add the dropped record and re-reconcile.
+- **Expected:** counted as restored; stale marker removed; `is_stale = 0`.
+- [ ] Pass
+
+### 3.6 Locked domain fields enforced server-side (§0.3, §8)
+- **Steps:** after a sync wrote locks (or via `ImportLock::replaceLocks`), edit the
+  domain's `is_active`/expiration as a user **without**
+  `domainmanager:unlock_imported`; then grant the right and retry. Also change an
+  unlocked field (e.g. comment) without the right.
+- **Expected:** without the right the locked change is stripped with a session
+  warning while the unlocked field saves; with the right the change goes through.
+  Enforcement also applies to massive actions and API (hook level).
+- [ ] Pass
+
+### 3.7 Imported records shielded (§0.3, §8)
+- **Steps:** on a plugin-imported domain record, as a user without the unlock
+  right: change data; soft-delete; purge. Then retry purge with the right.
+- **Expected:** content change is stripped with a warning; delete and purge are
+  refused with an error; with the right the purge succeeds and its ownership row
+  is removed (so the next sync re-imports it).
+- [ ] Pass
+
+### 3.8 Domain purge cascade (§6.2)
+- **Steps:** purge a synced domain.
+- **Expected:** its state row, record-ownership rows and lock rows are all deleted.
+- [ ] Pass
+
+### 3.9 Stub drivers surface as pipeline errors (§3)
+- **Steps:** configure a supplier with the IONOS or Dinahosting driver and run a
+  sync using it.
+- **Expected:** the affected pipeline ends with status `error` and the message
+  "The IONOS/Dinahosting driver is not implemented yet"; the other leg is not
+  aborted.
+- [ ] Pass
+
+### 3.10 Engine statuses and leg isolation (§5)
+- **Steps:** sync a domain with: no registrar supplier configured; a nonexistent
+  FQDN; NS pointing at an unknown provider; NS pointing at a supported provider
+  with no credentialed supplier.
+- **Expected:** `registrar_status = unconfigured`; `dns_status` respectively
+  `error` ("NS lookup failed"), `unknown`, `unconfigured`; every combination still
+  upserts the state row with `last_sync_date`, and one leg failing never prevents
+  the other from running.
+- [ ] Pass
+
+### 3.11 Real Cloudflare sync (manual, needs a real API token)
+- **Steps:** save a Cloudflare API token (Zone.DNS read + optionally Registrar
+  read) on a supplier; run `SyncEngine::sync()` (or, from Phase 4, "Update Now")
+  against a domain whose zone the token can read.
+- **Expected:** DNS leg imports only A/AAAA/CNAME/MX/NS/TXT records with correct
+  data (MX prefixed with priority) and `dns_status = ok`; registrar leg fills
+  `date_domaincreation`/`date_expiration`/`is_active` and locks them when the
+  domain is on Cloudflare Registrar, or reports a clear per-leg error otherwise;
+  the token never appears in messages, history or logs.
+- [ ] Pass
+
+### 3.12 managed_domainrecordtypes gate detection (§0.4)
+- **Steps:** restrict a profile's *Manageable domain record types* to exclude e.g.
+  TXT, then run a web-session sync (not cron) for a domain with a credentialed
+  DNS provider.
+- **Expected:** the DNS leg stops before importing anything, with
+  `dns_status = error` and a message listing the missing record types; nothing is
+  half-imported.
+- [ ] Pass
+
 > Verification status: Phase 1 items were exercised on GLPI 11.0.8 via CLI on
 > 2026-07-17/18. Phase 2 items 2.2–2.6 (model level), 2.9, 2.10 and 2.11 were
 > exercised by a scripted run on GLPI 11.0.8 on 2026-07-18 (27/27 checks passed);
 > browser-level items (2.1, 2.3 UI, 2.7, 2.8) still need a manual pass.
+> Phase 3 items 3.1–3.10 were exercised by a scripted run on GLPI 11.0.8 on
+> 2026-07-18 (35/35 checks, including live NS detection of a Cloudflare-hosted
+> domain); 3.11 needs real credentials and 3.12 a manual profile setup.

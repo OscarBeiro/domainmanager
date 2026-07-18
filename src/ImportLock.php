@@ -60,12 +60,13 @@ class ImportLock extends CommonDBTM
 
     /**
      * Locked fields of an item
+     * (named to avoid clashing with non-static CommonDBTM::getLockedFields())
      *
      * @param  string $itemtype
      * @param  int    $items_id
      * @return string[] field names
      */
-    public static function getLockedFields(string $itemtype, int $items_id): array
+    public static function getLockedFieldNames(string $itemtype, int $items_id): array
     {
         /** @var \DBmysql $DB */
         global $DB;

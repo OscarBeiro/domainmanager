@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Phase 3: driver contracts (`RegistrarDriverInterface`, `DnsPipelineInterface`), validated DTOs (`DomainLifecycle`, `ZoneRecord`), `DriverFactory`, full `CloudflareDriver` (Registrar lifecycle + paginated DNS records via GLPI's proxied HTTP client) and IONOS/Dinahosting stubs.
+- Phase 3: `SyncEngine` split pipeline (isolated registrar/DNS legs, per-domain state upsert, §0.4 manageable-record-types gate detection), `NsResolver`, `RecordReconciler` (idempotent import, in-place updates, stale flagging with comment marker, restore on reappearance) and `SyncLogger` (history milestones + plugin log channel).
+- Phase 3: `LockEnforcer` — synced domain fields and imported records are shielded server-side from users without `domainmanager:unlock_imported` (forms, massive actions and API alike); domain/record purge cascades.
 - Phase 2: itemtypes for the plugin tables (`SupplierConfig`, `DomainState`, `ImportedRecord`, `ImportLock`).
 - Phase 2: "Domain Manager" tab on suppliers with API driver select (none/Cloudflare/IONOS/Dinahosting) and per-driver credential fields; credentials stored GLPIKey-encrypted, secrets never echoed back, empty submit keeps the stored secret; gated by config READ/UPDATE.
 - Phase 2: `resources/ns-providers.json` NS host → DNS provider registry (sourced patterns for the three supported providers) with `NsProviderRegistry` wildcard matcher.
