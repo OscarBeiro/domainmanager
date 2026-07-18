@@ -1,0 +1,39 @@
+{
+    "$schema-note": "NS host -> DNS provider registry, maintained via pull requests. Matching: case-insensitive fnmatch-style wildcards against each NS host (trailing dot stripped). Entries are checked in file order; the first entry with a matching pattern wins. 'driver' is optional and must be one of the plugin's hardcoded drivers; entries without it render as detected-but-unsupported.",
+    "providers": [
+        {
+            "name": "Cloudflare",
+            "patterns": [
+                "*.ns.cloudflare.com",
+                "*.foundationdns.com",
+                "*.foundationdns.net",
+                "*.foundationdns.org"
+            ],
+            "driver": "cloudflare",
+            "source": "https://developers.cloudflare.com/dns/nameservers/nameserver-options/ (standard: <name>.ns.cloudflare.com); https://developers.cloudflare.com/dns/foundation-dns/advanced-nameservers/ (advanced: <color>.foundationdns.{com,net,org})"
+        },
+        {
+            "name": "IONOS",
+            "patterns": [
+                "*.ui-dns.de",
+                "*.ui-dns.com",
+                "*.ui-dns.org",
+                "*.ui-dns.biz"
+            ],
+            "driver": "ionos",
+            "source": "https://www.ionos.com/help/domains/general-information-about-dns-settings/default-dns-settings-for-11-ionos-domains/ (nsXXXX.ui-dns.{com,org,de,biz})"
+        },
+        {
+            "name": "Dinahosting",
+            "patterns": [
+                "ns.dinahosting.com",
+                "ns2.dinahosting.com",
+                "ns3.dinahosting.com",
+                "ns4.dinahosting.com",
+                "*.dinahosting.com"
+            ],
+            "driver": "dinahosting",
+            "source": "https://dinahosting.com/ayuda/cuales-son-los-dns-de-dinahosting/ (ns.dinahosting.com, ns2-ns4.dinahosting.com)"
+        }
+    ]
+}

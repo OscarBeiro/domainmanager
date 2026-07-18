@@ -12,6 +12,8 @@ GLPI plugin providing a read-only inventory of domain lifecycles (registrar pipe
 Requires **GLPI 11.0.x**.
 
 ## Features
+- **Domain Manager** tab on each supplier to select the API driver (Cloudflare, IONOS, Dinahosting) and store its credentials encrypted (GLPIKey); secrets are never echoed back to the browser.
+- Versioned NS→provider registry (`resources/ns-providers.json`, contributions welcome) used to auto-detect a domain's DNS provider from its NS records.
 - Daily automatic action (`DomainSync`, tunable in *Setup → Automatic actions*) that synchronizes domain lifecycle data and DNS zone records — engine arrives in upcoming phases.
 - Dedicated profile right (`domainmanager:unlock_imported`) controlling who may edit data imported by synchronization, manageable from a **Domain Manager** tab on each profile.
 - Clean install/uninstall from the GLPI UI or `bin/console glpi:plugin:install|uninstall` — uninstall leaves no plugin residue while keeping native inventory data.

@@ -30,7 +30,9 @@
  */
 
 use Glpi\Plugin\Hooks;
+use GlpiPlugin\Domainmanager\HookHandler;
 use GlpiPlugin\Domainmanager\Profile as DomainmanagerProfile;
+use GlpiPlugin\Domainmanager\SupplierTab;
 
 define('PLUGIN_DOMAINMANAGER_VERSION', '0.1.0');
 define('PLUGIN_DOMAINMANAGER_MIN_GLPI', '11.0.0');
@@ -73,5 +75,10 @@ function plugin_init_domainmanager(): void
 
     if (Plugin::isPluginActive('domainmanager')) {
         Plugin::registerClass(DomainmanagerProfile::class, ['addtabon' => Profile::class]);
+        Plugin::registerClass(SupplierTab::class, ['addtabon' => Supplier::class]);
+
+        $PLUGIN_HOOKS[Hooks::ITEM_PURGE]['domainmanager'] = [
+            Supplier::class => [HookHandler::class, 'supplierPurged'],
+        ];
     }
 }
