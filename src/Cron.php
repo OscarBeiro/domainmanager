@@ -29,24 +29,43 @@
  * -------------------------------------------------------------------------
  */
 
-use GlpiPlugin\Domainmanager\Installer;
+namespace GlpiPlugin\Domainmanager;
 
-/**
- * Install the plugin
- *
- * @return bool
- */
-function plugin_domainmanager_install(): bool
-{
-    return Installer::install(new Migration(PLUGIN_DOMAINMANAGER_VERSION));
-}
+use CronTask;
 
-/**
- * Uninstall the plugin
- *
- * @return bool
- */
-function plugin_domainmanager_uninstall(): bool
+class Cron
 {
-    return Installer::uninstall(new Migration(PLUGIN_DOMAINMANAGER_VERSION));
+    /**
+     * Describe the plugin automatic actions
+     *
+     * @param  string $name
+     * @return array
+     */
+    public static function cronInfo(string $name): array
+    {
+        switch ($name) {
+            case 'DomainSync':
+                return [
+                    'description' => __('Synchronize domain lifecycle and DNS zone records from provider APIs', 'domainmanager'),
+                    'parameter'   => __('Number of domains to process per run', 'domainmanager'),
+                ];
+        }
+
+        return [];
+    }
+
+    /**
+     * Daily domain synchronization batch
+     *
+     * Phase 1 shell: the sync engine arrives in a later phase.
+     *
+     * @param  CronTask $task
+     * @return int >0 done with actions, 0 nothing to do, <0 to be run again
+     */
+    public static function cronDomainSync(CronTask $task): int
+    {
+        $task->log('Domain Manager sync engine is not implemented yet; nothing to do.');
+
+        return 0;
+    }
 }

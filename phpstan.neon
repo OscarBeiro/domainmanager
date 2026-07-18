@@ -3,11 +3,10 @@ parameters:
         maximumNumberOfProcesses: 2
     level: 5
     bootstrapFiles:
-        - ../../inc/based_config.php
+        - ../../stubs/glpi_constants.php
+        - ../../vendor/autoload.php
     paths:
-        - ajax
-        - front
-        - inc
+        - src
         - hook.php
         - setup.php
         - tools/phpstan/rules
@@ -16,7 +15,6 @@ parameters:
         - '**/tests/*'
         - '**/tools/*'
     scanDirectories:
-        - ../../inc
         - ../../src
         - tools/phpstan/rules
     stubFiles:

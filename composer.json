@@ -17,6 +17,7 @@
     },
     "autoload": {
         "psr-4": {
+            "GlpiPlugin\\Domainmanager\\": "src/",
             "CustomPHPStanRules\\": "tools/phpstan/rules/"
         }
     },

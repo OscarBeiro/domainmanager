@@ -29,24 +29,49 @@
  * -------------------------------------------------------------------------
  */
 
-use GlpiPlugin\Domainmanager\Installer;
+use Glpi\Plugin\Hooks;
+use GlpiPlugin\Domainmanager\Profile as DomainmanagerProfile;
+
+define('PLUGIN_DOMAINMANAGER_VERSION', '0.1.0');
+define('PLUGIN_DOMAINMANAGER_MIN_GLPI', '11.0.0');
+define('PLUGIN_DOMAINMANAGER_MAX_GLPI', '11.0.99');
+define('PLUGIN_DOMAINMANAGER_REPOSITORY_URL', 'https://github.com/TICGAL-GLPI-Plugins/domainmanager');
 
 /**
- * Install the plugin
+ * Plugin_Version_Domainmanager
  *
- * @return bool
+ * @return array
  */
-function plugin_domainmanager_install(): bool
+function plugin_version_domainmanager(): array
 {
-    return Installer::install(new Migration(PLUGIN_DOMAINMANAGER_VERSION));
+    return [
+        'name'          => 'Domain Manager',
+        'version'       => PLUGIN_DOMAINMANAGER_VERSION,
+        'author'        => '<a href="https://tic.gal">TICGAL</a>',
+        'homepage'      => 'https://tic.gal',
+        'license'       => 'AGPLv3+',
+        'requirements'  => [
+            'glpi' => [
+                'min' => PLUGIN_DOMAINMANAGER_MIN_GLPI,
+                'max' => PLUGIN_DOMAINMANAGER_MAX_GLPI,
+            ],
+        ],
+    ];
 }
 
 /**
- * Uninstall the plugin
+ * Plugin_Init_Domainmanager
  *
- * @return bool
+ * @return void
  */
-function plugin_domainmanager_uninstall(): bool
+function plugin_init_domainmanager(): void
 {
-    return Installer::uninstall(new Migration(PLUGIN_DOMAINMANAGER_VERSION));
+    /** @var array $PLUGIN_HOOKS */
+    global $PLUGIN_HOOKS;
+
+    $PLUGIN_HOOKS[Hooks::CSRF_COMPLIANT]['domainmanager'] = true;
+
+    if (Plugin::isPluginActive('domainmanager')) {
+        Plugin::registerClass(DomainmanagerProfile::class, ['addtabon' => Profile::class]);
+    }
 }
