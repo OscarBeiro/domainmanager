@@ -279,6 +279,76 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
   half-imported.
 - [ ] Pass
 
+---
+
+## Phase 4 — Domain panel, Update Now, cron batching
+
+### 4.1 Registrar field on the domain form (§0.1, §6.2)
+- **Steps:** open a domain with *domain* UPDATE; the Domain Manager panel shows a
+  **Registrar** supplier dropdown. Select a supplier, save; reopen. Then change it
+  to another supplier (or empty) and save again. Also save the form without
+  touching the dropdown.
+- **Expected:** the selection persists across saves (stored in
+  `glpi_plugin_domainmanager_states.registrar_suppliers_id`, never in
+  `glpi_domains`); changing it updates the state row; saving other fields leaves
+  it untouched. Users with only *domain* READ see the value read-only.
+- [ ] Pass
+
+### 4.2 Status card and DNS provider display (§6.2)
+- **Steps:** open a synced domain with *domain* READ.
+- **Expected:** panel shows the detected DNS provider (linked to the supplier when
+  resolved), Registrar/DNS badges colored by status (green ok, red error, grey
+  never/unconfigured, yellow unsupported/unknown), last sync date, and the
+  per-pipeline messages. A domain never synced shows "Never synchronized".
+- [ ] Pass
+
+### 4.3 Update Now (§6.3)
+- **Steps:** with *domain* UPDATE, click **Update Now** on a domain.
+- **Expected:** POST to `/plugins/domainmanager/sync/{id}` with the
+  `X-Glpi-Csrf-Token` header; the button spins, then badges, messages, provider
+  and last-sync refresh in place without a page reload. Errors surface as an alert.
+- [ ] Pass
+
+### 4.4 Sync endpoint is rights- and CSRF-gated (§6.3, §8)
+- **Steps:**
+  ```bash
+  curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:11108/plugins/domainmanager/sync/1
+  ```
+  and, authenticated as a user without *domain* UPDATE (or outside the domain's
+  entity), trigger the same POST from the browser console.
+- **Expected:** unauthenticated/tokenless POST → 403 (never 404: route exists);
+  authenticated but unauthorized → 403 JSON error; entity scope enforced via
+  `can()`.
+- [ ] Pass
+
+### 4.5 Unsupported/unknown provider warning (§4, §6.2)
+- **Steps:** sync a domain whose NS point at a provider without a driver (e.g.
+  AWS Route 53) and one whose NS match nothing in the registry.
+- **Expected:** the panel shows the yellow warning ("API integration for X is not
+  currently supported." / provider unknown) with the "Help us support this
+  provider" link to the plugin repository.
+- [ ] Pass
+
+### 4.6 Lock JS on the domain form (§0.3 cosmetic layer)
+- **Steps:** after a registrar sync locked fields, open the domain as a user
+  without `domainmanager:unlock_imported`; then as a right holder.
+- **Expected:** without the right, locked inputs (name, dates, is_active) are
+  disabled with a lock icon on their labels; with the right, all inputs are
+  editable. (Server-side stripping — item 3.6 — protects regardless of the JS.)
+- [ ] Pass
+
+### 4.7 Cron batching loop (§5, §6.4)
+- **Steps:** with several domains (active, inactive, deleted, template) and the
+  task parameter set to a small batch size, force the run:
+  ```bash
+  podman exec glpi_glpi_1 php /var/www/glpi/front/cron.php --force DomainSync
+  ```
+- **Expected:** only active, non-deleted, non-template domains are processed,
+  least-recently-synced first, at most `param` per run; a failing domain does not
+  abort the batch; the task log reports "Synchronized N domain(s), M with errors"
+  and the volume counter equals N.
+- [ ] Pass
+
 > Verification status: Phase 1 items were exercised on GLPI 11.0.8 via CLI on
 > 2026-07-17/18. Phase 2 items 2.2–2.6 (model level), 2.9, 2.10 and 2.11 were
 > exercised by a scripted run on GLPI 11.0.8 on 2026-07-18 (27/27 checks passed);
@@ -286,3 +356,13 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
 > Phase 3 items 3.1–3.10 were exercised by a scripted run on GLPI 11.0.8 on
 > 2026-07-18 (35/35 checks, including live NS detection of a Cloudflare-hosted
 > domain); 3.11 needs real credentials and 3.12 a manual profile setup.
+> Phase 4: a scripted run on GLPI 11.0.8 (2026-07-18, stopped early) confirmed
+> registrar persistence on add, panel rendering (dropdown, button, badges), lock
+> JS with/without the right, itemtype filtering, cron filtering of
+> inactive/template domains, and endpoint gating over HTTP (403 unauthenticated,
+> 404 only for unknown routes). **Four scripted checks failed and were NOT
+> diagnosed before testing was stopped — treat as open until manually verified:**
+> registrar change on update (4.1), sync URL in the rendered panel (4.3), and
+> cron batch-size limiting (4.7); the failures may be test-harness artifacts
+> (CLI `Plugin::getWebDir()`, direct `cronDomainSync()` invocation) but this is
+> unconfirmed.

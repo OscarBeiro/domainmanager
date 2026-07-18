@@ -33,6 +33,7 @@ namespace GlpiPlugin\Domainmanager;
 
 use Domain;
 use DomainRecord;
+use Session;
 use Supplier;
 
 /**
@@ -60,6 +61,64 @@ class HookHandler
         $DB->delete(SupplierConfig::getTable(), ['suppliers_id' => $suppliers_id]);
 
         DomainState::onSupplierPurge($suppliers_id);
+    }
+
+    /**
+     * item_add on Domain: persist the injected Registrar field
+     *
+     * @param  Domain $domain
+     * @return void
+     */
+    public static function domainAdded(Domain $domain): void
+    {
+        self::persistRegistrar($domain);
+    }
+
+    /**
+     * item_update on Domain: persist the injected Registrar field
+     *
+     * @param  Domain $domain
+     * @return void
+     */
+    public static function domainUpdated(Domain $domain): void
+    {
+        self::persistRegistrar($domain);
+    }
+
+    /**
+     * Store _domainmanager_registrar from the form input into the state row
+     * (§0.1: glpi_domains has no supplier column, the Registrar is plugin-owned)
+     *
+     * @param  Domain $domain
+     * @return void
+     */
+    private static function persistRegistrar(Domain $domain): void
+    {
+        if (!is_array($domain->input) || !isset($domain->input['_domainmanager_registrar'])) {
+            return;
+        }
+
+        if (!Session::isCron() && !Session::haveRight('domain', UPDATE) && !Domain::canCreate()) {
+            return;
+        }
+
+        $suppliers_id = max(0, (int) $domain->input['_domainmanager_registrar']);
+        $domains_id   = (int) $domain->getID();
+
+        $state = DomainState::getForDomain($domains_id);
+        if ($state !== null) {
+            if ((int) $state->fields['registrar_suppliers_id'] !== $suppliers_id) {
+                $state->update([
+                    'id'                     => $state->getID(),
+                    'registrar_suppliers_id' => $suppliers_id,
+                ]);
+            }
+        } else {
+            (new DomainState())->add([
+                'domains_id'             => $domains_id,
+                'registrar_suppliers_id' => $suppliers_id,
+            ]);
+        }
     }
 
     /**

@@ -32,6 +32,10 @@
 namespace GlpiPlugin\Domainmanager;
 
 use CronTask;
+use Domain;
+use GlpiPlugin\Domainmanager\Service\SyncEngine;
+use GlpiPlugin\Domainmanager\Service\SyncLogger;
+use Throwable;
 
 class Cron
 {
@@ -55,17 +59,74 @@ class Cron
     }
 
     /**
-     * Daily domain synchronization batch
-     *
-     * Phase 1 shell: the sync engine arrives in a later phase.
+     * Daily domain synchronization batch (§5): active, non-deleted,
+     * non-template domains, least-recently-synced first, batch size from
+     * the task parameter, per-domain isolation
      *
      * @param  CronTask $task
      * @return int >0 done with actions, 0 nothing to do, <0 to be run again
      */
     public static function cronDomainSync(CronTask $task): int
     {
-        $task->log('Domain Manager sync engine is not implemented yet; nothing to do.');
+        /** @var \DBmysql $DB */
+        global $DB;
 
+        $batch_size = max(1, (int) ($task->fields['param'] ?? 20));
+
+        $iterator = $DB->request([
+            'SELECT'    => 'glpi_domains.id',
+            'FROM'      => 'glpi_domains',
+            'LEFT JOIN' => [
+                DomainState::getTable() => [
+                    'ON' => [
+                        DomainState::getTable() => 'domains_id',
+                        'glpi_domains'          => 'id',
+                    ],
+                ],
+            ],
+            'WHERE'     => [
+                'glpi_domains.is_deleted'  => 0,
+                'glpi_domains.is_template' => 0,
+                'glpi_domains.is_active'   => 1,
+            ],
+            'ORDER'     => DomainState::getTable() . '.last_sync_date ASC',
+            'LIMIT'     => $batch_size,
+        ]);
+
+        $engine    = new SyncEngine();
+        $logger    = new SyncLogger();
+        $processed = 0;
+        $errors    = 0;
+
+        foreach ($iterator as $row) {
+            try {
+                $domain = new Domain();
+                if (!$domain->getFromDB((int) $row['id'])) {
+                    continue;
+                }
+                $result = $engine->sync($domain);
+                if (
+                    $result['registrar_status'] === DomainState::STATUS_ERROR
+                    || $result['dns_status'] === DomainState::STATUS_ERROR
+                ) {
+                    $errors++;
+                }
+            } catch (Throwable $e) {
+                $errors++;
+                $logger->detail(
+                    'Cron sync failed for domain #' . $row['id'] . ': ' . $e::class . ': ' . $e->getMessage()
+                );
+            }
+            $processed++;
+            $task->addVolume(1);
+        }
+
+        if ($processed > 0) {
+            $task->log(sprintf('Synchronized %d domain(s), %d with errors', $processed, $errors));
+            return 1;
+        }
+
+        $task->log('No active domain to synchronize');
         return 0;
     }
 }

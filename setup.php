@@ -30,6 +30,7 @@
  */
 
 use Glpi\Plugin\Hooks;
+use GlpiPlugin\Domainmanager\DomainForm;
 use GlpiPlugin\Domainmanager\HookHandler;
 use GlpiPlugin\Domainmanager\LockEnforcer;
 use GlpiPlugin\Domainmanager\Profile as DomainmanagerProfile;
@@ -82,6 +83,15 @@ function plugin_init_domainmanager(): void
             Supplier::class     => [HookHandler::class, 'supplierPurged'],
             Domain::class       => [HookHandler::class, 'domainPurged'],
             DomainRecord::class => [HookHandler::class, 'domainRecordPurged'],
+        ];
+
+        $PLUGIN_HOOKS[Hooks::POST_ITEM_FORM]['domainmanager'] = [DomainForm::class, 'inject'];
+
+        $PLUGIN_HOOKS[Hooks::ITEM_ADD]['domainmanager'] = [
+            Domain::class => [HookHandler::class, 'domainAdded'],
+        ];
+        $PLUGIN_HOOKS[Hooks::ITEM_UPDATE]['domainmanager'] = [
+            Domain::class => [HookHandler::class, 'domainUpdated'],
         ];
 
         $PLUGIN_HOOKS[Hooks::PRE_ITEM_UPDATE]['domainmanager'] = [

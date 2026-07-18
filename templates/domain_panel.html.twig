@@ -1,0 +1,240 @@
+{#
+ # -------------------------------------------------------------------------
+ # Domain Manager plugin for GLPI
+ # Copyright (C) 2026 by the TICGAL Team.
+ # https://www.tic.gal
+ # -------------------------------------------------------------------------
+ # LICENSE
+ # This file is part of the Domain Manager plugin.
+ # Domain Manager plugin is free software; you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation; either version 3 of the License, or
+ # (at your option) any later version.
+ # Domain Manager plugin is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ # GNU General Public License for more details.
+ # You should have received a copy of the GNU General Public License
+ # along with Domain Manager. If not, see <http://www.gnu.org/licenses/>.
+ # -------------------------------------------------------------------------
+ # @package   domainmanager
+ # @author    the TICGAL team
+ # @copyright Copyright (c) 2026 TICGAL team
+ # @license   AGPL License 3.0 or (at your option) any later version
+ #            http://www.gnu.org/licenses/agpl-3.0-standalone.html
+ # @link      https://www.tic.gal
+ # @since     2026
+ # -------------------------------------------------------------------------
+ #}
+
+{% set detected = state ? state.detected_provider : '' %}
+
+<div id="domainmanager-panel" class="card mt-3">
+    <div class="card-header">
+        <h3 class="card-title">
+            <i class="ti ti-world-www me-1"></i>
+            {{ __('Domain Manager', 'domainmanager') }}
+        </h3>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-12 col-md-6 mb-2">
+                <label class="form-label">{{ __('Registrar', 'domainmanager') }}</label>
+                {% if can_update %}
+                    {{ registrar_dropdown|raw }}
+                    <div class="form-text">
+                        {{ __('Supplier whose API credentials feed the lifecycle synchronization', 'domainmanager') }}
+                    </div>
+                {% elseif registrar_supplier %}
+                    <div><a href="{{ registrar_supplier.getLinkURL() }}">{{ registrar_supplier.getName() }}</a></div>
+                {% else %}
+                    <div class="text-muted">{{ __('Not set', 'domainmanager') }}</div>
+                {% endif %}
+            </div>
+
+            {% if not is_new %}
+                <div class="col-12 col-md-6 mb-2">
+                    <label class="form-label">{{ __('DNS Provider (detected)', 'domainmanager') }}</label>
+                    <div id="domainmanager-provider">
+                        {% if detected == '' %}
+                            <span class="text-muted">{{ __('Never synchronized', 'domainmanager') }}</span>
+                        {% elseif dns_supplier %}
+                            {{ detected }}
+                            (<a href="{{ dns_supplier.getLinkURL() }}">{{ dns_supplier.getName() }}</a>)
+                        {% else %}
+                            {{ detected }}
+                        {% endif %}
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+
+        {% if not is_new %}
+            <div class="d-flex flex-wrap align-items-center gap-3 mt-2" id="domainmanager-statuscard">
+                <div>
+                    <span class="text-muted">{{ __('Registrar sync', 'domainmanager') }}</span>
+                    {% set rstatus = state ? state.registrar_status : 'never' %}
+                    <span class="badge {{ status_classes[rstatus]|default('text-bg-secondary') }}"
+                          id="domainmanager-badge-registrar"
+                          title="{{ state ? state.registrar_message : '' }}">
+                        {{ status_labels[rstatus]|default(rstatus) }}
+                    </span>
+                </div>
+                <div>
+                    <span class="text-muted">{{ __('DNS sync', 'domainmanager') }}</span>
+                    {% set dstatus = state ? state.dns_status : 'never' %}
+                    <span class="badge {{ status_classes[dstatus]|default('text-bg-secondary') }}"
+                          id="domainmanager-badge-dns"
+                          title="{{ state ? state.dns_message : '' }}">
+                        {{ status_labels[dstatus]|default(dstatus) }}
+                    </span>
+                </div>
+                <div>
+                    <span class="text-muted">{{ __('Last synchronization', 'domainmanager') }}</span>
+                    <span id="domainmanager-lastsync">
+                        {{ state and state.last_sync_date ? state.last_sync_date : __('Never', 'domainmanager') }}
+                    </span>
+                </div>
+                {% if can_update %}
+                    <button type="button" class="btn btn-sm btn-primary" id="domainmanager-updatenow">
+                        <i class="ti ti-refresh me-1"></i>
+                        {{ __('Update Now', 'domainmanager') }}
+                    </button>
+                {% endif %}
+            </div>
+
+            <div id="domainmanager-messages" class="mt-2">
+                {% if state and state.registrar_message %}
+                    <div class="form-text">{{ __('Registrar', 'domainmanager') }}: <span id="domainmanager-msg-registrar">{{ state.registrar_message }}</span></div>
+                {% else %}
+                    <div class="form-text d-none">{{ __('Registrar', 'domainmanager') }}: <span id="domainmanager-msg-registrar"></span></div>
+                {% endif %}
+                {% if state and state.dns_message %}
+                    <div class="form-text">{{ __('DNS', 'domainmanager') }}: <span id="domainmanager-msg-dns">{{ state.dns_message }}</span></div>
+                {% else %}
+                    <div class="form-text d-none">{{ __('DNS', 'domainmanager') }}: <span id="domainmanager-msg-dns"></span></div>
+                {% endif %}
+            </div>
+
+            {% set dstatus = state ? state.dns_status : 'never' %}
+            <div class="alert alert-warning mt-2 {{ dstatus in ['unsupported', 'unknown'] ? '' : 'd-none' }}"
+                 id="domainmanager-provider-warning">
+                <i class="ti ti-alert-triangle me-1"></i>
+                <span id="domainmanager-provider-warning-text">
+                    {% if dstatus == 'unsupported' %}
+                        {{ __('API integration for %s is not currently supported.', 'domainmanager')|format(detected) }}
+                    {% elseif dstatus == 'unknown' %}
+                        {{ __('The DNS provider of this domain could not be identified.', 'domainmanager') }}
+                    {% endif %}
+                </span>
+                <a href="{{ repository_url }}" target="_blank" rel="noopener noreferrer">
+                    {{ __('Help us support this provider', 'domainmanager') }}
+                </a>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+(function () {
+    // Cosmetic lock layer: disable synced fields for users without the
+    // unlock right (server-side enforcement is authoritative)
+    const lockedFields = {{ locked_fields|json_encode|raw }};
+    if (lockedFields.length) {
+        const form = document.querySelector('#domainmanager-panel').closest('form');
+        if (form) {
+            lockedFields.forEach(function (field) {
+                form.querySelectorAll('[name="' + field + '"]').forEach(function (input) {
+                    input.disabled = true;
+                    const label = form.querySelector('label[for="' + input.id + '"]');
+                    if (label && !label.querySelector('.domainmanager-lock')) {
+                        const icon = document.createElement('i');
+                        icon.className = 'ti ti-lock ms-1 domainmanager-lock';
+                        icon.title = {{ __('Locked by Domain Manager synchronization', 'domainmanager')|json_encode|raw }};
+                        label.appendChild(icon);
+                    }
+                });
+            });
+        }
+    }
+
+    const button = document.getElementById('domainmanager-updatenow');
+    if (!button) {
+        return;
+    }
+
+    const labels  = {{ status_labels|json_encode|raw }};
+    const classes = {{ status_classes|json_encode|raw }};
+
+    function setBadge(id, status, message) {
+        const badge = document.getElementById(id);
+        if (!badge) {
+            return;
+        }
+        badge.className = 'badge ' + (classes[status] || 'text-bg-secondary');
+        badge.textContent = labels[status] || status;
+        badge.title = message || '';
+    }
+
+    button.addEventListener('click', function () {
+        const csrf = document.querySelector('meta[property="glpi:csrf_token"]');
+        button.disabled = true;
+        button.querySelector('i').classList.add('ti-spin');
+
+        fetch({{ sync_url|json_encode|raw }}, {
+            method: 'POST',
+            headers: {
+                'X-Glpi-Csrf-Token': csrf ? csrf.getAttribute('content') : '',
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        }).then(function (response) {
+            return response.json().then(function (data) {
+                return { ok: response.ok, data: data };
+            });
+        }).then(function (result) {
+            if (!result.ok) {
+                throw new Error(result.data.error || 'HTTP error');
+            }
+            const data = result.data;
+            setBadge('domainmanager-badge-registrar', data.registrar_status, data.registrar_message);
+            setBadge('domainmanager-badge-dns', data.dns_status, data.dns_message);
+
+            const last = document.getElementById('domainmanager-lastsync');
+            if (last) {
+                last.textContent = data.last_sync_date;
+            }
+
+            const provider = document.getElementById('domainmanager-provider');
+            if (provider && data.detected_provider) {
+                provider.textContent = data.detected_provider;
+            }
+
+            ['registrar', 'dns'].forEach(function (leg) {
+                const span = document.getElementById('domainmanager-msg-' + leg);
+                if (span) {
+                    span.textContent = data[leg + '_message'] || '';
+                    span.parentElement.classList.toggle('d-none', !data[leg + '_message']);
+                }
+            });
+
+            const warning = document.getElementById('domainmanager-provider-warning');
+            if (warning) {
+                const text = document.getElementById('domainmanager-provider-warning-text');
+                if (data.dns_status === 'unsupported' || data.dns_status === 'unknown') {
+                    warning.classList.remove('d-none');
+                    if (text) {
+                        text.textContent = data.dns_message;
+                    }
+                } else {
+                    warning.classList.add('d-none');
+                }
+            }
+        }).catch(function (error) {
+            window.alert({{ __('Synchronization request failed:', 'domainmanager')|json_encode|raw }} + ' ' + error.message);
+        }).finally(function () {
+            button.disabled = false;
+            button.querySelector('i').classList.remove('ti-spin');
+        });
+    });
+})();
+</script>
