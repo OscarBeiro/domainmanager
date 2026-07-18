@@ -33,7 +33,6 @@ namespace GlpiPlugin\Domainmanager;
 
 use Domain;
 use Glpi\Application\View\TemplateRenderer;
-use Plugin;
 use Session;
 use Supplier;
 
@@ -109,7 +108,7 @@ class DomainForm
             'dns_supplier'       => $dns_supplier,
             'status_labels'      => self::getStatusLabels(),
             'status_classes'     => self::getStatusClasses(),
-            'sync_url'           => Plugin::getWebDir('domainmanager') . '/sync/' . $domains_id,
+            'domains_id'         => $domains_id,
             'repository_url'     => PLUGIN_DOMAINMANAGER_REPOSITORY_URL,
             'locked_fields'      => $locked_fields,
             'provider_unknown'   => NsProviderRegistry::PROVIDER_UNKNOWN,

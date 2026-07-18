@@ -90,12 +90,9 @@ function plugin_init_domainmanager(): void
         $PLUGIN_HOOKS[Hooks::ITEM_ADD]['domainmanager'] = [
             Domain::class => [HookHandler::class, 'domainAdded'],
         ];
-        $PLUGIN_HOOKS[Hooks::ITEM_UPDATE]['domainmanager'] = [
-            Domain::class => [HookHandler::class, 'domainUpdated'],
-        ];
 
         $PLUGIN_HOOKS[Hooks::PRE_ITEM_UPDATE]['domainmanager'] = [
-            Domain::class       => [LockEnforcer::class, 'domainPreUpdate'],
+            Domain::class       => [HookHandler::class, 'domainPreUpdate'],
             DomainRecord::class => [LockEnforcer::class, 'domainRecordPreUpdate'],
         ];
         $PLUGIN_HOOKS[Hooks::PRE_ITEM_DELETE]['domainmanager'] = [

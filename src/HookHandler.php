@@ -37,7 +37,8 @@ use Session;
 use Supplier;
 
 /**
- * Item hook callbacks (cascade cleanup; Domain form persistence arrives in Phase 4)
+ * Item hook callbacks (cascade cleanup, Registrar field persistence,
+ * Domain pre-update dispatch)
  */
 class HookHandler
 {
@@ -75,13 +76,17 @@ class HookHandler
     }
 
     /**
-     * item_update on Domain: persist the injected Registrar field
+     * pre_item_update on Domain: lock enforcement, then Registrar
+     * persistence. The registrar must be handled pre-update because the
+     * item_update hook only fires when a glpi_domains column actually
+     * changed — a dropdown-only save would otherwise be lost.
      *
      * @param  Domain $domain
      * @return void
      */
-    public static function domainUpdated(Domain $domain): void
+    public static function domainPreUpdate(Domain $domain): void
     {
+        LockEnforcer::domainPreUpdate($domain);
         self::persistRegistrar($domain);
     }
 

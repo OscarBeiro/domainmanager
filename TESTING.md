@@ -360,9 +360,19 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
 > registrar persistence on add, panel rendering (dropdown, button, badges), lock
 > JS with/without the right, itemtype filtering, cron filtering of
 > inactive/template domains, and endpoint gating over HTTP (403 unauthenticated,
-> 404 only for unknown routes). **Four scripted checks failed and were NOT
-> diagnosed before testing was stopped — treat as open until manually verified:**
-> registrar change on update (4.1), sync URL in the rendered panel (4.3), and
-> cron batch-size limiting (4.7); the failures may be test-harness artifacts
-> (CLI `Plugin::getWebDir()`, direct `cronDomainSync()` invocation) but this is
-> unconfirmed.
+> 404 only for unknown routes). The three failed scripted checks were diagnosed
+> against the GLPI `11.0/bugfixes` source on 2026-07-18:
+> - **4.1 was a real bug, now fixed:** `CommonDBTM::update()` fires the
+>   `item_update` hook only when a `glpi_domains` column actually changed, so a
+>   save touching only the (virtual) Registrar dropdown never persisted.
+>   Persistence moved to `pre_item_update` (fires unconditionally); re-run 4.1
+>   including a dropdown-only save.
+> - **4.3 rewritten:** the panel now generates the sync URL from the named route
+>   via Twig `path('@domainmanager:domainmanager_sync')` instead of the
+>   deprecated `Plugin::getWebDir()` (which logged a deprecation per form render
+>   and returns a wrong `/marketplace/…` base on marketplace installs); re-run
+>   4.3 in the browser.
+> - **4.7: no defect found on review** (`LIMIT`, ordering, filtering and
+>   `CronTask::log`/`addVolume` all match core usage); the scripted failure is
+>   attributed to invoking `cronDomainSync()` with a hand-built CronTask. Verify
+>   manually through `front/cron.php` as the item describes.
