@@ -90,11 +90,15 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
 ## Phase 2 — Itemtypes, Supplier credentials tab, NS provider registry
 
 ### 2.1 Supplier tab visibility gated by right (§6.1, §8)
-- **Steps:** open any supplier (*Management → Suppliers*) as a user **with** *config*
-  READ; then as a user **without** it.
-- **Expected:** the **Domain Manager** tab appears only for the user with *config*
-  READ; the form (driver select + save) is editable only with *config* UPDATE —
-  otherwise the tab is a read-only driver display.
+- **Steps:** open any supplier (*Management → Suppliers*) as a user whose profile
+  has supplier READ but **not** supplier UPDATE; then as a user with supplier
+  UPDATE.
+- **Expected:** the **Domain Manager** tab appears for both (supplier READ — i.e.
+  being able to open the supplier — suffices); the form (driver select + save) is
+  editable only with supplier UPDATE, entity-aware — otherwise the tab is a
+  read-only driver display. (Amended 2026-07-19: the original gating on *config*
+  READ/UPDATE failed — the profile UI exposes no usable config READ; the tab now
+  follows native supplier rights, `contact_enterprise`.)
 - [ ] Pass
 
 ### 2.2 Credentials stored encrypted (§6.1, GLPIKey)
@@ -142,9 +146,11 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
 ### 2.8 Form POST is rights- and CSRF-protected (§6.1, §0.5)
 - **Steps:** POST to `/plugins/domainmanager/front/supplierconfig.form.php` without
   a CSRF token (e.g. curl with a valid session cookie); then, in the UI, try saving
-  as a user without *config* UPDATE (edit the form's HTML to re-enable it if needed).
+  as a user without supplier UPDATE (edit the form's HTML to re-enable it if
+  needed).
 - **Expected:** missing/invalid CSRF token is rejected by core; the save without
-  *config* UPDATE is refused (access denied).
+  supplier UPDATE on the target supplier is refused (access denied). (Amended
+  2026-07-19 with the 2.1 rights realignment.)
 - [ ] Pass
 
 ### 2.9 Supplier purge cascade (§6.2)
@@ -437,3 +443,7 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
 > `NsProviderRegistry::match()` against the real JSON (21/21 host cases, incl.
 > false-positive guards) and `php -l` on the icon-touched classes; no container
 > run — 5.2, 5.3 and 5.5 need a manual pass on a live instance.
+> 2.1 failed its manual pass on 2026-07-19 (gating used the *config* right, which
+> the profile UI does not expose as READ): supplier-tab gating was realigned to
+> native supplier rights (READ to see, entity-aware UPDATE to save) — re-run the
+> amended 2.1 and 2.8.

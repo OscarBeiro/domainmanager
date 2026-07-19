@@ -315,7 +315,7 @@ result object {registrar_status, dns_status, messages} → controller JSON / cro
 - ionos → API Key + Secret
 - dinahosting → Username + Password
 
-Save posts to the standard tab form path handled by `SupplierConfig` (CommonDBTM add/update); payload assembled to JSON and encrypted with `GLPIKey::encrypt()`. Existing secrets are never echoed back (placeholder "●●● saved"); empty submit keeps the stored secret. Access gated by `config` UPDATE (§8).
+Save posts to the standard tab form path handled by `SupplierConfig` (CommonDBTM add/update); payload assembled to JSON and encrypted with `GLPIKey::encrypt()`. Existing secrets are never echoed back (placeholder "●●● saved"); empty submit keeps the stored secret. Access gated by supplier rights: tab visible with READ on the supplier, save with entity-aware UPDATE on it (§8).
 
 ### 6.2 Domain form injection
 | Hook | Itemtype | Handler | Purpose |
@@ -365,7 +365,7 @@ Save posts to the standard tab form path handled by `SupplierConfig` (CommonDBTM
 | See plugin panel/status card on a Domain | native `domain` READ | `DomainForm::inject()` |
 | Trigger "Update Now" | native `domain` UPDATE (entity-aware `can()`) | `SyncController` |
 | Set the Registrar field on a Domain | native `domain` UPDATE | `HookHandler` (input persisted only if `can()`) |
-| Configure supplier credentials (tab visible + save) | native `config` UPDATE | `SupplierTab` + `SupplierConfig::can*` |
+| Configure supplier credentials (tab visible with supplier READ, save with supplier UPDATE) | native supplier rights (`contact_enterprise`), entity-aware `can()` on the target supplier | `SupplierTab` + `SupplierConfig::can*`/`can*Item` (changed 2026-07-19 from `config` READ/UPDATE — the profile UI exposes no usable config READ, and supplier API access is part of managing the supplier) |
 | Edit/unlock sync-locked Domain fields | **`domainmanager:unlock_imported`** (single bit, value 1) | `LockEnforcer` (server-side, every entry point incl. massive actions & API since hooks fire on model update) |
 | Edit/delete/purge plugin-imported DomainRecords | **`domainmanager:unlock_imported`** (+ native `managed_domainrecordtypes` gate still applies, §0.4) | `LockEnforcer` |
 | Grant the plugin right | native `profile` UPDATE | `src/Profile.php` tab (`displayRightsChoiceMatrix` + `ProfileRight`) |

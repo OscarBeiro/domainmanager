@@ -33,7 +33,6 @@ namespace GlpiPlugin\Domainmanager;
 
 use CommonGLPI;
 use Glpi\Application\View\TemplateRenderer;
-use Session;
 use Supplier;
 
 /**
@@ -66,7 +65,7 @@ class SupplierTab extends CommonGLPI
             $item instanceof Supplier
             && !$withtemplate
             && $item->getID() > 0
-            && Session::haveRight('config', READ)
+            && $item->can($item->getID(), READ)
         ) {
             return self::createTabEntry(self::getTypeName(1));
         }
@@ -79,7 +78,7 @@ class SupplierTab extends CommonGLPI
      */
     public static function displayTabContentForItem(CommonGLPI $item, $tabnum = 1, $withtemplate = 0): bool
     {
-        if ($item instanceof Supplier && Session::haveRight('config', READ)) {
+        if ($item instanceof Supplier && $item->can($item->getID(), READ)) {
             return self::showForSupplier($item);
         }
 
@@ -118,7 +117,7 @@ class SupplierTab extends CommonGLPI
             'suppliers_id'      => (int) $supplier->getID(),
             'config_id'         => $config !== null ? (int) $config->getID() : 0,
             'form_url'          => SupplierConfig::getFormURL(),
-            'can_edit'          => Session::haveRight('config', UPDATE),
+            'can_edit'          => $supplier->can((int) $supplier->getID(), UPDATE),
             'current_driver'    => $current_driver,
             'driver_labels'     => DriverRegistry::getDriverLabels(),
             'credential_fields' => DriverRegistry::getAllCredentialFields(),

@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Fixed
+- The supplier "Domain Manager" tab was gated by the `config` right, which the profile UI does not expose as READ, so the tab never appeared for regular profiles: gating realigned to native supplier rights — tab visible with supplier READ, credentials editable/savable only with entity-aware supplier UPDATE (`SupplierTab` + `SupplierConfig::can*`/`can*Item`).
 - Registrar supplier changes on an existing domain were lost when no other field was modified: persistence moved from the `item_update` hook (which core skips when no `glpi_domains` column changed) to `pre_item_update`.
 - The domain panel now builds the "Update Now" URL from the named Symfony route (Twig `path()`) instead of the deprecated `Plugin::getWebDir()`, which logged a deprecation on every form render and produced a wrong base path on marketplace installs.
 

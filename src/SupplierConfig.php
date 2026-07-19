@@ -34,6 +34,7 @@ namespace GlpiPlugin\Domainmanager;
 use CommonDBTM;
 use GLPIKey;
 use Session;
+use Supplier;
 
 /**
  * Per-supplier API driver and encrypted credentials
@@ -41,7 +42,8 @@ use Session;
  */
 class SupplierConfig extends CommonDBTM
 {
-    public static $rightname = 'config';
+    // Supplier::$rightname — API access is part of managing the supplier itself
+    public static $rightname = 'contact_enterprise';
 
     /**
      * {@inheritDoc}
@@ -77,6 +79,44 @@ class SupplierConfig extends CommonDBTM
     public static function canPurge(): bool
     {
         return Session::haveRight(self::$rightname, UPDATE);
+    }
+
+    /**
+     * Writing a supplier's API access requires UPDATE on that supplier
+     * (entity-aware), not only the global right
+     *
+     * @param  int $suppliers_id
+     * @return bool
+     */
+    private static function canEditSupplier(int $suppliers_id): bool
+    {
+        $supplier = new Supplier();
+
+        return $suppliers_id > 0 && $supplier->can($suppliers_id, UPDATE);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function canCreateItem(): bool
+    {
+        return self::canEditSupplier((int) ($this->input['suppliers_id'] ?? 0));
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function canUpdateItem(): bool
+    {
+        return self::canEditSupplier((int) $this->fields['suppliers_id']);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function canPurgeItem(): bool
+    {
+        return self::canEditSupplier((int) $this->fields['suppliers_id']);
     }
 
     /**
