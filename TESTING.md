@@ -158,19 +158,22 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
 ### 2.10 NS registry file valid with sourced patterns (§4)
 - **Steps:** `php -r 'json_decode(file_get_contents("resources/ns-providers.json"), true, 512, JSON_THROW_ON_ERROR); echo "ok\n";'`
   and review each entry.
-- **Expected:** valid JSON; exactly 3 providers (Cloudflare, IONOS, Dinahosting),
-  each with a `driver` matching a hardcoded driver key and a `source` URL
-  documenting the pattern.
+- **Expected:** valid JSON; the first 3 providers (Cloudflare, IONOS, Dinahosting)
+  each have a `driver` matching a hardcoded driver key and a `source` URL
+  documenting the pattern. (Phase 5 appends detection-only entries after them —
+  see 5.1.)
 - [ ] Pass
 
 ### 2.11 NS matching semantics (§4)
 - **Steps:** exercise `NsProviderRegistry::match()` (e.g. via a scratch script in
   the container) with: `ADA.NS.CLOUDFLARE.COM.` (uppercase + trailing dot),
   `ns1042.ui-dns.biz`, `ns.dinahosting.com`, `blue.foundationdns.com`,
-  `ns-123.awsdns-45.net`, and an empty list.
+  `ns1.example.com`, and an empty list.
 - **Expected:** Cloudflare, IONOS, Dinahosting, Cloudflare, `null` (unknown),
   `null` respectively — case-insensitive, trailing dot stripped, wildcards per
-  fnmatch, first matching entry in file order wins.
+  fnmatch, first matching entry in file order wins. (The original fifth input,
+  `ns-123.awsdns-45.net`, expected `null` before Phase 5; it now matches the
+  detection-only "AWS Route 53" entry — see 5.2.)
 - [ ] Pass
 
 ### 2.12 Malformed registry entries are skipped, not fatal (§4)
@@ -349,6 +352,59 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
   and the volume counter equals N.
 - [ ] Pass
 
+---
+
+## Phase 5 — NS registry sweep, batch 1 (detection-only providers) + UI icon
+
+### 5.1 Registry sweep entries valid and sourced (§4, §9-P5)
+- **Steps:** `php -r 'json_decode(file_get_contents("resources/ns-providers.json"), true, 512, JSON_THROW_ON_ERROR); echo "ok\n";'`
+  and review the entries after the three driver-backed ones.
+- **Expected:** valid JSON; 11 providers total. Entries 4–11 are AWS Route 53,
+  Google Cloud DNS, Azure DNS, GoDaddy, OVHcloud, DigitalOcean, Linode (Akamai)
+  and Vercel; each has non-empty `patterns`, a `source` URL pointing at official
+  vendor documentation of the nameserver hostnames, and **no** `driver` key. The
+  driver-backed three remain first so first-match order is unchanged.
+- [ ] Pass
+
+### 5.2 New providers are detected as unsupported (§4, §5, §6.3)
+- **Steps:** sync a domain whose live NS records sit on one of the new providers
+  (e.g. Route 53: `ns-*.awsdns-*.com`), via *Update Now* or the cron; open the
+  domain's Domain Manager panel and check the state row:
+  `SELECT detected_provider, dns_status FROM glpi_plugin_domainmanager_states WHERE domains_id=<ID>;`
+- **Expected:** `detected_provider` shows the registry display name (e.g.
+  "AWS Route 53"), `dns_status='unsupported'`; the panel renders the *"API
+  integration for AWS Route 53 is not currently supported."* warning with the
+  contribution link; the registrar leg still runs normally.
+- [ ] Pass
+
+### 5.3 Detection-only entries never enter the DNS pipeline (§4, §5)
+- **Steps:** with at least one supplier holding valid Cloudflare credentials,
+  sync a domain hosted on a detection-only provider (as in 5.2); watch
+  `files/_log/plugin_domainmanager.log` and the state row.
+- **Expected:** no DNS supplier is resolved (`dns_suppliers_id` stays 0), no
+  provider API call is attempted, no records are imported; `dns_status` is
+  `unsupported`, not `error`.
+- [ ] Pass
+
+### 5.4 No false positives on adjacent hostnames (§4)
+- **Steps:** exercise `NsProviderRegistry::match()` with
+  `ns1.googledomains.com` (legacy Google Domains, not Cloud DNS),
+  `ns201.anycast.me`, `ns4.digitalocean.com` and `ns6.linode.com`.
+- **Expected:** all four return `null` (provider "Unknown") — the narrow
+  patterns (`ns-cloud-*` prefix, literal `ns200`/`dns200.anycast.me`,
+  `ns[1-3].digitalocean.com`, `ns[1-5].linode.com`) do not overmatch.
+- [ ] Pass
+
+### 5.5 `ti-world-cog` icon on every Domain Manager mention
+- **Steps:** open (a) a supplier's **Domain Manager** tab, (b) *Administration →
+  Profiles →* any profile's **Domain Manager** tab, (c) a domain form (panel
+  header card), (d) the supplier tab's "Domain Manager API access" card title.
+- **Expected:** all four show the Tabler *world-cog* icon — the two tabs render
+  it via the classes' `getIcon()` through `createTabEntry()`; the domain panel
+  header uses `ti ti-world-cog` (no longer `ti-world-www`); the supplier card
+  title carries the icon too.
+- [ ] Pass
+
 > Verification status: Phase 1 items were exercised on GLPI 11.0.8 via CLI on
 > 2026-07-17/18. Phase 2 items 2.2–2.6 (model level), 2.9, 2.10 and 2.11 were
 > exercised by a scripted run on GLPI 11.0.8 on 2026-07-18 (27/27 checks passed);
@@ -376,3 +432,8 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
 >   `CronTask::log`/`addVolume` all match core usage); the scripted failure is
 >   attributed to invoking `cronDomainSync()` with a hand-built CronTask. Verify
 >   manually through `front/cron.php` as the item describes.
+> Phase 5: registry matching semantics (5.1, 5.4, plus the amended 2.10/2.11
+> expectations) were verified on 2026-07-19 by a standalone PHP simulation of
+> `NsProviderRegistry::match()` against the real JSON (21/21 host cases, incl.
+> false-positive guards) and `php -l` on the icon-touched classes; no container
+> run — 5.2, 5.3 and 5.5 need a manual pass on a live instance.

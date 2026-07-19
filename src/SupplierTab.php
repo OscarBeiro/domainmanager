@@ -52,6 +52,14 @@ class SupplierTab extends CommonGLPI
     /**
      * {@inheritDoc}
      */
+    public static function getIcon()
+    {
+        return 'ti ti-world-cog';
+    }
+
+    /**
+     * {@inheritDoc}
+     */
     public function getTabNameForItem(CommonGLPI $item, $withtemplate = 0): string|array
     {
         if (

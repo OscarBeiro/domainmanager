@@ -65,6 +65,14 @@ class DomainState extends CommonDBTM
     }
 
     /**
+     * {@inheritDoc}
+     */
+    public static function getIcon()
+    {
+        return 'ti ti-world-cog';
+    }
+
+    /**
      * Get the state row of a domain
      *
      * @param  int $domains_id

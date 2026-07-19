@@ -59,6 +59,14 @@ class ImportLock extends CommonDBTM
     }
 
     /**
+     * {@inheritDoc}
+     */
+    public static function getIcon()
+    {
+        return 'ti ti-world-cog';
+    }
+
+    /**
      * Locked fields of an item
      * (named to avoid clashing with non-static CommonDBTM::getLockedFields())
      *

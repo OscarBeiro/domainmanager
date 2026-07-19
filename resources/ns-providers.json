@@ -34,6 +34,74 @@
             ],
             "driver": "dinahosting",
             "source": "https://dinahosting.com/ayuda/cuales-son-los-dns-de-dinahosting/ (ns.dinahosting.com, ns2-ns4.dinahosting.com)"
+        },
+        {
+            "name": "AWS Route 53",
+            "patterns": [
+                "ns-*.awsdns-*.com",
+                "ns-*.awsdns-*.net",
+                "ns-*.awsdns-*.org",
+                "ns-*.awsdns-*.co.uk"
+            ],
+            "source": "https://docs.aws.amazon.com/Route53/latest/APIReference/API_GetHostedZone.html (delegation sets are 4 servers ns-<n>.awsdns-<nn>.{com,net,org,co.uk}, e.g. ns-2048.awsdns-64.com)"
+        },
+        {
+            "name": "Google Cloud DNS",
+            "patterns": [
+                "ns-cloud-*.googledomains.com"
+            ],
+            "source": "https://cloud.google.com/dns/docs/update-name-servers (ns-cloud-<shard><1-4>.googledomains.com, e.g. ns-cloud-a1.googledomains.com; keep the ns-cloud- prefix — ns1-ns4.googledomains.com is legacy Google Domains, not Cloud DNS)"
+        },
+        {
+            "name": "Azure DNS",
+            "patterns": [
+                "ns*.azure-dns.com",
+                "ns*.azure-dns.net",
+                "ns*.azure-dns.org",
+                "ns*.azure-dns.info"
+            ],
+            "source": "https://learn.microsoft.com/en-us/azure/dns/dns-delegate-domain-azure-dns (zones get ns1-<nn>.azure-dns.com, ns2-<nn>.azure-dns.net, ns3-<nn>.azure-dns.org, ns4-<nn>.azure-dns.info)"
+        },
+        {
+            "name": "GoDaddy",
+            "patterns": [
+                "ns*.domaincontrol.com"
+            ],
+            "source": "https://www.godaddy.com/resources/skills/how-to-check-dns-and-diagnose-common-issues (GoDaddy nameservers use domaincontrol.com; assigned in pairs ns<odd>/ns<even>.domaincontrol.com — no exhaustive official list published)"
+        },
+        {
+            "name": "OVHcloud",
+            "patterns": [
+                "ns*.ovh.net",
+                "dns*.ovh.net",
+                "ns*.ovh.ca",
+                "dns*.ovh.ca",
+                "ns200.anycast.me",
+                "dns200.anycast.me"
+            ],
+            "source": "https://docs.ovhcloud.com/en/guides/web-cloud/domains/dns-server-edit (paired ns<nn>/dns<nn>.ovh.net, .ovh.ca for Canada, ns200/dns200.anycast.me for Anycast); https://docs.ovhcloud.com/en/guides/web-cloud/domains/dns-ips-update (full dns1-dns113/ns1-ns113.ovh.net list incl. legacy digitless ns/dns.ovh.net)"
+        },
+        {
+            "name": "DigitalOcean",
+            "patterns": [
+                "ns[1-3].digitalocean.com"
+            ],
+            "source": "https://docs.digitalocean.com/products/networking/dns/getting-started/dns-registrars/ (exactly ns1/ns2/ns3.digitalocean.com)"
+        },
+        {
+            "name": "Linode (Akamai)",
+            "patterns": [
+                "ns[1-5].linode.com"
+            ],
+            "source": "https://techdocs.akamai.com/cloud-computing/docs/configure-your-domains-authoritative-name-servers (exactly ns1-ns5.linode.com, auto-created and immutable)"
+        },
+        {
+            "name": "Vercel",
+            "patterns": [
+                "ns1.vercel-dns.com",
+                "ns2.vercel-dns.com"
+            ],
+            "source": "https://vercel.com/docs/domains/working-with-nameservers (exactly ns1/ns2.vercel-dns.com)"
         }
     ]
 }

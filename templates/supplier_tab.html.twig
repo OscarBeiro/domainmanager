@@ -29,7 +29,10 @@
 
 <div class="card m-2" style="max-width: 40rem;">
     <div class="card-header">
-        <h3 class="card-title">{{ __('Domain Manager API access', 'domainmanager') }}</h3>
+        <h3 class="card-title">
+            <i class="ti ti-world-cog me-1"></i>
+            {{ __('Domain Manager API access', 'domainmanager') }}
+        </h3>
     </div>
 
     {% if can_edit %}

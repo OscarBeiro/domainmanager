@@ -10,7 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Registrar supplier changes on an existing domain were lost when no other field was modified: persistence moved from the `item_update` hook (which core skips when no `glpi_domains` column changed) to `pre_item_update`.
 - The domain panel now builds the "Update Now" URL from the named Symfony route (Twig `path()`) instead of the deprecated `Plugin::getWebDir()`, which logged a deprecation on every form render and produced a wrong base path on marketplace installs.
 
+### Changed
+- Every Domain Manager mention now carries the Tabler *world-cog* icon: `getIcon()` (`ti ti-world-cog`) added to the Supplier tab, Profile tab and the four plugin itemtypes (picked up by `createTabEntry()`), the domain panel header switched from `ti-world-www`, and the supplier "Domain Manager API access" card title gained the icon.
+
 ### Added
+- Phase 5 (batch 1): eight detection-only providers appended to the NS registry — AWS Route 53, Google Cloud DNS, Azure DNS, GoDaddy, OVHcloud, DigitalOcean, Linode (Akamai), Vercel — each with narrow nameserver patterns and the official vendor documentation URL as source; matched domains render the "not currently supported" warning with the contribution link.
 - Phase 4: Domain form panel (`post_item_form`): Registrar supplier dropdown persisted to the plugin state table, detected DNS provider display, status card with per-pipeline badges and messages, unsupported/unknown provider warning with contribution link, and cosmetic lock JS disabling synced fields for users without the unlock right.
 - Phase 4: "Update Now" — `POST /plugins/domainmanager/sync/{id}` Symfony controller (domain UPDATE + entity-aware check, core CSRF enforcement) running the sync synchronously and refreshing the panel badges in place.
 - Phase 4: `DomainSync` automatic action now loops active, non-deleted, non-template domains (least-recently-synced first, batch size from the task parameter) with per-domain error isolation.

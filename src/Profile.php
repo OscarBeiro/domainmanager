@@ -62,6 +62,14 @@ class Profile extends CoreProfile
     /**
      * {@inheritDoc}
      */
+    public static function getIcon()
+    {
+        return 'ti ti-world-cog';
+    }
+
+    /**
+     * {@inheritDoc}
+     */
     public function getTabNameForItem(CommonGLPI $item, $withtemplate = 0): string|array
     {
         switch ($item::getType()) {

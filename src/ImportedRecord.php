@@ -59,6 +59,14 @@ class ImportedRecord extends CommonDBTM
     }
 
     /**
+     * {@inheritDoc}
+     */
+    public static function getIcon()
+    {
+        return 'ti ti-world-cog';
+    }
+
+    /**
      * Get the ownership row of a native domain record
      *
      * @param  int $domainrecords_id

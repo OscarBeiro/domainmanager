@@ -51,6 +51,14 @@ class SupplierConfig extends CommonDBTM
         return __('Domain Manager supplier configuration', 'domainmanager');
     }
 
+    /**
+     * {@inheritDoc}
+     */
+    public static function getIcon()
+    {
+        return 'ti ti-world-cog';
+    }
+
     public static function canView(): bool
     {
         return Session::haveRight(self::$rightname, READ);
