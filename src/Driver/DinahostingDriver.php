@@ -31,8 +31,10 @@
 
 namespace GlpiPlugin\Domainmanager\Driver;
 
+use GlpiPlugin\Domainmanager\Contract\ConnectionTestableInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsPipelineInterface;
 use GlpiPlugin\Domainmanager\Contract\RegistrarDriverInterface;
+use GlpiPlugin\Domainmanager\Dto\ConnectionTestResult;
 use GlpiPlugin\Domainmanager\Dto\DomainLifecycle;
 use GlpiPlugin\Domainmanager\Exception\NotImplementedException;
 
@@ -41,7 +43,7 @@ use GlpiPlugin\Domainmanager\Exception\NotImplementedException;
  * Credentials: ['user' => <username>, 'password' => <password>]
  * API docs: https://es.dinahosting.com/api
  */
-class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterface
+class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterface, ConnectionTestableInterface
 {
     /**
      * @param array<string, string> $credentials
@@ -69,9 +71,14 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
     /**
      * {@inheritDoc}
      */
-    public function testConnection(): void
+    public function testConnection(array $credentials): array
     {
-        throw $this->notImplemented();
+        $message = __('Not yet implemented for this driver', 'domainmanager');
+
+        return [
+            'registrar' => ConnectionTestResult::notImplemented('registrar', $message),
+            'dns'       => ConnectionTestResult::notImplemented('dns', $message),
+        ];
     }
 
     /**

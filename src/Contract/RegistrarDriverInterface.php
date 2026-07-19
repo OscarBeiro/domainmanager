@@ -47,12 +47,4 @@ interface RegistrarDriverInterface
      * @throws DriverException on any failure (message safe to persist)
      */
     public function fetchLifecycle(string $domain): DomainLifecycle;
-
-    /**
-     * Validate the configured credentials against the API
-     *
-     * @return void
-     * @throws DriverException when the credentials are unusable
-     */
-    public function testConnection(): void;
 }

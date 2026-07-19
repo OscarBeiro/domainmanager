@@ -83,16 +83,18 @@ class DriverFactory
     }
 
     /**
-     * @param  SupplierConfig $config
+     * Build a driver instance directly from a driver key + credential array,
+     * without going through a persisted SupplierConfig (§3.5 — used by
+     * ConnectionTestController to test unsaved/live form values).
+     *
+     * @param  string $driverKey
+     * @param  array  $credentials
      * @return object
-     * @throws DriverException
+     * @throws DriverException when the driver is 'none'/unknown
      */
-    private static function build(SupplierConfig $config): object
+    public static function createDriver(string $driverKey, array $credentials): object
     {
-        $driver_key  = (string) ($config->fields['api_driver'] ?? DriverRegistry::DRIVER_NONE);
-        $credentials = $config->getDecryptedCredentials();
-
-        return match ($driver_key) {
+        return match ($driverKey) {
             DriverRegistry::DRIVER_CLOUDFLARE  => new CloudflareDriver($credentials),
             DriverRegistry::DRIVER_IONOS       => new IonosDriver($credentials),
             DriverRegistry::DRIVER_DINAHOSTING => new DinahostingDriver($credentials),
@@ -100,5 +102,17 @@ class DriverFactory
                 __('No API driver configured for this supplier', 'domainmanager')
             ),
         };
+    }
+
+    /**
+     * @param  SupplierConfig $config
+     * @return object
+     * @throws DriverException
+     */
+    private static function build(SupplierConfig $config): object
+    {
+        $driver_key = (string) ($config->fields['api_driver'] ?? DriverRegistry::DRIVER_NONE);
+
+        return self::createDriver($driver_key, $config->getDecryptedCredentials());
     }
 }

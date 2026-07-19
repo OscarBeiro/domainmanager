@@ -411,6 +411,182 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
   title carries the icon too.
 - [ ] Pass
 
+> The "Test credentials" flat feature originally sketched here (5.6–5.8,
+> stored-credentials-only, single `SupplierConfigTestController`) never
+> shipped and has been replaced before release by the richer per-capability
+> "Check Connection" diagnostics — see **Phase 3.5** below.
+
+---
+
+## Phase 3.5 — Connection diagnostics (§3.5, §3.6)
+
+### 3.5.1 Happy path — Cloudflare DNS capability (§3.5.1, §6.1)
+- **Steps:** on a supplier with driver *Cloudflare* and a **valid** API token
+  saved, click **Check Connection** on the Domain Manager tab.
+- **Expected:** a green `glpi_toast_success` toast captioned "DNS connection"
+  appears; the detail panel's DNS badge turns green ("Success"), shows HTTP
+  200 and an updated "Last checked" timestamp. No Registrar badge is shown or
+  attempted (Cloudflare only reports the `dns` capability, §3.5.1).
+- [ ] Pass
+
+### 3.5.2 Auth failure persists the error (§3.5.2, §2)
+- **Steps:** edit the Cloudflare token field to an invalid value (do **not**
+  save) and click **Check Connection**.
+- **Expected:** a red `glpi_toast_error` toast with the auth-failed message;
+  the DNS badge turns red with HTTP 401 and the message "Authentication
+  failed — the API token or credentials were rejected."; since this supplier
+  already has a saved `supplierconfigs` row, the result (status
+  `auth_failed`, http code 401, message, timestamp) is persisted to
+  `dns_test_*` columns — reload the page and confirm the panel still shows it
+  without re-testing.
+- [ ] Pass
+
+### 3.5.3 Stub drivers report both capabilities as not-implemented (§3.5.1)
+- **Steps:** select driver *IONOS* (or *Dinahosting*), fill in any credential
+  values, click **Check Connection**.
+- **Expected:** two red toasts/badges ("Registrar connection" and "DNS
+  connection"), both showing "Not yet implemented for this driver" — status
+  `unknown_error`, no HTTP code, badge color `text-bg-danger` (an
+  not-implemented driver is a real error state, not "never tested").
+- [ ] Pass
+
+### 3.5.4 Unsaved credentials are tested but never persisted (§3.5.3)
+- **Steps:** (a) on an **existing saved** supplier config, edit a credential
+  field without saving, click Check Connection. (b) On a **brand-new
+  supplier** with no `supplierconfigs` row yet, pick a driver, fill in
+  credentials, click Check Connection without ever saving first.
+- **Expected:** (a) tests the new unsaved value (not the previously-saved
+  one) and **does** persist the result to the existing row (`SupplierConfig`
+  row already exists). (b) tests and shows the result in the toast/panel but
+  **does not create** a `supplierconfigs` row — confirm via
+  `SELECT * FROM glpi_plugin_domainmanager_supplierconfigs WHERE
+  suppliers_id = <id>` returning no row after the test.
+- [ ] Pass
+
+### 3.5.5 Empty secret field falls back to the stored value (§6.1)
+- **Steps:** on a supplier with a saved Cloudflare token, clear the token
+  field (leave it empty, same driver selected) and click Check Connection.
+- **Expected:** the test runs against the **still-stored** token (mirrors the
+  save form's "empty submit keeps the stored secret" semantics) rather than
+  failing on an empty credential.
+- [ ] Pass
+
+### 3.5.6 Rights and CSRF on the endpoint (§8)
+- **Steps:** hide check: confirm the **Check Connection** button is absent
+  for a user without supplier UPDATE on that supplier. Then hand-craft a POST
+  to `/plugins/domainmanager/connectiontest/<id>` without supplier UPDATE
+  (403 expected), for a nonexistent supplier id (404 expected), and without
+  the `X-Glpi-Csrf-Token` header (rejected by core).
+- [ ] Pass
+
+### 3.5.7 Two-file consolidated logging (§3.6, §0.8)
+- **Steps:** run one connection test that succeeds and one that fails, then
+  open **Setup → Logs**.
+- **Expected:** both `domainmanager.log` and `domainmanager-errors.log`
+  appear in the list with no extra registration step; `domainmanager.log` has
+  exactly one line per capability tested regardless of outcome (supplier id,
+  capability, status, http code, duration); `domainmanager-errors.log` has an
+  additional line, with technical detail, only for the failing capability —
+  the detail contains no raw secret value even if the underlying exception
+  message happened to include the word "token"/"secret" (redaction, §3.6).
+- [ ] Pass
+
+### 3.5.8 `rawDetail` never reaches the browser (§3.5.2)
+- **Steps:** trigger an auth failure (3.5.2) and inspect the network
+  response body (`/connectiontest/<id>`) and the rendered HTML/DOM.
+- **Expected:** only `status`, `capability`, `http_status_code`,
+  `user_message`, `checked_at` are present (`ConnectionTestResult::toArray()`
+  shape) — `rawDetail` never appears anywhere client-side.
+- [ ] Pass
+
+### 3.5.9 Plugin log files appear even when `use_log_in_files` is unset (§0.9, §3.6)
+- **Steps:** on an instance where Setup → General → System does not have
+  logging-to-files explicitly enabled (the stock default), run any connection
+  test, then open **Setup → Logs**.
+- **Expected:** `domainmanager.log` (and `domainmanager-errors.log` on a
+  failing test) appear and contain the expected lines — `PluginLogger` forces
+  the write (`Toolbox::logInFile(..., true)`) regardless of that core setting.
+- [ ] Pass
+
+### 3.5.10 A persistence failure never breaks the response (§3.5.3, `ConnectionTestController`)
+- **Steps:** simulate `SupplierConfig::recordConnectionTestResults()` throwing
+  (e.g. temporarily rename one of the `*_test_*` columns, or otherwise force a
+  DB error) and run a connection test against an already-saved supplier
+  config.
+- **Expected:** the toast and detail panel still show the real pass/fail
+  result for each capability (the JSON response is unaffected); a line
+  documenting the persistence failure appears in `domainmanager-errors.log`;
+  the endpoint still returns HTTP 200 with `ok: true`.
+- [ ] Pass
+
+### 3.5.11 Failed requests surface HTTP status + detail instead of a bare message (§3.5.6)
+- **Steps:** force a few failure modes against `/connectiontest/<id>` — an
+  unknown supplier id (404), a user without supplier UPDATE (403), and (if
+  reproducible) a 500 from an uncaught exception — each via the Check
+  Connection button.
+- **Expected:** the error toast reads `"Connection test request failed: HTTP
+  <code>: <message>"` (or, for a non-JSON body, `"HTTP <code> - <truncated
+  body>"`) instead of a bare, uninformative string; the same detail is visible
+  in the browser console (`console.error`).
+- [ ] Pass
+
+## Phase 3.7 — Audit trail via native History (§3.7)
+
+### 3.7.1 Saving a new driver + credentials logs to the Supplier's Historical tab
+- **Steps:** on a supplier with no prior Domain Manager configuration, select
+  a driver (e.g. Cloudflare) and fill in its credential field(s), Save, then
+  open that Supplier's own **Historical** tab.
+- **Expected:** one entry `"[Domain Manager] API driver set to Cloudflare"`
+  and one `"[Domain Manager] API Token set"` (or the equivalent per-field
+  lines for a multi-field driver) — never containing the actual token/secret
+  value.
+- [ ] Pass
+
+### 3.7.2 Updating a single credential field logs only that field
+- **Steps:** on an already-configured supplier (same driver), change only one
+  credential field (e.g. just the secret, leaving other fields as their
+  "saved" placeholder) and Save.
+- **Expected:** exactly one new Historical line, `"[Domain Manager] <Field
+  label> updated"`, for the changed field only — no lines for the untouched
+  fields, no driver-change line.
+- [ ] Pass
+
+### 3.7.3 Clearing a secret field logs "cleared"
+- **Steps:** on an already-configured supplier, submit the form with a
+  previously-saved secret field now empty (same driver).
+- **Expected:** `"[Domain Manager] <Field label> cleared"` in the Historical
+  tab; the field is actually removed from the stored encrypted payload (not
+  just cosmetically).
+- [ ] Pass
+
+### 3.7.4 Switching driver logs the driver change + new fields only
+- **Steps:** on a supplier configured with one driver (e.g. Dinahosting),
+  switch the driver select to a different one (e.g. Cloudflare), fill its
+  field(s), Save.
+- **Expected:** `"[Domain Manager] API driver changed from Dinahosting to
+  Cloudflare"` plus one `"<Field> set"` line per newly-populated field of the
+  new driver — no spurious "cleared"/"updated" lines referencing the old
+  driver's now-irrelevant fields (user/password).
+- [ ] Pass
+
+### 3.7.5 Purging a SupplierConfig row logs removal
+- **Steps:** delete/purge a supplier's Domain Manager configuration (via the
+  right-holder unlock path or direct DB-admin action), then check the
+  Supplier's Historical tab.
+- **Expected:** `"[Domain Manager] API configuration removed (was <driver
+  label>)"`.
+- [ ] Pass
+
+### 3.7.6 Registrar supplier assignment logs to the Domain's Historical tab
+- **Steps:** on a Domain, set the Registrar dropdown to a supplier, Save;
+  then change it to a different supplier, Save; then clear it, Save. Check
+  the Domain's own **Historical** tab after each save.
+- **Expected:** three distinct entries — `"[Domain Manager] Registrar
+  supplier set to X"`, `"...changed from X to Y"`, `"...cleared"` — logged
+  only on saves where the value actually changed (a no-op save produces no
+  new entry).
+- [ ] Pass
+
 > Verification status: Phase 1 items were exercised on GLPI 11.0.8 via CLI on
 > 2026-07-17/18. Phase 2 items 2.2–2.6 (model level), 2.9, 2.10 and 2.11 were
 > exercised by a scripted run on GLPI 11.0.8 on 2026-07-18 (27/27 checks passed);
@@ -447,3 +623,27 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
 > the profile UI does not expose as READ): supplier-tab gating was realigned to
 > native supplier rights (READ to see, entity-aware UPDATE to save) — re-run the
 > amended 2.1 and 2.8.
+> The "Test credentials" button (5.6–5.8) was added 2026-07-19: `php -l` clean,
+> route/CSRF/rights pattern mirrors the verified SyncController; needs a manual
+> pass on a live instance (5.6 requires a real Cloudflare token).
+> Phase 3.5 (connection diagnostics, 3.5.1–3.5.8) replaced the above button
+> 2026-07-19 before it ever shipped: `php -l` clean on every new/touched file;
+> `front/logs.php`'s generic `*.log` enumeration and the `glpi_toast_*` JS API
+> were verified directly against the `11.0/bugfixes` source (§0.8) rather than
+> assumed. No container run yet — all 3.5.x items need a manual pass on a live
+> instance (3.5.1/3.5.2/3.5.5 require a real Cloudflare token).
+> A live manual pass on 2026-07-19 surfaced two real bugs, fixed same day
+> (3.5.9, 3.5.10): `Toolbox::logInFile()` silently no-ops unless
+> `$CFG_GLPI['use_log_in_files']` is set or `$force=true` is passed (verified
+> against `src/Toolbox.php` on `11.0/bugfixes` — not present in this repo's
+> default config, so every log call was previously a silent no-op);
+> `PluginLogger` now forces both writes. A persistence failure in
+> `recordConnectionTestResults()` could also break the whole HTTP response
+> with no client-side detail; the call is now try/caught and the client-side
+> fetch handling (3.5.11) rewritten to always surface HTTP status + body
+> detail instead of a bare generic message. Phase 3.7 (audit trail, 3.7.1–3.7.6)
+> is new — `SupplierConfig`/`HookHandler` now call `Log::history()`, verified
+> against real `CommonDBTM::post_addItem()`/`post_updateItem()`/
+> `post_purgeItem()` and `Dropdown::getDropdownName()` signatures on
+> `11.0/bugfixes`. `php -l` clean on all touched files; no container run yet —
+> all of 3.5.9–3.5.11 and 3.7.1–3.7.6 need a manual pass on a live instance.

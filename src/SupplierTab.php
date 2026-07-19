@@ -113,16 +113,29 @@ class SupplierTab extends CommonGLPI
             }
         }
 
+        $connection_test = $config !== null
+            ? $config->getConnectionTestSummary()
+            : [
+                'registrar' => ['status' => 'never', 'message' => '', 'http_code' => null, 'date' => null],
+                'dns'       => ['status' => 'never', 'message' => '', 'http_code' => null, 'date' => null],
+            ];
+
         TemplateRenderer::getInstance()->display('@domainmanager/supplier_tab.html.twig', [
-            'suppliers_id'      => (int) $supplier->getID(),
-            'config_id'         => $config !== null ? (int) $config->getID() : 0,
-            'form_url'          => SupplierConfig::getFormURL(),
-            'can_edit'          => $supplier->can((int) $supplier->getID(), UPDATE),
-            'current_driver'    => $current_driver,
-            'driver_labels'     => DriverRegistry::getDriverLabels(),
-            'credential_fields' => DriverRegistry::getAllCredentialFields(),
-            'saved'             => $saved,
-            'values'            => $values,
+            'suppliers_id'         => (int) $supplier->getID(),
+            'config_id'            => $config !== null ? (int) $config->getID() : 0,
+            'form_url'             => SupplierConfig::getFormURL(),
+            'can_edit'             => $supplier->can((int) $supplier->getID(), UPDATE),
+            'current_driver'       => $current_driver,
+            'driver_labels'        => DriverRegistry::getDriverLabels(),
+            'credential_fields'    => DriverRegistry::getAllCredentialFields(),
+            'saved'                => $saved,
+            'values'               => $values,
+            'connection_test'      => $connection_test,
+            'testable_capabilities' => DriverRegistry::getTestableCapabilities($current_driver),
+            'all_testable_capabilities' => array_combine(
+                DriverRegistry::getAvailableDrivers(),
+                array_map([DriverRegistry::class, 'getTestableCapabilities'], DriverRegistry::getAvailableDrivers())
+            ),
         ]);
 
         return true;

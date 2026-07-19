@@ -29,39 +29,25 @@
  * -------------------------------------------------------------------------
  */
 
-namespace GlpiPlugin\Domainmanager\Service;
+namespace GlpiPlugin\Domainmanager\Contract;
 
-use Domain;
-use Log;
+use GlpiPlugin\Domainmanager\Dto\ConnectionTestResult;
 
 /**
- * Sync milestones to the item history + the consolidated plugin log files
- * (never secrets or payloads in history; §3.6)
+ * On-demand connection diagnostics (§3.5), independent of the sync pipelines.
+ * One flat method per driver class (not one class per capability) since
+ * every concrete driver in this plugin already implements multiple pipeline
+ * interfaces in a single class; the result set reflects only the capabilities
+ * actually meaningful to test for that driver (e.g. Cloudflare reports only
+ * 'dns' — see CloudflareDriver).
  */
-class SyncLogger
+interface ConnectionTestableInterface
 {
     /**
-     * Milestone visible in the domain Historical tab, also mirrored to the
-     * activity log (domainmanager.log) for a consolidated file-based trail
-     *
-     * @param  int    $domains_id
-     * @param  string $message
-     * @return void
+     * @param  array<string, string> $credentials Credential payload to test
+     *         (may be unsaved/live form values, not necessarily persisted)
+     * @return array<string, ConnectionTestResult> keyed by capability
+     *         ('registrar' and/or 'dns')
      */
-    public function milestone(int $domains_id, string $message): void
-    {
-        Log::history($domains_id, Domain::class, [0, '', '[Domain Manager] ' . $message]);
-        PluginLogger::activity('Domain #' . $domains_id . ': ' . $message);
-    }
-
-    /**
-     * Technical detail of a sync failure, to domainmanager-errors.log
-     *
-     * @param  string $message
-     * @return void
-     */
-    public function detail(string $message): void
-    {
-        PluginLogger::error($message);
-    }
+    public function testConnection(array $credentials): array;
 }

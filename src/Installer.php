@@ -60,6 +60,7 @@ class Installer
     public static function install(Migration $migration): bool
     {
         self::createTables($migration);
+        self::addConnectionTestColumns($migration);
         self::seedDomainType();
         self::seedRecordTypes();
         self::registerRights($migration);
@@ -198,6 +199,27 @@ class Installer
                 $migration->displayMessage("Creating $table");
                 $DB->doQuery($create);
             }
+        }
+    }
+
+    /**
+     * Add the per-capability connection-test result columns to
+     * supplierconfigs (§3.5), idempotent via Migration::addField()
+     * (not the raw-CREATE-TABLE path used for initial creation, §0.6 does
+     * not apply to post-creation schema changes)
+     *
+     * @param  Migration $migration
+     * @return void
+     */
+    private static function addConnectionTestColumns(Migration $migration): void
+    {
+        $table = 'glpi_plugin_domainmanager_supplierconfigs';
+
+        foreach (['registrar', 'dns'] as $prefix) {
+            $migration->addField($table, "{$prefix}_test_status", 'string', ['value' => null]);
+            $migration->addField($table, "{$prefix}_test_message", 'text', ['value' => null]);
+            $migration->addField($table, "{$prefix}_test_http_code", 'INT NULL DEFAULT NULL');
+            $migration->addField($table, "{$prefix}_test_date", 'datetime', ['value' => null]);
         }
     }
 

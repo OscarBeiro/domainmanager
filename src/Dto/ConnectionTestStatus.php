@@ -29,39 +29,20 @@
  * -------------------------------------------------------------------------
  */
 
-namespace GlpiPlugin\Domainmanager\Service;
-
-use Domain;
-use Log;
+namespace GlpiPlugin\Domainmanager\Dto;
 
 /**
- * Sync milestones to the item history + the consolidated plugin log files
- * (never secrets or payloads in history; §3.6)
+ * Outcome of a single connection-test attempt against a provider API (§3.5)
  */
-class SyncLogger
+enum ConnectionTestStatus: string
 {
-    /**
-     * Milestone visible in the domain Historical tab, also mirrored to the
-     * activity log (domainmanager.log) for a consolidated file-based trail
-     *
-     * @param  int    $domains_id
-     * @param  string $message
-     * @return void
-     */
-    public function milestone(int $domains_id, string $message): void
-    {
-        Log::history($domains_id, Domain::class, [0, '', '[Domain Manager] ' . $message]);
-        PluginLogger::activity('Domain #' . $domains_id . ': ' . $message);
-    }
-
-    /**
-     * Technical detail of a sync failure, to domainmanager-errors.log
-     *
-     * @param  string $message
-     * @return void
-     */
-    public function detail(string $message): void
-    {
-        PluginLogger::error($message);
-    }
+    case Success       = 'success';
+    case AuthFailed    = 'auth_failed';
+    case Forbidden     = 'forbidden';
+    case NotFound      = 'not_found';
+    case RateLimited   = 'rate_limited';
+    case UpstreamError = 'upstream_error';
+    case NetworkError  = 'network_error';
+    case Timeout       = 'timeout';
+    case UnknownError  = 'unknown_error';
 }

@@ -54,6 +54,13 @@ Verified in `src/Lockedfield.php` + `src/CommonDBTM.php` (`cleanLockeds()`, `man
 ### 0.7 Template reconciliation
 The repo contains TICGAL's plugin scaffold (placeholder `0GLPIxx` names, classic `inc/` style, `tools/rename_plugin.sh`). It is a *scaffold to be specialised*, not an existing plugin, and the brief mandates the modern layout, so: **keep** the tooling/CI/i18n/license infrastructure (`tools/`, `.github/`, `.php-cs-fixer.php`, `phpstan.neon`, `.phpcs.xml`, `locales/`, `LICENSE`, `CHANGELOG.md`); **replace** `inc/`, `front/`, `ajax/`, `setup_template.php` with `src/` + Symfony controller equivalents (the Profile-tab rights matrix pattern from `inc/profile.class.php` is retained, re-homed to `src/Profile.php`). Template CI metadata pinned to GLPI 10.0–11.0 will be bumped to 11.0-only.
 
+### 0.8 Connection-diagnostics prerequisites verified on `11.0/bugfixes` (Phase 3.5)
+- **Native JS toast API exists as assumed:** `glpi_toast_success(message, caption?, options?)` / `glpi_toast_error(...)` / `glpi_toast_warning(...)` / `glpi_toast_info(...)` are global functions defined in `js/glpi_dialog.js` (used bare, no import, elsewhere in core e.g. `js/common.js`). They build and show a Bootstrap `toast` client-side, independent of any page load. This is what the Check Connection button uses — the older `templates/components/messages_after_redirect_toasts.html.twig` mechanism (`pull_messages()` + `Session::addMessageAfterRedirect`) is for **full-page-load flash messages** and is not used by this AJAX flow.
+- **`front/logs.php`'s Setup → Logs viewer enumerates `GLPI_LOG_DIR` generically, no allow-list:** it delegates to `Glpi\System\Log\LogViewer` → `Glpi\System\Log\LogParser::getLogsFilesList()`, which does `scandir($this->directory)` filtered by the regex `/^(.+)\.log$/` — any file ending in `.log` in `GLPI_LOG_DIR` is picked up automatically. `Toolbox::logInFile($name, $text)` writes to `GLPI_LOG_DIR/{$name}.log` (it appends `.log` itself). Consequence: `Toolbox::logInFile('domainmanager', …)` / `Toolbox::logInFile('domainmanager-errors', …)` produce `domainmanager.log` / `domainmanager-errors.log`, which show up in Setup → Logs with **no plugin-side registration or hook needed** — the brief's caution about a possible allow-list does not hold on this branch.
+
+### 0.9 `Toolbox::logInFile()` is a silent no-op unless forced (found during live testing 2026-07-19)
+Verified in `src/Toolbox.php` on `11.0/bugfixes`: `logInFile($name, $text, $force = false, $output = true)` only actually writes when `$CFG_GLPI['use_log_in_files']` is truthy **or** `$force` is passed as `true`. `use_log_in_files` is not present anywhere in `install/mysql/glpi-empty.sql` or `src/Config.php`'s defaults — on a stock install it's unset, so every call without `$force = true` silently does nothing (no error, no exception, `domainmanager.log`/`domainmanager-errors.log` simply never get created). **Adjustment:** `PluginLogger::activity()`/`PluginLogger::error()` (§3.6) now always pass `true` as the third argument — a plugin's own diagnostic log files must not depend on an obscure, off-by-default core toggle the admin isn't expected to know about or enable.
+
 ---
 
 ## 1. File tree (all files NEW unless marked otherwise)
@@ -96,10 +103,13 @@ domainmanager/
 │   ├── Cron.php                         NEW  cronInfo() + cronDomainSync(CronTask): batching loop
 │   ├── Contract/
 │   │   ├── RegistrarDriverInterface.php NEW  fetchLifecycle(string $domain): DomainLifecycle
-│   │   └── DnsPipelineInterface.php     NEW  fetchZoneRecords(string $domain): ZoneRecord[]
+│   │   ├── DnsPipelineInterface.php     NEW  fetchZoneRecords(string $domain): ZoneRecord[]
+│   │   └── ConnectionTestableInterface.php NEW  testConnection(array $credentials): array (§3.5)
 │   ├── Dto/
 │   │   ├── DomainLifecycle.php          NEW  value object: creation date, expiration date, status enum
-│   │   └── ZoneRecord.php               NEW  value object: type, name, data, ttl, remote id (sanitised)
+│   │   ├── ZoneRecord.php               NEW  value object: type, name, data, ttl, remote id (sanitised)
+│   │   ├── ConnectionTestResult.php     NEW  immutable connection-test outcome (§3.5)
+│   │   └── ConnectionTestStatus.php     NEW  backed enum (§3.5)
 │   ├── Driver/
 │   │   ├── CloudflareDriver.php         NEW  full implementation (both interfaces)
 │   │   ├── IonosDriver.php              NEW  stub, clearly-marked TODO (both interfaces)
@@ -108,14 +118,18 @@ domainmanager/
 │   │   ├── SyncEngine.php               NEW  orchestrates the split pipeline for one domain (§5)
 │   │   ├── NsResolver.php               NEW  dns_get_record(DNS_NS) wrapper (testable seam)
 │   │   ├── RecordReconciler.php         NEW  idempotent create/update/flag-removed into glpi_domainrecords
-│   │   └── SyncLogger.php               NEW  Log::history milestones + Toolbox::logInFile channel
+│   │   ├── SyncLogger.php               NEW  Log::history milestones + PluginLogger (§3.6)
+│   │   └── PluginLogger.php             NEW  domainmanager.log / domainmanager-errors.log (§3.6)
 │   └── Controller/
-│       └── SyncController.php           NEW  POST /plugins/domainmanager/sync/{domains_id} (§6)
+│       ├── SyncController.php           NEW  POST /plugins/domainmanager/sync/{domains_id} (§6)
+│       └── ConnectionTestController.php NEW  POST /plugins/domainmanager/connectiontest/{suppliers_id} (§3.5, §6.1)
 │
 └── templates/
     ├── domain_panel.html.twig           NEW  status card + DNS provider row + Update Now + unsupported/
     │                                         unknown warning block (contribution link) + lock JS
-    └── supplier_tab.html.twig           NEW  driver select + per-driver credential fields + JS toggle
+    ├── supplier_tab.html.twig           NEW  two-column: driver/credentials form (left) + connection
+    │                                         diagnostics panel include (right), JS toggle + Check Connection
+    └── connection_test_panel.html.twig  NEW  per-capability status badge/message/http-code/date panel (§3.5)
 ```
 
 ---
@@ -129,7 +143,17 @@ domainmanager/
 | `suppliers_id` | int unsigned NOT NULL DEFAULT 0 | FK → glpi_suppliers, **UNIQUE** |
 | `api_driver` | varchar(50) NOT NULL DEFAULT 'none' | one of DriverRegistry values |
 | `api_credentials` | text | `GLPIKey`-encrypted JSON (per-driver shape, §6.1) |
+| `registrar_test_status` | varchar(255) NULL | `ConnectionTestStatus` value, NULL = never tested (§3.5) |
+| `registrar_test_message` | text NULL | last `ConnectionTestResult::$userMessage` (never `rawDetail`) |
+| `registrar_test_http_code` | int NULL | last HTTP status code, if any |
+| `registrar_test_date` | timestamp NULL | last `ConnectionTestResult::$checkedAt` |
+| `dns_test_status` | varchar(255) NULL | idem, DNS capability |
+| `dns_test_message` | text NULL | idem |
+| `dns_test_http_code` | int NULL | idem |
+| `dns_test_date` | timestamp NULL | idem |
 | `date_mod` / `date_creation` | timestamp NULL | GLPI convention |
+
+The 8 `*_test_*` columns are added post-creation via `Migration::addField()` (idempotent) in `Installer::addConnectionTestColumns()` — the §0.6 raw-`CREATE TABLE` exception applies only to *initial* table creation, not to this kind of incremental schema change. `*_test_status`/`*_test_message` use `Migration`'s `string`/`text` shorthands (nullable, no default); `*_test_http_code` uses the literal type string `'INT NULL DEFAULT NULL'` since `Migration::addField()`'s `integer` shorthand always hardcodes `NOT NULL` (no way to get a nullable int through the shorthand); `*_test_date` uses the `datetime` shorthand, which — like `date_mod`/`date_creation` elsewhere in this table — actually creates a `TIMESTAMP NULL DEFAULT NULL` column (GLPI's `Migration::fieldFormat()` maps `datetime`/`timestamp` to the same `TIMESTAMP` SQL type).
 
 Indexes: PK, `UNIQUE suppliers_id`, `KEY api_driver`, `KEY date_mod`, `KEY date_creation`.
 
@@ -188,7 +212,6 @@ Indexes: PK, `UNIQUE unicity(itemtype, items_id, field)`, `KEY items_id`.
 │ RegistrarDriverInterface     │        │ DnsPipelineInterface            │
 │ + fetchLifecycle(domain)     │        │ + fetchZoneRecords(domain)      │
 │     : DomainLifecycle        │        │     : ZoneRecord[]              │
-│ + testConnection(): void     │        │ + testConnection(): void        │
 └──────────────△──────────────┘        └───────────────△────────────────┘
                │  implements                            │  implements
      ┌─────────┴──────────────┬──────────────────┬─────┴────────┐
@@ -210,7 +233,54 @@ Drivers throw DriverException (message safe to persist; payload detail → logIn
 DomainLifecycle / ZoneRecord are immutable DTOs; all API values validated/sanitised at construction.
 ```
 
-`CloudflareDriver` implements **both** interfaces (Registrar API + DNS records API). IONOS/Dinahosting stubs declare both and throw a typed `NotImplementedException` with an i18n message ("driver not yet implemented").
+`CloudflareDriver` implements **both** interfaces (Registrar API + DNS records API). IONOS/Dinahosting stubs declare both and throw a typed `NotImplementedException` with an i18n message ("driver not yet implemented"). Credential validation (the old, now-removed flat `testConnection(): void` on each pipeline interface) is superseded by `ConnectionTestableInterface` (§3.5) — a separate, on-demand diagnostic concern, not part of the sync pipeline contracts.
+
+---
+
+## 3.5 Connection diagnostics (Phase 3.5)
+
+On-demand, synchronous verification of a supplier's credentials — independent of the daily sync cron and of the "Update Now" per-domain sync — so a user who just typed in an API token can get an immediate answer instead of waiting for the next scheduled sync (or a domain-form failure) to find out it was wrong.
+
+### 3.5.1 `ConnectionTestableInterface`
+```php
+interface ConnectionTestableInterface {
+    /** @return array<string, ConnectionTestResult> keyed by capability ('registrar'|'dns') */
+    public function testConnection(array $credentials): array;
+}
+```
+**Shape chosen:** a single flat method returning one `ConnectionTestResult` per capability, rather than one class/method per capability. Every concrete driver in this plugin is already **one class implementing multiple pipeline interfaces** (`CloudflareDriver` implements both `RegistrarDriverInterface` and `DnsPipelineInterface`; the stubs do too) — a per-capability method on the existing class fits that shape directly, no new per-capability driver classes needed. `$credentials` is passed explicitly (not read from the constructor-set property) so the same driver object can be constructed once by `DriverFactory::createDriver()` and tested against either the persisted, decrypted credentials or **unsaved live form values** — the latter is exactly what `ConnectionTestController` needs (§6.1).
+
+**Per-driver reported capabilities** (`DriverRegistry::getTestableCapabilities()`):
+- **`CloudflareDriver` → `['dns']` only.** Cloudflare's registrar API needs a specific domain name (`accounts/{id}/registrar/domains/{domain}`), which isn't known at credential-test time — there is no domain-independent registrar endpoint to probe. The DNS/zone capability, however, is verifiable independently via `user/tokens/verify` (the same call previously used by the old flat test), so only `'dns'` is reported even though the class also implements `RegistrarDriverInterface` for the real sync pipeline.
+- **`IonosDriver` / `DinahostingDriver` → `['registrar', 'dns']`**, each returning a `ConnectionTestResult` with status `unknown_error` and the message "Not yet implemented for this driver" (mirrors their existing `NotImplementedException` stubs).
+- **`none` → `[]`** (nothing to test; the Check Connection button isn't rendered).
+
+### 3.5.2 `ConnectionTestResult` DTO (`src/Dto/ConnectionTestResult.php`)
+Immutable: `status: ConnectionTestStatus`, `capability: string`, `httpStatusCode: ?int`, `userMessage: string` (safe to persist/display), `rawDetail: string` (log-only, **never** serialized — `toArray()` deliberately omits it), `checkedAt: DateTimeImmutable`. Built via static factories `fromHttpResponse()` (maps 2xx/401/403/404/429/5xx/other to the matching `ConnectionTestStatus`), `fromException()` (classifies network/timeout/unknown from the exception), and `notImplemented()` (stub drivers).
+
+`ConnectionTestStatus` (`src/Dto/ConnectionTestStatus.php`, backed string enum): `Success`, `AuthFailed`, `Forbidden`, `NotFound`, `RateLimited`, `UpstreamError`, `NetworkError`, `Timeout`, `UnknownError`.
+
+### 3.5.3 Persistence & the unsaved-credentials edge case
+`SupplierConfig::recordConnectionTestResults(array $resultsByCapability)` persists `status`/`message`/`http_code`/`date` into the 8 columns added in §2 — but only when `$this->getID() > 0`, i.e. **only for an already-saved supplier configuration**. When a user is testing credentials for a brand-new, not-yet-saved supplier config (`SupplierConfig::getForSupplier()` returns `null`), `ConnectionTestController` still runs the test and returns the results to the UI (toast + detail panel), but **does not create a row** just to store a test result — persistence requires an explicit Save first. `SupplierConfig::getConnectionTestSummary()` is the read side, defaulting both capabilities to `status = 'never'` when the row doesn't exist or a capability was never tested.
+
+---
+
+## 3.6 Logging — two consolidated log files (replaces the single `plugin_domainmanager` channel)
+Every plugin log call (sync engine, cron, NS registry, drivers, connection tests) goes through `src/Service/PluginLogger.php`, which writes to exactly two files via `Toolbox::logInFile()`:
+- **`domainmanager.log`** (`PluginLogger::activity()`) — full activity trail: one line per connection-test attempt (success or failure, with capability/status/HTTP code/duration) and per sync milestone (mirrors `SyncLogger::milestone()`'s `Log::history()` entry).
+- **`domainmanager-errors.log`** (`PluginLogger::error()`) — errors only: any non-`success` connection-test result, sync-leg failures (`SyncLogger::detail()`), driver HTTP/parsing failures, and NS-registry misconfiguration — each with the full technical detail (`rawDetail`/exception message), defensively redacted of anything that looks like a bearer token or `token=`/`secret=`/`password=`/`key=` fragment before being written (belt-and-suspenders; the primary control is that callers never pass raw secrets into these methods to begin with).
+
+Both files are automatically visible in **Setup → Logs** with no plugin-side registration step — verified fact, §0.8. Both writes are **forced** (`Toolbox::logInFile(..., true)`) so they aren't silently dropped on installs where `use_log_in_files` is unset — verified fact, §0.9.
+
+---
+
+## 3.7 Audit trail via native History (`glpi_logs`)
+
+Beyond the two plugin log files (§3.6, technical/file-based), user-facing configuration actions are also recorded through GLPI's native History mechanism (`Log::history()`, backing `glpi_logs` and the standard "Historical" CommonDBTM tab every admin already knows how to read) — added after live testing showed nothing was landing there.
+
+- **Supplier credential/driver changes** (`src/SupplierConfig.php`): `SupplierConfig` has no visible list/tab of its own (it's only ever shown inline on the Supplier's "Domain Manager" tab), so entries are attributed to the **owning `Supplier`** (`Log::history($suppliers_id, Supplier::class, …)`) — visible on that Supplier's own native Historical tab, the same pattern `SyncLogger` already uses to attribute sync outcomes to `Domain` rather than the internal state table. `prepareDriverAndCredentials()` diffs the old vs. new driver + decrypted credentials and queues one line per change (`"API driver set to X"` / `"API driver changed from X to Y"` / `"<Field label> set"` / `"<Field label> updated"` / `"<Field label> cleared"`); lines are flushed in `post_addItem()`/`post_updateItem()`. **Never logs a credential value, only the field's label** — the diff is computed from decrypted values in memory purely to detect *whether* something changed. `post_purgeItem()` logs a single "API configuration removed (was X)" line.
+- **Domain registrar-supplier assignment** (`src/HookHandler.php::persistRegistrar()`): logs to `Domain`'s own Historical tab (`Log::history($domains_id, Domain::class, …)`) only when the resolved `registrar_suppliers_id` actually changes — `"Registrar supplier set to %s"` / `"...changed from %s to %s"` / `"...cleared"`, using `Dropdown::getDropdownName(Supplier::getTable(), $id)` for the display name.
+- Deliberately **not** logged here (scope stayed to user-initiated configuration, not automated bookkeeping): per-sync `DomainState` upserts (already covered by `SyncLogger::milestone()` on `Domain`, §5), and `ImportedRecord`/`ImportLock` internal rows (no user-visible list/tab exists for either, so a native History entry there would never be seen).
 
 ---
 
@@ -280,7 +350,7 @@ SyncEngine::sync(Domain $domain)
    │             │          date_expiration, is_active) → Log::history changes
    │             │        → registrar_status = 'ok'
    │             └─ DriverException → registrar_status = 'error', message persisted,
-   │                                  payload → Toolbox::logInFile('plugin_domainmanager')
+   │                                  payload → PluginLogger::error() (domainmanager-errors.log, §3.6)
    │
    │ 4. DNS LEG (isolated try/catch — never aborts registrar results)
    │       └─ DnsPipelineInterface::fetchZoneRecords() (A, AAAA, NS, TXT, MX, CNAME only)
@@ -316,6 +386,8 @@ result object {registrar_status, dns_status, messages} → controller JSON / cro
 - dinahosting → Username + Password
 
 Save posts to the standard tab form path handled by `SupplierConfig` (CommonDBTM add/update); payload assembled to JSON and encrypted with `GLPIKey::encrypt()`. Existing secrets are never echoed back (placeholder "●●● saved"); empty submit keeps the stored secret. Access gated by supplier rights: tab visible with READ on the supplier, save with entity-aware UPDATE on it (§8).
+
+The tab is laid out in two columns: the credentials form (left) and an always-rendered **connection diagnostics panel** (right, `connection_test_panel.html.twig`, §3.5) showing, per capability the current driver supports, a color-coded status badge, the last message, HTTP code and checked-at timestamp — defaulting to a gray "Not tested yet" badge. A **"Check Connection"** button (shown whenever the selected driver isn't `none`, gated on the same entity-aware supplier UPDATE) POSTs the **current live form values** (driver + credential inputs, not necessarily saved) to `/plugins/domainmanager/connectiontest/{suppliers_id}` (`ConnectionTestController`, supplier UPDATE + core CSRF) — this lets a user verify a token before ever hitting Save. Empty secret fields fall back to the already-stored value for the same driver, mirroring the save form's "empty submit keeps the stored secret" semantics. The controller runs `DriverFactory::createDriver()` → `ConnectionTestableInterface::testConnection()`, fires one native GLPI toast per capability (`glpi_toast_success`/`_warning`/`_error`, §0.8) and refreshes the detail panel in place; results are persisted to the supplier's `supplierconfigs` row only if it already exists (§3.5.3). This supersedes the earlier flat, stored-credentials-only "Test credentials" button/`SupplierConfigTestController` design, which never shipped.
 
 ### 6.2 Domain form injection
 | Hook | Itemtype | Handler | Purpose |
@@ -366,6 +438,7 @@ Save posts to the standard tab form path handled by `SupplierConfig` (CommonDBTM
 | Trigger "Update Now" | native `domain` UPDATE (entity-aware `can()`) | `SyncController` |
 | Set the Registrar field on a Domain | native `domain` UPDATE | `HookHandler` (input persisted only if `can()`) |
 | Configure supplier credentials (tab visible with supplier READ, save with supplier UPDATE) | native supplier rights (`contact_enterprise`), entity-aware `can()` on the target supplier | `SupplierTab` + `SupplierConfig::can*`/`can*Item` (changed 2026-07-19 from `config` READ/UPDATE — the profile UI exposes no usable config READ, and supplier API access is part of managing the supplier) |
+| Test supplier credentials ("Check Connection" button) | native supplier UPDATE (entity-aware `can()`) | `ConnectionTestController` |
 | Edit/unlock sync-locked Domain fields | **`domainmanager:unlock_imported`** (single bit, value 1) | `LockEnforcer` (server-side, every entry point incl. massive actions & API since hooks fire on model update) |
 | Edit/delete/purge plugin-imported DomainRecords | **`domainmanager:unlock_imported`** (+ native `managed_domainrecordtypes` gate still applies, §0.4) | `LockEnforcer` |
 | Grant the plugin right | native `profile` UPDATE | `src/Profile.php` tab (`displayRightsChoiceMatrix` + `ProfileRight`) |
@@ -379,6 +452,7 @@ Right registered per-profile via `Migration::addRight` at install and manageable
 1. **Phase 1** — `setup.php`, `hook.php`, `Installer`, `Profile` right, cron shell: installs/uninstalls cleanly (UI + `bin/console glpi:plugin:install/uninstall`).
 2. **Phase 2** — itemtypes (`SupplierConfig`, `DomainState`, `ImportedRecord`, `ImportLock`), Supplier tab + encryption, `ns-providers.json` (3 supported providers, sourced) + `NsProviderRegistry`.
 3. **Phase 3** — contracts, DTOs, `DriverFactory`, `CloudflareDriver` (full), IONOS/Dinahosting stubs, `SyncEngine`, `RecordReconciler`, `LockEnforcer`, history/logging.
+3.5. **Phase 3.5** — on-demand connection diagnostics: `ConnectionTestableInterface`/`ConnectionTestResult`, `ConnectionTestController` ("Check Connection" against live form values), supplier-tab detail panel + native toasts, two-file consolidated logging (`domainmanager.log`/`domainmanager-errors.log`, §3.6).
 4. **Phase 4** — `DomainForm` injections, status card, `SyncController` + Update Now JS, cron batching loop.
 5. **Phase 5** — registry sweep of popular DNS providers (researched patterns + sources documented in the JSON).
 

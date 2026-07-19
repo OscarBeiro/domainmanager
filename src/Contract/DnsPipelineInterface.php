@@ -47,12 +47,4 @@ interface DnsPipelineInterface
      * @throws DriverException on any failure (message safe to persist)
      */
     public function fetchZoneRecords(string $domain): array;
-
-    /**
-     * Validate the configured credentials against the API
-     *
-     * @return void
-     * @throws DriverException when the credentials are unusable
-     */
-    public function testConnection(): void;
 }

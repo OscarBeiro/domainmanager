@@ -121,4 +121,22 @@ class DriverRegistry
 
         return $fields;
     }
+
+    /**
+     * Capabilities a driver's connection test actually reports (§3.5).
+     * Cloudflare only reports 'dns' (its registrar API needs a specific
+     * domain name, unknown at credential-test time); IONOS/Dinahosting
+     * stubs report both (as "not implemented").
+     *
+     * @param  string $driver
+     * @return string[] subset of ['registrar', 'dns']
+     */
+    public static function getTestableCapabilities(string $driver): array
+    {
+        return match ($driver) {
+            self::DRIVER_CLOUDFLARE                    => ['dns'],
+            self::DRIVER_IONOS, self::DRIVER_DINAHOSTING => ['registrar', 'dns'],
+            default                                      => [],
+        };
+    }
 }

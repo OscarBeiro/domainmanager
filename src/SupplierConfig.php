@@ -33,6 +33,8 @@ namespace GlpiPlugin\Domainmanager;
 
 use CommonDBTM;
 use GLPIKey;
+use GlpiPlugin\Domainmanager\Dto\ConnectionTestResult;
+use Log;
 use Session;
 use Supplier;
 
@@ -44,6 +46,15 @@ class SupplierConfig extends CommonDBTM
 {
     // Supplier::$rightname — API access is part of managing the supplier itself
     public static $rightname = 'contact_enterprise';
+
+    /**
+     * Historical-tab lines queued by prepareDriverAndCredentials(), flushed
+     * to the owning Supplier's native History tab in post_addItem()/
+     * post_updateItem() (§3.7)
+     *
+     * @var string[]
+     */
+    private array $pendingHistoryLines = [];
 
     /**
      * {@inheritDoc}
@@ -163,7 +174,7 @@ class SupplierConfig extends CommonDBTM
             return false;
         }
 
-        return $this->prepareDriverAndCredentials($input, []);
+        return $this->prepareDriverAndCredentials($input, [], DriverRegistry::DRIVER_NONE, []);
     }
 
     /**
@@ -174,24 +185,30 @@ class SupplierConfig extends CommonDBTM
         // The supplier link is immutable
         unset($input['suppliers_id']);
 
+        $old_driver      = (string) ($this->fields['api_driver'] ?? DriverRegistry::DRIVER_NONE);
+        $old_credentials = $this->getDecryptedCredentials();
+
         $stored = [];
-        if (($this->fields['api_driver'] ?? '') === ($input['api_driver'] ?? '')) {
+        if ($old_driver === ($input['api_driver'] ?? '')) {
             // Same driver: empty submitted secrets keep their stored value
-            $stored = $this->getDecryptedCredentials();
+            $stored = $old_credentials;
         }
 
-        return $this->prepareDriverAndCredentials($input, $stored);
+        return $this->prepareDriverAndCredentials($input, $stored, $old_driver, $old_credentials);
     }
 
     /**
      * Validate the driver and turn submitted credential fields into the
-     * encrypted api_credentials JSON payload
+     * encrypted api_credentials JSON payload; also queues secret-free
+     * Historical-tab lines describing what changed (§3.7)
      *
-     * @param  array $input
-     * @param  array $stored decrypted credentials to fall back to on empty submit
+     * @param  array                $input
+     * @param  array                $stored          decrypted credentials to fall back to on empty submit
+     * @param  string               $old_driver      driver before this save ('none' on add)
+     * @param  array<string,string> $old_credentials decrypted credentials before this save ([] on add)
      * @return array|false
      */
-    private function prepareDriverAndCredentials(array $input, array $stored): array|false
+    private function prepareDriverAndCredentials(array $input, array $stored, string $old_driver, array $old_credentials): array|false
     {
         $driver = (string) ($input['api_driver'] ?? DriverRegistry::DRIVER_NONE);
         if (!DriverRegistry::isValidDriver($driver)) {
@@ -223,7 +240,120 @@ class SupplierConfig extends CommonDBTM
             ? ''
             : (new GLPIKey())->encrypt(json_encode($credentials));
 
+        $this->pendingHistoryLines = $this->buildHistoryLines($old_driver, $old_credentials, $driver, $credentials);
+
         return $input;
+    }
+
+    /**
+     * Build human-readable, secret-free Historical-tab lines describing what
+     * changed between the old and new driver/credentials state. Never
+     * includes actual credential values — only which named field changed.
+     *
+     * @param  string               $old_driver
+     * @param  array<string,string> $old_credentials
+     * @param  string               $new_driver
+     * @param  array<string,string> $new_credentials
+     * @return string[]
+     */
+    private function buildHistoryLines(string $old_driver, array $old_credentials, string $new_driver, array $new_credentials): array
+    {
+        $labels = DriverRegistry::getDriverLabels();
+        $lines  = [];
+
+        if ($old_driver !== $new_driver) {
+            if ($old_driver === DriverRegistry::DRIVER_NONE) {
+                $lines[] = sprintf(__('API driver set to %s', 'domainmanager'), $labels[$new_driver] ?? $new_driver);
+            } else {
+                $lines[] = sprintf(
+                    __('API driver changed from %1$s to %2$s', 'domainmanager'),
+                    $labels[$old_driver] ?? $old_driver,
+                    $labels[$new_driver] ?? $new_driver
+                );
+            }
+            foreach (DriverRegistry::getCredentialFields($new_driver) as $name => $meta) {
+                if (($new_credentials[$name] ?? '') !== '') {
+                    $lines[] = sprintf(__('%s set', 'domainmanager'), $meta['label']);
+                }
+            }
+
+            return $lines;
+        }
+
+        foreach (DriverRegistry::getCredentialFields($new_driver) as $name => $meta) {
+            $old = $old_credentials[$name] ?? '';
+            $new = $new_credentials[$name] ?? '';
+            if ($old === $new) {
+                continue;
+            }
+            if ($old === '' && $new !== '') {
+                $lines[] = sprintf(__('%s set', 'domainmanager'), $meta['label']);
+            } elseif ($old !== '' && $new === '') {
+                $lines[] = sprintf(__('%s cleared', 'domainmanager'), $meta['label']);
+            } else {
+                $lines[] = sprintf(__('%s updated', 'domainmanager'), $meta['label']);
+            }
+        }
+
+        return $lines;
+    }
+
+    /**
+     * Flush any Historical-tab lines queued by buildHistoryLines() to the
+     * owning Supplier's native History tab (Log::history, glpi_logs) —
+     * SupplierConfig has no visible tab of its own, so entries are attributed
+     * to the Supplier the same way SyncLogger attributes sync outcomes to
+     * Domain (§3.7)
+     *
+     * @return void
+     */
+    private function flushHistoryLines(): void
+    {
+        $suppliers_id = (int) ($this->fields['suppliers_id'] ?? 0);
+        if ($suppliers_id <= 0 || $this->pendingHistoryLines === []) {
+            $this->pendingHistoryLines = [];
+            return;
+        }
+
+        foreach ($this->pendingHistoryLines as $line) {
+            Log::history($suppliers_id, Supplier::class, [0, '', '[Domain Manager] ' . $line]);
+        }
+        $this->pendingHistoryLines = [];
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function post_addItem()
+    {
+        parent::post_addItem();
+        $this->flushHistoryLines();
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function post_updateItem($history = true)
+    {
+        parent::post_updateItem($history);
+        $this->flushHistoryLines();
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function post_purgeItem()
+    {
+        $driver       = (string) ($this->fields['api_driver'] ?? DriverRegistry::DRIVER_NONE);
+        $suppliers_id = (int) ($this->fields['suppliers_id'] ?? 0);
+        if ($suppliers_id > 0) {
+            Log::history(
+                $suppliers_id,
+                Supplier::class,
+                [0, '', sprintf(__('[Domain Manager] API configuration removed (was %s)', 'domainmanager'), DriverRegistry::getDriverLabels()[$driver] ?? $driver)]
+            );
+        }
+        parent::post_purgeItem();
     }
 
     /**
@@ -264,5 +394,60 @@ class SupplierConfig extends CommonDBTM
         }
 
         return $flags;
+    }
+
+    /**
+     * Persist connection-test results (§3.5); no-op when this config row
+     * isn't saved yet (unsaved/new credentials are tested but never stored)
+     *
+     * @param  array<string, ConnectionTestResult> $resultsByCapability keyed by 'registrar'/'dns'
+     * @return void
+     */
+    public function recordConnectionTestResults(array $resultsByCapability): void
+    {
+        if ((int) $this->getID() <= 0) {
+            return;
+        }
+
+        $input = ['id' => $this->getID()];
+        foreach ($resultsByCapability as $capability => $result) {
+            if (!in_array($capability, ['registrar', 'dns'], true)) {
+                continue;
+            }
+
+            $input["{$capability}_test_status"]    = $result->status->value;
+            $input["{$capability}_test_message"]   = $result->userMessage;
+            $input["{$capability}_test_http_code"] = $result->httpStatusCode;
+            $input["{$capability}_test_date"]      = $result->checkedAt->format('Y-m-d H:i:s');
+        }
+
+        if (count($input) > 1) {
+            $this->update($input);
+        }
+    }
+
+    /**
+     * Connection-test summary for the supplier tab detail panel (§3.5);
+     * status defaults to 'never' when no test has run yet or the row
+     * doesn't exist
+     *
+     * @return array<string, array{status: string, message: string, http_code: ?int, date: ?string}>
+     */
+    public function getConnectionTestSummary(): array
+    {
+        $summary = [];
+        foreach (['registrar', 'dns'] as $capability) {
+            $status = (string) ($this->fields["{$capability}_test_status"] ?? '');
+            $summary[$capability] = [
+                'status'    => $status !== '' ? $status : 'never',
+                'message'   => (string) ($this->fields["{$capability}_test_message"] ?? ''),
+                'http_code' => isset($this->fields["{$capability}_test_http_code"])
+                    ? (int) $this->fields["{$capability}_test_http_code"]
+                    : null,
+                'date'      => $this->fields["{$capability}_test_date"] ?? null,
+            ];
+        }
+
+        return $summary;
     }
 }

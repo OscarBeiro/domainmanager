@@ -32,12 +32,15 @@
 namespace GlpiPlugin\Domainmanager\Driver;
 
 use DateTimeImmutable;
+use GlpiPlugin\Domainmanager\Contract\ConnectionTestableInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsPipelineInterface;
 use GlpiPlugin\Domainmanager\Contract\RegistrarDriverInterface;
+use GlpiPlugin\Domainmanager\Dto\ConnectionTestResult;
 use GlpiPlugin\Domainmanager\Dto\DomainLifecycle;
 use GlpiPlugin\Domainmanager\Dto\LifecycleStatus;
 use GlpiPlugin\Domainmanager\Dto\ZoneRecord;
 use GlpiPlugin\Domainmanager\Exception\DriverException;
+use GlpiPlugin\Domainmanager\Service\PluginLogger;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use InvalidArgumentException;
@@ -48,11 +51,13 @@ use Toolbox;
  * Cloudflare driver: Registrar API (lifecycle) + DNS records API (zone records)
  * Credentials: ['token' => <API token>]
  */
-class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
+class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface, ConnectionTestableInterface
 {
     private const BASE_URI = 'https://api.cloudflare.com/client/v4/';
 
     private const REQUEST_TIMEOUT = 15;
+
+    private const TEST_TIMEOUT = 9;
 
     private const PER_PAGE = 100;
 
@@ -68,11 +73,63 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
     }
 
     /**
+     * Only the DNS/zone capability is reported: Cloudflare's registrar API
+     * requires a specific domain name to query
+     * (accounts/{id}/registrar/domains/{domain}), which isn't known at
+     * credential-test time — there's no domain-independent registrar
+     * endpoint to probe. The DNS/zone capability can be verified
+     * independently via user/tokens/verify, so only 'dns' is reported even
+     * though this class also implements RegistrarDriverInterface for the
+     * real sync pipeline (§3.5).
+     *
      * {@inheritDoc}
      */
-    public function testConnection(): void
+    public function testConnection(array $credentials): array
     {
-        $this->request('GET', 'user/tokens/verify');
+        $previous           = $this->credentials;
+        $this->credentials  = $credentials;
+        $this->client       = null;
+
+        try {
+            $result = $this->probeTokenVerify();
+        } catch (Throwable $e) {
+            $result = ConnectionTestResult::fromException('dns', $e);
+        } finally {
+            $this->credentials = $previous;
+            $this->client       = null;
+        }
+
+        return ['dns' => $result];
+    }
+
+    /**
+     * Direct HTTP probe used only by testConnection(): unlike request(), it
+     * inspects the raw status code itself so the result can be classified
+     * precisely (401 -> AuthFailed, etc.) instead of collapsing into the
+     * generic DriverException messages used by the sync pipelines.
+     *
+     * @return ConnectionTestResult
+     * @throws DriverException when the token is empty or the API is unreachable
+     */
+    private function probeTokenVerify(): ConnectionTestResult
+    {
+        $client = $this->getClient();
+
+        try {
+            $response = $client->request('GET', 'user/tokens/verify', ['timeout' => self::TEST_TIMEOUT]);
+        } catch (GuzzleException $e) {
+            PluginLogger::error('Cloudflare connection test HTTP failure: ' . $e->getMessage());
+            throw $e;
+        }
+
+        $status = $response->getStatusCode();
+        $body   = (string) $response->getBody();
+        $data   = json_decode($body, true);
+        $success = is_array($data) && ($data['success'] ?? false) === true;
+
+        $raw_detail = $success ? '' : ('Cloudflare user/tokens/verify (HTTP ' . $status . '): ' . self::sanitizeMessage($body));
+
+        return ConnectionTestResult::fromHttpResponse('dns', $status, $success, $raw_detail);
     }
 
     /**
@@ -150,10 +207,7 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
                         (string) ($row['id'] ?? '')
                     );
                 } catch (InvalidArgumentException $e) {
-                    Toolbox::logInFile(
-                        'plugin_domainmanager',
-                        "Cloudflare record skipped for $domain: " . $e->getMessage() . "\n"
-                    );
+                    PluginLogger::activity("Cloudflare record skipped for $domain: " . $e->getMessage());
                 }
             }
 
@@ -203,7 +257,7 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
         try {
             $response = $this->getClient()->request($method, $path, ['query' => $query]);
         } catch (GuzzleException $e) {
-            Toolbox::logInFile('plugin_domainmanager', "Cloudflare HTTP failure on $path: " . $e->getMessage() . "\n");
+            PluginLogger::error("Cloudflare HTTP failure on $path", $e->getMessage());
             throw new DriverException(__('Cloudflare API is unreachable', 'domainmanager'));
         }
 
@@ -222,7 +276,7 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
         }
 
         if (!is_array($data)) {
-            Toolbox::logInFile('plugin_domainmanager', "Cloudflare non-JSON response on $path (HTTP $status)\n");
+            PluginLogger::error("Cloudflare non-JSON response on $path (HTTP $status)");
             throw new DriverException(__('Unexpected response from the Cloudflare API', 'domainmanager'));
         }
 
@@ -234,7 +288,7 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
                 }
             }
             $summary = self::sanitizeMessage(implode('; ', $messages));
-            Toolbox::logInFile('plugin_domainmanager', "Cloudflare API error on $path (HTTP $status): $summary\n");
+            PluginLogger::error("Cloudflare API error on $path (HTTP $status): $summary");
             throw new DriverException(
                 sprintf(
                     __('Cloudflare API error: %s', 'domainmanager'),

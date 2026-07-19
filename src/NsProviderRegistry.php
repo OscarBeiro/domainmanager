@@ -31,8 +31,8 @@
 
 namespace GlpiPlugin\Domainmanager;
 
+use GlpiPlugin\Domainmanager\Service\PluginLogger;
 use Plugin;
-use Toolbox;
 
 /**
  * Loads and matches the versioned NS host -> DNS provider registry
@@ -62,22 +62,19 @@ class NsProviderRegistry
 
         $path = self::getRegistryPath();
         if ($path === null || !is_readable($path)) {
-            Toolbox::logInFile('plugin_domainmanager', "NS provider registry not readable\n");
+            PluginLogger::error('NS provider registry not readable');
             return self::$providers;
         }
 
         $data = json_decode((string) file_get_contents($path), true);
         if (!is_array($data) || !isset($data['providers']) || !is_array($data['providers'])) {
-            Toolbox::logInFile('plugin_domainmanager', "NS provider registry is malformed JSON\n");
+            PluginLogger::error('NS provider registry is malformed JSON');
             return self::$providers;
         }
 
         foreach ($data['providers'] as $index => $entry) {
             if (!self::isValidEntry($entry)) {
-                Toolbox::logInFile(
-                    'plugin_domainmanager',
-                    "NS provider registry entry #$index skipped (invalid shape)\n"
-                );
+                PluginLogger::error("NS provider registry entry #$index skipped (invalid shape)");
                 continue;
             }
 

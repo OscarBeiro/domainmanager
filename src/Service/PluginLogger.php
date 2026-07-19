@@ -31,37 +31,59 @@
 
 namespace GlpiPlugin\Domainmanager\Service;
 
-use Domain;
-use Log;
+use Toolbox;
 
 /**
- * Sync milestones to the item history + the consolidated plugin log files
- * (never secrets or payloads in history; §3.6)
+ * Consolidated plugin logging on two files, both visible in
+ * Setup > Logs (Glpi\System\Log\LogParser::getLogsFilesList() enumerates
+ * GLPI_LOG_DIR generically via *.log — no allow-list, no registration
+ * needed; verified on 11.0/bugfixes, §3.6):
+ * - domainmanager.log        activity trail: one entry per attempt, success or failure
+ * - domainmanager-errors.log errors only, with technical detail (redacted of secrets)
  */
-class SyncLogger
+class PluginLogger
 {
     /**
-     * Milestone visible in the domain Historical tab, also mirrored to the
-     * activity log (domainmanager.log) for a consolidated file-based trail
-     *
-     * @param  int    $domains_id
      * @param  string $message
      * @return void
      */
-    public function milestone(int $domains_id, string $message): void
+    public static function activity(string $message): void
     {
-        Log::history($domains_id, Domain::class, [0, '', '[Domain Manager] ' . $message]);
-        PluginLogger::activity('Domain #' . $domains_id . ': ' . $message);
+        Toolbox::logInFile('domainmanager', self::redact($message) . "\n", true);
     }
 
     /**
-     * Technical detail of a sync failure, to domainmanager-errors.log
-     *
      * @param  string $message
+     * @param  string $rawDetail technical detail, log-only (redacted defensively)
      * @return void
      */
-    public function detail(string $message): void
+    public static function error(string $message, string $rawDetail = ''): void
     {
-        PluginLogger::error($message);
+        $text = self::redact($message);
+        if ($rawDetail !== '') {
+            $text .= "\n" . self::redact($rawDetail);
+        }
+
+        Toolbox::logInFile('domainmanager-errors', $text . "\n", true);
+    }
+
+    /**
+     * Defensive belt-and-suspenders redaction: callers should never pass raw
+     * secrets in the first place, this only guards against accidental leaks
+     * (e.g. a token embedded in an upstream error message/header dump)
+     *
+     * @param  string $text
+     * @return string
+     */
+    private static function redact(string $text): string
+    {
+        $text = preg_replace('/Bearer\s+\S+/i', 'Bearer [REDACTED]', $text) ?? $text;
+        $text = preg_replace(
+            '/((?:token|secret|password|api[_-]?key)\s*[=:]\s*)\S+/i',
+            '$1[REDACTED]',
+            $text
+        ) ?? $text;
+
+        return $text;
     }
 }

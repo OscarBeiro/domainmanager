@@ -31,8 +31,10 @@
 
 namespace GlpiPlugin\Domainmanager\Driver;
 
+use GlpiPlugin\Domainmanager\Contract\ConnectionTestableInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsPipelineInterface;
 use GlpiPlugin\Domainmanager\Contract\RegistrarDriverInterface;
+use GlpiPlugin\Domainmanager\Dto\ConnectionTestResult;
 use GlpiPlugin\Domainmanager\Dto\DomainLifecycle;
 use GlpiPlugin\Domainmanager\Exception\NotImplementedException;
 
@@ -41,7 +43,7 @@ use GlpiPlugin\Domainmanager\Exception\NotImplementedException;
  * Credentials: ['key' => <API key>, 'secret' => <API secret>]
  * API docs: https://developer.hosting.ionos.com/docs
  */
-class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface
+class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, ConnectionTestableInterface
 {
     /**
      * @param array<string, string> $credentials
@@ -69,9 +71,14 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface
     /**
      * {@inheritDoc}
      */
-    public function testConnection(): void
+    public function testConnection(array $credentials): array
     {
-        throw $this->notImplemented();
+        $message = __('Not yet implemented for this driver', 'domainmanager');
+
+        return [
+            'registrar' => ConnectionTestResult::notImplemented('registrar', $message),
+            'dns'       => ConnectionTestResult::notImplemented('dns', $message),
+        ];
     }
 
     /**

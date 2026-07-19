@@ -1,0 +1,106 @@
+{#
+ # -------------------------------------------------------------------------
+ # Domain Manager plugin for GLPI
+ # Copyright (C) 2026 by the TICGAL Team.
+ # https://www.tic.gal
+ # -------------------------------------------------------------------------
+ # LICENSE
+ # This file is part of the Domain Manager plugin.
+ # Domain Manager plugin is free software; you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation; either version 3 of the License, or
+ # (at your option) any later version.
+ # Domain Manager plugin is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ # GNU General Public License for more details.
+ # You should have received a copy of the GNU General Public License
+ # along with Domain Manager. If not, see <http://www.gnu.org/licenses/>.
+ # -------------------------------------------------------------------------
+ # @package   domainmanager
+ # @author    the TICGAL team
+ # @copyright Copyright (c) 2026 TICGAL team
+ # @license   AGPL License 3.0 or (at your option) any later version
+ #            http://www.gnu.org/licenses/agpl-3.0-standalone.html
+ # @link      https://www.tic.gal
+ # @since     2026
+ # -------------------------------------------------------------------------
+ #}
+
+{% set capability_labels = {
+    'registrar': __('Registrar', 'domainmanager'),
+    'dns': __('DNS', 'domainmanager'),
+} %}
+{% set status_labels = {
+    'never': __('Not tested yet', 'domainmanager'),
+    'success': __('Success', 'domainmanager'),
+    'auth_failed': __('Authentication failed', 'domainmanager'),
+    'forbidden': __('Forbidden', 'domainmanager'),
+    'not_found': __('Not found', 'domainmanager'),
+    'rate_limited': __('Rate limited', 'domainmanager'),
+    'upstream_error': __('Upstream error', 'domainmanager'),
+    'network_error': __('Network error', 'domainmanager'),
+    'timeout': __('Timeout', 'domainmanager'),
+    'unknown_error': __('Error', 'domainmanager'),
+} %}
+{% set status_classes = {
+    'never': 'text-bg-secondary',
+    'success': 'text-bg-success',
+    'auth_failed': 'text-bg-danger',
+    'forbidden': 'text-bg-danger',
+    'not_found': 'text-bg-danger',
+    'network_error': 'text-bg-danger',
+    'unknown_error': 'text-bg-danger',
+    'rate_limited': 'text-bg-warning',
+    'upstream_error': 'text-bg-warning',
+    'timeout': 'text-bg-warning',
+} %}
+
+<div class="card m-2" id="domainmanager-test-panel">
+    <div class="card-header">
+        <h3 class="card-title">
+            <i class="ti ti-plug-connected me-1"></i>
+            {{ __('Connection diagnostics', 'domainmanager') }}
+        </h3>
+    </div>
+    <div class="card-body">
+        {% for capability in ['registrar', 'dns'] %}
+            {% set entry = connection_test[capability]|default({'status': 'never', 'message': '', 'http_code': null, 'date': null}) %}
+            <div class="mb-3 domainmanager-test-capability" data-capability="{{ capability }}"
+                 {{ capability in testable_capabilities ? '' : 'hidden' }}>
+                <div class="d-flex align-items-center gap-2">
+                    <strong>{{ capability_labels[capability] }}</strong>
+                    <span class="badge {{ status_classes[entry.status]|default('text-bg-secondary') }}"
+                          id="domainmanager-test-badge-{{ capability }}">
+                        {{ status_labels[entry.status]|default(entry.status) }}
+                    </span>
+                    {% if entry.http_code %}
+                        <span class="text-muted small" id="domainmanager-test-httpcode-{{ capability }}">
+                            HTTP {{ entry.http_code }}
+                        </span>
+                    {% else %}
+                        <span class="text-muted small d-none" id="domainmanager-test-httpcode-{{ capability }}"></span>
+                    {% endif %}
+                </div>
+                <div class="form-text" id="domainmanager-test-message-{{ capability }}">
+                    {{ entry.message }}
+                </div>
+                <div class="text-muted small">
+                    {{ __('Last checked', 'domainmanager') }}:
+                    <span id="domainmanager-test-date-{{ capability }}" title="{{ entry.date }}">
+                        {{ entry.date ?: __('Never', 'domainmanager') }}
+                    </span>
+                </div>
+            </div>
+        {% endfor %}
+        <div class="text-muted small {{ testable_capabilities is empty ? '' : 'd-none' }}"
+             id="domainmanager-test-none">
+            {{ __('This driver has nothing to test.', 'domainmanager') }}
+        </div>
+    </div>
+</div>
+
+<script>
+    var domainmanagerStatusLabels  = {{ status_labels|json_encode|raw }};
+    var domainmanagerStatusClasses = {{ status_classes|json_encode|raw }};
+</script>

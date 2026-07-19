@@ -33,6 +33,8 @@ namespace GlpiPlugin\Domainmanager;
 
 use Domain;
 use DomainRecord;
+use Dropdown;
+use Log;
 use Session;
 use Supplier;
 
@@ -112,18 +114,46 @@ class HookHandler
 
         $state = DomainState::getForDomain($domains_id);
         if ($state !== null) {
-            if ((int) $state->fields['registrar_suppliers_id'] !== $suppliers_id) {
+            $old_suppliers_id = (int) $state->fields['registrar_suppliers_id'];
+            if ($old_suppliers_id !== $suppliers_id) {
                 $state->update([
                     'id'                     => $state->getID(),
                     'registrar_suppliers_id' => $suppliers_id,
                 ]);
+                self::logRegistrarChange($domains_id, $old_suppliers_id, $suppliers_id);
             }
         } else {
             (new DomainState())->add([
                 'domains_id'             => $domains_id,
                 'registrar_suppliers_id' => $suppliers_id,
             ]);
+            if ($suppliers_id > 0) {
+                self::logRegistrarChange($domains_id, 0, $suppliers_id);
+            }
         }
+    }
+
+    /**
+     * Log a Registrar supplier assignment change on the Domain's own native
+     * Historical tab (§3.7)
+     *
+     * @param  int $domains_id
+     * @param  int $old_suppliers_id
+     * @param  int $new_suppliers_id
+     * @return void
+     */
+    private static function logRegistrarChange(int $domains_id, int $old_suppliers_id, int $new_suppliers_id): void
+    {
+        $old_name = $old_suppliers_id > 0 ? Dropdown::getDropdownName(Supplier::getTable(), $old_suppliers_id) : '';
+        $new_name = $new_suppliers_id > 0 ? Dropdown::getDropdownName(Supplier::getTable(), $new_suppliers_id) : '';
+
+        $message = match (true) {
+            $old_suppliers_id === 0 && $new_suppliers_id > 0 => sprintf(__('[Domain Manager] Registrar supplier set to %s', 'domainmanager'), $new_name),
+            $old_suppliers_id > 0 && $new_suppliers_id === 0 => __('[Domain Manager] Registrar supplier cleared', 'domainmanager'),
+            default => sprintf(__('[Domain Manager] Registrar supplier changed from %1$s to %2$s', 'domainmanager'), $old_name, $new_name),
+        };
+
+        Log::history($domains_id, Domain::class, [0, '', $message]);
     }
 
     /**
