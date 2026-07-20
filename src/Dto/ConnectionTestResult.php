@@ -161,7 +161,7 @@ final class ConnectionTestResult
     }
 
     /**
-     * Build a "driver not implemented yet" result (IONOS/Dinahosting stubs)
+     * Build a "driver not implemented yet" result (IONOS stub)
      *
      * @param  string $capability 'registrar' | 'dns'
      * @param  string $message

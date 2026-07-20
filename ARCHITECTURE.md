@@ -113,7 +113,7 @@ domainmanager/
 │   ├── Driver/
 │   │   ├── CloudflareDriver.php         NEW  full implementation (both interfaces)
 │   │   ├── IonosDriver.php              NEW  stub, clearly-marked TODO (both interfaces)
-│   │   └── DinahostingDriver.php        NEW  stub, clearly-marked TODO (both interfaces)
+│   │   └── DinahostingDriver.php        NEW  full implementation (both interfaces, §3.8)
 │   ├── Service/
 │   │   ├── SyncEngine.php               NEW  orchestrates the split pipeline for one domain (§5)
 │   │   ├── NsResolver.php               NEW  dns_get_record(DNS_NS) wrapper (testable seam)
@@ -216,8 +216,9 @@ Indexes: PK, `UNIQUE unicity(itemtype, items_id, field)`, `KEY items_id`.
                │  implements                            │  implements
      ┌─────────┴──────────────┬──────────────────┬─────┴────────┐
      │ CloudflareDriver (full)│ IonosDriver(TODO)│ Dinahosting  │
-     │  - token               │  - key + secret  │ Driver(TODO) │
+     │  - token               │  - key + secret  │ Driver(full) │
      │  - Toolbox::getGuzzle… │                  │  - user+pass │
+     │                        │                  │  - Basic Auth│
      └────────────────────────┴──────────────────┴──────────────┘
                △ constructed by
 ┌──────────────┴───────────────┐     ┌──────────────────────────────┐
@@ -233,7 +234,7 @@ Drivers throw DriverException (message safe to persist; payload detail → logIn
 DomainLifecycle / ZoneRecord are immutable DTOs; all API values validated/sanitised at construction.
 ```
 
-`CloudflareDriver` implements **both** interfaces (Registrar API + DNS records API). IONOS/Dinahosting stubs declare both and throw a typed `NotImplementedException` with an i18n message ("driver not yet implemented"). Credential validation (the old, now-removed flat `testConnection(): void` on each pipeline interface) is superseded by `ConnectionTestableInterface` (§3.5) — a separate, on-demand diagnostic concern, not part of the sync pipeline contracts.
+`CloudflareDriver` and `DinahostingDriver` (§3.8) implement **both** interfaces for real (Registrar API + DNS records API). The `IonosDriver` stub still declares both and throws a typed `NotImplementedException` with an i18n message ("driver not yet implemented"). Credential validation (the old, now-removed flat `testConnection(): void` on each pipeline interface) is superseded by `ConnectionTestableInterface` (§3.5) — a separate, on-demand diagnostic concern, not part of the sync pipeline contracts.
 
 ---
 
@@ -252,7 +253,8 @@ interface ConnectionTestableInterface {
 
 **Per-driver reported capabilities** (`DriverRegistry::getTestableCapabilities()`):
 - **`CloudflareDriver` → `['dns']` only.** Cloudflare's registrar API needs a specific domain name (`accounts/{id}/registrar/domains/{domain}`), which isn't known at credential-test time — there is no domain-independent registrar endpoint to probe. The DNS/zone capability, however, is verifiable independently via `user/tokens/verify` (the same call previously used by the old flat test), so only `'dns'` is reported even though the class also implements `RegistrarDriverInterface` for the real sync pipeline.
-- **`IonosDriver` / `DinahostingDriver` → `['registrar', 'dns']`**, each returning a `ConnectionTestResult` with status `unknown_error` and the message "Not yet implemented for this driver" (mirrors their existing `NotImplementedException` stubs).
+- **`IonosDriver` → `['registrar', 'dns']`**, each returning a `ConnectionTestResult` with status `unknown_error` and the message "Not yet implemented for this driver" (mirrors its `NotImplementedException` stub).
+- **`DinahostingDriver` → `['registrar', 'dns']`**, both built from a single real, account-wide auth probe (§3.8) — Dinahosting's auth isn't capability-scoped, so one lightweight API call classifies both.
 - **`none` → `[]`** (nothing to test; the Check Connection button isn't rendered).
 
 ### 3.5.2 `ConnectionTestResult` DTO (`src/Dto/ConnectionTestResult.php`)
@@ -271,6 +273,9 @@ Every plugin log call (sync engine, cron, NS registry, drivers, connection tests
 - **`domainmanager-errors.log`** (`PluginLogger::error()`) — errors only: any non-`success` connection-test result, sync-leg failures (`SyncLogger::detail()`), driver HTTP/parsing failures, and NS-registry misconfiguration — each with the full technical detail (`rawDetail`/exception message), defensively redacted of anything that looks like a bearer token or `token=`/`secret=`/`password=`/`key=` fragment before being written (belt-and-suspenders; the primary control is that callers never pass raw secrets into these methods to begin with).
 
 Both files are automatically visible in **Setup → Logs** with no plugin-side registration step — verified fact, §0.8. Both writes are **forced** (`Toolbox::logInFile(..., true)`) so they aren't silently dropped on installs where `use_log_in_files` is unset — verified fact, §0.9.
+
+### 3.6.1 Install-step requirement: the files must exist before an admin can see them
+`LogParser::getLogsFilesList()` (§0.8) only lists files that **already exist on disk** — it does a plain `scandir()`, it does not project expected-but-not-yet-created filenames. A freshly installed/activated plugin that has never had a connection test run, and whose daily sync cron has never fired, has **no `domainmanager*.log` files at all** — not "empty," genuinely absent — leaving an admin unable to tell working-but-idle apart from broken. **Fix:** `hook.php` defines `plugin_domainmanager_activate()` (called by GLPI core automatically by naming convention, right before `Plugin::activate()` flips the plugin's state — no registration needed, same mechanism as `plugin_domainmanager_install()`/`_uninstall()`), which writes one deterministic line to `domainmanager.log` ("Domain Manager activated, logging initialized") via `PluginLogger::activity()` and touches an empty `domainmanager-errors.log` via `PluginLogger::ensureErrorLogExists()` (empty is the established GLPI convention for "no errors yet" — e.g. core's own `sql-errors.log`/`mail-errors.log` ship as 0-byte files). Because GLPI auto-deactivates a plugin on every version bump until an admin reactivates it (`src/Plugin.php`'s version-mismatch check), this hook reliably re-fires on every release, not just the very first install.
 
 ---
 
@@ -298,6 +303,22 @@ Every `Log::history()` call in the plugin passes the matching constant as `$chan
 - **Domain registrar-supplier assignment** (`src/HookHandler.php::persistRegistrar()`): logs to `Domain`'s own Historical tab (`Log::history($domains_id, Domain::class, [PLUGIN_DOMAINMANAGER_SO_DOMAIN, '', $message])`) only when the resolved `registrar_suppliers_id` actually changes — `"Registrar supplier set to %s"` / `"...changed from %s to %s"` / `"...cleared"`, using `Dropdown::getDropdownName(Supplier::getTable(), $id)` for the display name.
 - **Sync milestones** (`src/Service/SyncLogger.php::milestone()`): every successful registrar/DNS sync leg also logs to `Domain`'s Historical tab through the same `PLUGIN_DOMAINMANAGER_SO_DOMAIN` option, so all Domain-side Domain Manager activity (registrar assignment *and* sync outcomes) is consistently labeled "Domain Manager" in one place.
 - Deliberately **not** logged here (scope stayed to user-initiated configuration and sync outcomes, not per-record bookkeeping): per-sync `DomainState` upserts beyond the milestone line already covered above, and `ImportedRecord`/`ImportLock` internal rows (no user-visible list/tab exists for either, so a native History entry there would never be seen).
+
+---
+
+## 3.8 Dinahosting driver: real implementation (was a stub)
+
+`DinahostingDriver` (`src/Driver/DinahostingDriver.php`) was originally shipped in Phase 3 as a pure stub (every method threw `NotImplementedException`) alongside the still-stubbed `IonosDriver`. Investigating a "Test credentials" bug report (toast showing a generic message, `domainmanager-errors.log` apparently staying empty) found no defect in the toast/logging pipeline itself — verified two independent ways (direct controller invocation, and a full real HTTP request through login+CSRF+routing on a disposable test instance) — the pipeline correctly surfaced and logged the stub's fixed "Not yet implemented for this driver" result. The actual gap was that the driver never attempted a real API call to have a real result to report. This section documents its real implementation.
+
+**API**: `https://dinahosting.com/special/api.php`, GET requests, `responseType=json`. The official docs (`en.dinahosting.com/api/documentation`) are a command index without inline example bodies; the exact JSON envelope and field names below were cross-verified against the maintained third-party client `github.com/libdns/dinahosting` (`provider.go`), which is the only source found with byte-accurate wire format.
+
+- **Envelope**: `{trId, responseCode, message, data, errors, command}`. Success = `message === "Success."` OR `responseCode === 1000`. Failure responses put a human message + code in `errors[]` (`{code, message, parameter}`), **always over HTTP 200** — Dinahosting never varies the HTTP status for business-logic outcomes, only for real transport failures.
+- **Auth**: the docs list two equivalent options — `AUTH_USER`/`AUTH_PWD` query parameters (used in their own example URLs), or a `Authorization: Basic` header. This driver deliberately uses the **Basic Auth header** (via Guzzle's `auth` client option) rather than query parameters, so credentials never end up in a request URI that could be captured by a proxy/CDN access log — confirmed working against the live API (a deliberately-wrong username/password round-tripped a real `responseCode=2200` "Authentication error." from Dinahosting's own server, correctly classified as `AuthFailed`).
+- **`testConnection()`**: Dinahosting authentication is a single account-wide username/password, not scoped per capability, so one lightweight, side-effect-free probe (`System_GetRequestTypes` — confirmed domain-independent from the docs' own example request, which omits a `domain` parameter) classifies both `'registrar'` and `'dns'` from the same outcome. `responseCode` → `ConnectionTestStatus`: `2200` (`AUTH_ERROR_USER`) → `AuthFailed`, `2201` (`AUTH_ERROR_OBJECT`) → `Forbidden`, `2501` (`COMMAND_TIMEOUT`) → `Timeout`, anything else non-success → `UnknownError`. `httpStatusCode` is left `null` for these envelope-classified outcomes (always ~200 regardless of the real result — showing "HTTP 200" next to an "auth failed" badge would be misleading); it's only populated for genuine transport-level 5xx.
+- **`fetchLifecycle()`**: `Domain_GetExpirationDate` / `Domain_GetRegistrationDate` (each confirmed: single `domain` parameter, returns a string). **Known gap, flagged rather than guessed**: no documented response shape for a registrar-hold/suspended status command (`Domain_Status_Get`) was found anywhere searched, so `LifecycleStatus` here only distinguishes `Ok`/`Expired` (via the expiration date) — never `Suspended`. Revisit if Dinahosting's docs (or a support ticket) ever surface that command's real shape.
+- **`fetchZoneRecords()`**: `Domain_Zone_GetAll`. Field names for **A/AAAA (`ip`), CNAME (`destinationHostname`), TXT (`text`)** are confirmed against the reference client. **Known gap**: that client only ever *writes* A/AAAA/TXT/CNAME, so it never modeled MX/NS fields specifically — `extractContent()` falls back to the same generic field set the reference client uses for record types it doesn't recognize either. MX priority ordering in particular is unconfirmed; verify against a real account with real MX/NS records before relying on it.
+- Both pipeline methods route API errors through a shared `request()` helper mirroring `CloudflareDriver::request()`'s shape (`DriverException` with a safe message, technical detail to `PluginLogger::error()` — including the object-not-found code `2303` mapped to a clear "domain not managed by this account" message).
+- `PluginLogger::redact()` (§3.6) was widened to also catch Dinahosting's non-standard `AUTH_PWD`/`pwd=` credential naming (the existing pattern only matched the literal word "password") — defense in depth, since this driver's own code never logs a raw request URI in the first place.
 
 ---
 
@@ -470,6 +491,7 @@ Right registered per-profile via `Migration::addRight` at install and manageable
 2. **Phase 2** — itemtypes (`SupplierConfig`, `DomainState`, `ImportedRecord`, `ImportLock`), Supplier tab + encryption, `ns-providers.json` (3 supported providers, sourced) + `NsProviderRegistry`.
 3. **Phase 3** — contracts, DTOs, `DriverFactory`, `CloudflareDriver` (full), IONOS/Dinahosting stubs, `SyncEngine`, `RecordReconciler`, `LockEnforcer`, history/logging.
 3.5. **Phase 3.5** — on-demand connection diagnostics: `ConnectionTestableInterface`/`ConnectionTestResult`, `ConnectionTestController` ("Check Connection" against live form values), supplier-tab detail panel + native toasts, two-file consolidated logging (`domainmanager.log`/`domainmanager-errors.log`, §3.6).
+3.8. **Phase 3.8** — real `DinahostingDriver` implementation (registrar lifecycle + DNS zone records + account-wide connection test against the live API), replacing the Phase 3 stub; see §3.8.
 4. **Phase 4** — `DomainForm` injections, status card, `SyncController` + Update Now JS, cron batching loop.
 5. **Phase 5** — registry sweep of popular DNS providers (researched patterns + sources documented in the JSON).
 

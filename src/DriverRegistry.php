@@ -125,8 +125,9 @@ class DriverRegistry
     /**
      * Capabilities a driver's connection test actually reports (§3.5).
      * Cloudflare only reports 'dns' (its registrar API needs a specific
-     * domain name, unknown at credential-test time); IONOS/Dinahosting
-     * stubs report both (as "not implemented").
+     * domain name, unknown at credential-test time); Dinahosting reports
+     * both from a single account-wide auth check; the IONOS stub reports
+     * both (as "not implemented").
      *
      * @param  string $driver
      * @return string[] subset of ['registrar', 'dns']

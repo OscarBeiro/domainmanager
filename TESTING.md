@@ -250,12 +250,10 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
 - **Expected:** its state row, record-ownership rows and lock rows are all deleted.
 - [ ] Pass
 
-### 3.9 Stub drivers surface as pipeline errors (§3)
-- **Steps:** configure a supplier with the IONOS or Dinahosting driver and run a
-  sync using it.
+### 3.9 Stub driver (IONOS) surfaces as pipeline errors (§3)
+- **Steps:** configure a supplier with the IONOS driver and run a sync using it.
 - **Expected:** the affected pipeline ends with status `error` and the message
-  "The IONOS/Dinahosting driver is not implemented yet"; the other leg is not
-  aborted.
+  "The IONOS driver is not implemented yet"; the other leg is not aborted.
 - [ ] Pass
 
 ### 3.10 Engine statuses and leg isolation (§5)
@@ -286,6 +284,30 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
 - **Expected:** the DNS leg stops before importing anything, with
   `dns_status = error` and a message listing the missing record types; nothing is
   half-imported.
+- [ ] Pass
+
+### 3.13 Real Dinahosting sync (§3.8, needs real Dinahosting credentials)
+- **Steps:** save real Dinahosting username/password on a supplier; run
+  `SyncEngine::sync()` (or "Update Now") against a domain registered/hosted on
+  that account.
+- **Expected:** DNS leg imports A/AAAA/CNAME/TXT records with correct data
+  (verified field names); MX/NS records may have unconfirmed field mapping —
+  cross-check their `data` value against the real DNS zone and report back if
+  wrong (see §3.8's documented gap) so the field names can be corrected.
+  Registrar leg fills `date_domaincreation`/`date_expiration`/`is_active` from
+  `Domain_GetRegistrationDate`/`Domain_GetExpirationDate`; a registrar-hold
+  domain will currently show as `ok` rather than `suspended` (no confirmed
+  status-check command exists yet — known gap, not a bug to "fix" without a
+  documented response shape). The password never appears in messages,
+  history, or `domainmanager.log`/`domainmanager-errors.log`.
+- [ ] Pass
+
+### 3.14 Dinahosting domain-not-managed error (§3.8)
+- **Steps:** with valid Dinahosting credentials, run a sync/fetch against a
+  domain name that is valid but NOT registered under that account.
+- **Expected:** a clear `DriverException` message ("Domain is not managed by
+  this Dinahosting account"), not a generic/unhelpful error — confirms the
+  `2303` (`OBJECT_NOT_EXISTS`) response code is mapped correctly.
 - [ ] Pass
 
 ---
@@ -468,12 +490,12 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
   without re-testing.
 - [ ] Pass
 
-### 3.5.3 Stub drivers report both capabilities as not-implemented (§3.5.1)
-- **Steps:** select driver *IONOS* (or *Dinahosting*), fill in any credential
-  values, click **Check Connection**.
+### 3.5.3 Stub driver (IONOS) reports both capabilities as not-implemented (§3.5.1)
+- **Steps:** select driver *IONOS*, fill in any credential values, click
+  **Check Connection**.
 - **Expected:** two red toasts/badges ("Registrar connection" and "DNS
   connection"), both showing "Not yet implemented for this driver" — status
-  `unknown_error`, no HTTP code, badge color `text-bg-danger` (an
+  `unknown_error`, no HTTP code, badge color `text-bg-danger` (a
   not-implemented driver is a real error state, not "never tested").
 - [ ] Pass
 
@@ -555,6 +577,68 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
   <code>: <message>"` (or, for a non-JSON body, `"HTTP <code> - <truncated
   body>"`) instead of a bare, uninformative string; the same detail is visible
   in the browser console (`console.error`).
+- [ ] Pass
+
+### 3.5.12 Log files appear immediately after activation, before any sync/test (§3.6.1)
+- **Steps:** deactivate then reactivate the plugin (or reinstall it fresh) in
+  the test container, without running any sync or connection test, then open
+  **Setup → Logs**.
+- **Expected:** `domainmanager.log` exists immediately, containing a single
+  "Domain Manager activated, logging initialized" line; `domainmanager-errors.log`
+  also exists (0 bytes is expected and fine, matching core's own
+  `sql-errors.log`/`mail-errors.log` convention) — both visible without
+  needing to trigger any feature first. Root cause this regression-tests: the
+  files were previously never created at all in this environment because
+  nothing had ever called into `PluginLogger` (no connection test had been
+  run, and the daily sync cron task had never executed — see 3.5.14 below).
+- [ ] Pass
+
+### 3.5.13 Log file content renders correctly in the Setup → Logs viewer (§3.6)
+- **Steps:** after 3.5.7 or 3.5.12, open `domainmanager.log` and
+  `domainmanager-errors.log` **through the Setup → Logs viewer itself**
+  (click into the file, not just confirm it's listed).
+- **Expected:** content displays as plain text lines matching what's on disk
+  (`podman exec glpi_glpi_1 cat /var/glpi/logs/domainmanager.log`), no
+  parsing/formatting errors or truncation from the viewer.
+- [ ] Pass
+
+### 3.5.14 Daily sync cron task is actually registered
+- **Steps:** after install/reactivation, check **Setup → Automatic actions**
+  for a task named `DomainSync` against itemtype
+  `GlpiPlugin\Domainmanager\Cron`; alternatively query
+  `SELECT * FROM glpi_crontasks WHERE itemtype LIKE '%Domainmanager%'`.
+- **Expected:** exactly one row/task listed (state waiting, daily frequency,
+  hourmin 23–24, per `Installer::registerCronTasks()`).
+- **Resolved 2026-07-20** (was briefly logged here as a suspected bug —
+  correction below): a `glpi_crontasks` query taken mid-session showed zero
+  `domainmanager` rows, which was misread as `CronTask::register()` never
+  succeeding. Root cause was a stale snapshot, not a code defect: two of the
+  earliest recorded installs (2026-07-18 06:34/07:08) predate commit
+  `ad3a658` (2026-07-18 08:43, Phase 1), which is what introduced
+  `registerCronTasks()` in the first place — the code simply didn't exist on
+  disk yet at those install times. A later install that day (10:06) did
+  postdate the code, but was immediately followed by a manual uninstall
+  (10:19, dropping the plugin tables), which calls `CronTask::unregister()`
+  and removes the row — the "zero rows" check landed in that
+  just-uninstalled window. A clean `glpi:plugin:install domainmanager`
+  console run afterward created the row correctly on the first try (id 75,
+  correct `frequency`/`hourmin`/`hourmax`/`param`, plus a matching
+  `Log::history` entry) — `Installer::registerCronTasks()` /
+  `CronTask::register()` work as intended; no fix was needed.
+- [ ] Pass
+
+### 3.5.15 Dinahosting Check Connection reflects real auth outcomes (§3.8)
+- **Steps:** select driver *Dinahosting*; (a) fill in a deliberately wrong
+  username/password, click Check Connection; (b) fill in real, valid
+  Dinahosting credentials (if available), click Check Connection.
+- **Expected:** (a) both "Registrar connection" and "DNS connection" show a
+  red toast/badge "Authentication failed — the username or password was
+  rejected." (status `auth_failed`, no HTTP code shown), and
+  `domainmanager-errors.log` gets a line per capability with the real
+  Dinahosting `responseCode`/message (verified in this session directly
+  against the live API: `responseCode=2200 message="" errors=[code=2200
+  msg=Authentication error.]`) — no credential value in the log line. (b)
+  both show a green "Connection successful." toast/badge.
 - [ ] Pass
 
 ## Phase 3.7 — Audit trail via native History (§3.7)

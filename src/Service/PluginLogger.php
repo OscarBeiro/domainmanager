@@ -68,6 +68,21 @@ class PluginLogger
     }
 
     /**
+     * Touch the error log file so it is visible in Setup > Logs even before
+     * the first real error — LogParser::getLogsFilesList() only lists files
+     * that already exist on disk (plain scandir(), no allow-list)
+     *
+     * @return void
+     */
+    public static function ensureErrorLogExists(): void
+    {
+        $path = GLPI_LOG_DIR . '/domainmanager-errors.log';
+        if (!file_exists($path)) {
+            touch($path);
+        }
+    }
+
+    /**
      * Defensive belt-and-suspenders redaction: callers should never pass raw
      * secrets in the first place, this only guards against accidental leaks
      * (e.g. a token embedded in an upstream error message/header dump)
@@ -79,7 +94,7 @@ class PluginLogger
     {
         $text = preg_replace('/Bearer\s+\S+/i', 'Bearer [REDACTED]', $text) ?? $text;
         $text = preg_replace(
-            '/((?:token|secret|password|api[_-]?key)\s*[=:]\s*)\S+/i',
+            '/((?:token|secret|password|pwd|api[_-]?key)\s*[=:]\s*)\S+/i',
             '$1[REDACTED]',
             $text
         ) ?? $text;

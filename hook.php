@@ -30,6 +30,7 @@
  */
 
 use GlpiPlugin\Domainmanager\Installer;
+use GlpiPlugin\Domainmanager\Service\PluginLogger;
 
 /**
  * Install the plugin
@@ -39,6 +40,21 @@ use GlpiPlugin\Domainmanager\Installer;
 function plugin_domainmanager_install(): bool
 {
     return Installer::install(new Migration(PLUGIN_DOMAINMANAGER_VERSION));
+}
+
+/**
+ * Called by GLPI core right after activation succeeds (Plugin::activate(),
+ * by naming convention, no registration needed) — writes a deterministic
+ * first line to both plugin log files so an admin sees them in Setup >
+ * Logs immediately, without having to guess whether logging works before
+ * the first sync or connection test runs
+ *
+ * @return void
+ */
+function plugin_domainmanager_activate(): void
+{
+    PluginLogger::activity('Domain Manager activated, logging initialized');
+    PluginLogger::ensureErrorLogExists();
 }
 
 /**

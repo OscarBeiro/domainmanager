@@ -32,7 +32,7 @@
 namespace GlpiPlugin\Domainmanager\Exception;
 
 /**
- * Thrown by driver stubs (IONOS, Dinahosting) until they are implemented;
+ * Thrown by driver stubs (IONOS) until they are implemented;
  * extends DriverException so pipelines surface it as a normal driver error
  */
 class NotImplementedException extends DriverException
