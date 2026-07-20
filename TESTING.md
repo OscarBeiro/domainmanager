@@ -411,8 +411,35 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
   title carries the icon too.
 - [ ] Pass
 
-> The "Test credentials" flat feature originally sketched here (5.6–5.8,
-> stored-credentials-only, single `SupplierConfigTestController`) never
+### 5.6 Registry sweep batch 2 entries valid and sourced (§4, §9-P5)
+- **Steps:** `php -r 'json_decode(file_get_contents("resources/ns-providers.json"), true, 512, JSON_THROW_ON_ERROR); echo "ok\n";'`
+  and review the entries appended after Vercel.
+- **Expected:** valid JSON; 10 more providers appended — Gandi, Namecheap,
+  Hetzner, Squarespace, Wix, Hostinger, Porkbun, cdmon, one.com, and
+  NS1 (IBM NS1 Connect) — each with non-empty `patterns`, a `source` URL
+  pointing at official vendor documentation, and **no** `driver` key. Strato
+  and Arsys were investigated but **deliberately omitted**: no authoritative
+  official-vendor page stating their nameserver hostnames could be found
+  (only third-party/community sources), so no entry was added rather than
+  guessing — flagged to Óscar; add them once an official source surfaces.
+- [ ] Pass
+
+### 5.7 Batch 2 providers are detected as unsupported, no collisions (§4, §5, §6.3)
+- **Steps:** sync a domain whose live NS records sit on one of the batch 2
+  providers (e.g. one.com: `ns01.one.com`/`ns02.one.com`); also exercise
+  `NsProviderRegistry::match()` directly with `ns1.googledomains.com` and any
+  Squarespace-hosted domain using `nsone.net`-suffixed nameservers.
+- **Expected:** the batch 2 domain shows `detected_provider` = the registry
+  display name and `dns_status='unsupported'` with the contribution-link
+  warning, same as batch 1. The Squarespace/NS1 case in particular must
+  resolve to **NS1** (or Google Cloud DNS for `googledomains.com`), not
+  Squarespace — the Squarespace entry's patterns deliberately exclude
+  `googledomains.com`/`nsone.net` to avoid a false collision (§4 registry
+  entry note); confirm first-match file order still gives the right result.
+- [ ] Pass
+
+> The "Test credentials" flat feature originally sketched in this section
+> (stored-credentials-only, single `SupplierConfigTestController`) never
 > shipped and has been replaced before release by the richer per-capability
 > "Check Connection" diagnostics — see **Phase 3.5** below.
 

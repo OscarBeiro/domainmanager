@@ -102,6 +102,91 @@
                 "ns2.vercel-dns.com"
             ],
             "source": "https://vercel.com/docs/domains/working-with-nameservers (exactly ns1/ns2.vercel-dns.com)"
+        },
+        {
+            "name": "Gandi",
+            "patterns": [
+                "ns-*.gandi.net"
+            ],
+            "source": "https://docs.gandi.net/en/domain_names/advanced_users/vanity_nameservers.html (Gandi LiveDNS default nameservers follow the pattern ns-<number>-<letter>.gandi.net, e.g. ns-6-a.gandi.net, per Gandi's own docs)"
+        },
+        {
+            "name": "Namecheap",
+            "patterns": [
+                "dns1.registrar-servers.com",
+                "dns2.registrar-servers.com",
+                "dns1.namecheaphosting.com",
+                "dns2.namecheaphosting.com"
+            ],
+            "source": "https://www.namecheap.com/support/knowledgebase/article.aspx/767/10/how-to-change-dns-for-a-domain/ (BasicDNS default: dns1/dns2.registrar-servers.com); https://www.namecheap.com/support/knowledgebase/article.aspx/203/32/nameserver-setup-for-shared-packages/ (shared hosting plans: dns1/dns2.namecheaphosting.com)"
+        },
+        {
+            "name": "Hetzner",
+            "patterns": [
+                "hydrogen.ns.hetzner.com",
+                "oxygen.ns.hetzner.com",
+                "helium.ns.hetzner.de",
+                "ns1.first-ns.de",
+                "robotns2.second-ns.de",
+                "robotns3.second-ns.com"
+            ],
+            "source": "https://docs.hetzner.com/dns-console/dns/general/authoritative-name-servers/ (DNS Console: hydrogen/oxygen.ns.hetzner.com + helium.ns.hetzner.de; Robot secondary DNS: ns1.first-ns.de, robotns2.second-ns.de, robotns3.second-ns.com)"
+        },
+        {
+            "name": "Squarespace",
+            "patterns": [
+                "*.squarespacedns.com",
+                "*.systemdns.com"
+            ],
+            "source": "https://support.squarespace.com/hc/en-us/articles/4404183898125-Making-changes-to-nameservers (official: Squarespace default nameservers may end in squarespacedns.com or systemdns.com; the same page also lists googledomains.com and nsone.net as possible endings, deliberately excluded here since those domains are already claimed by Google Cloud DNS / NS1 entries in this registry and would cause first-match collisions)"
+        },
+        {
+            "name": "Wix",
+            "patterns": [
+                "ns*.wixdns.net"
+            ],
+            "source": "https://support.wix.com/en/article/connecting-a-domain-to-the-wix-name-servers (Wix nameservers are account-specific and shown on-screen per domain, not published as a fixed list; observed examples across Wix's own help articles span ns1/ns2/ns5/ns6/ns14/ns15.wixdns.net, hence the open-ended ns*.wixdns.net wildcard rather than a narrow numeric range)"
+        },
+        {
+            "name": "Hostinger",
+            "patterns": [
+                "*.dns-parking.com"
+            ],
+            "source": "https://www.hostinger.com/support/how-to-fix-dns-issue-at-hostinger/ (official: Hostinger-managed domains point to nameservers such as ns1.dns-parking.com; exact enumerable set not published, so the domain-wide wildcard is used)"
+        },
+        {
+            "name": "Porkbun",
+            "patterns": [
+                "curitiba.ns.porkbun.com",
+                "fortaleza.ns.porkbun.com",
+                "maceio.ns.porkbun.com",
+                "salvador.ns.porkbun.com"
+            ],
+            "source": "https://kb.porkbun.com/article/63-how-to-switch-to-porkbuns-nameservers (exactly these 4 fixed default nameservers)"
+        },
+        {
+            "name": "cdmon",
+            "patterns": [
+                "ns[1-3].cdmon.net",
+                "ns4.cdmondns-01.org",
+                "ns5.cdmondns-01.com"
+            ],
+            "source": "https://helpdesk.cdmon.com/portal/es/kb/articles/qu%C3%A9-es-el-servidor-dns-est%C3%A1tico-y-c%C3%B3mo-podemos-modificarlo (cdmon's own DNS servers: ns1-ns3.cdmon.net, ns4.cdmondns-01.org, ns5.cdmondns-01.com — note mixed TLDs, not all .com)"
+        },
+        {
+            "name": "one.com",
+            "patterns": [
+                "ns01.one.com",
+                "ns02.one.com"
+            ],
+            "source": "https://help.one.com/hc/en-us/articles/360000841638-How-do-I-change-the-name-servers (official: web hosting default nameservers are ns01.one.com / ns02.one.com — zero-padded form, confirmed via one.com's own support article)"
+        },
+        {
+            "name": "NS1 (IBM NS1 Connect)",
+            "patterns": [
+                "dns[1-4].p*.nsone.net"
+            ],
+            "source": "https://www.ibm.com/docs/en/ns1-connect?topic=nameservers-nameserver-assignments (zones are assigned dns1-dns4.p<NN>.nsone.net from a numbered pool, e.g. dns1.p03.nsone.net; NS1 was acquired by and is now documented under IBM)"
         }
     ]
 }

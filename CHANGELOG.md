@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `search-options-registry.json` (repo root): the TICGAL-wide ledger of search-option IDs any TICGAL plugin registers, keyed by plugin then itemtype, to keep collisions mechanically checkable between TICGAL's own plugins — seeded with Domain Manager's two entries (`9401`/`9402`, reserved block `9400-9409`). Does not and cannot cover third-party/public plugins; that still requires the live-instance `tools/getsearchoptions.php` check.
+- Phase 5 (batch 2): ten more detection-only providers appended to the NS registry — Gandi, Namecheap, Hetzner, Squarespace, Wix, Hostinger, Porkbun, cdmon, one.com, and NS1 (IBM NS1 Connect) — each with narrow nameserver patterns and an official vendor documentation URL as source. The Squarespace entry deliberately excludes the `googledomains.com`/`nsone.net` endings its own docs mention, to avoid false-match collisions with the existing Google Cloud DNS / new NS1 entries. Strato and Arsys were researched but **not added**: no authoritative official-vendor page could be found stating their nameserver hostnames (only third-party/community sources), and the registry's standing rule is sourced-official-docs-only — flagged in TESTING.md §5.6 for revisiting if an official source turns up.
 
 ## [0.1.2] - 2026-07-19
 ### Fixed
