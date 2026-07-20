@@ -41,6 +41,16 @@ define('PLUGIN_DOMAINMANAGER_MIN_GLPI', '11.0.0');
 define('PLUGIN_DOMAINMANAGER_MAX_GLPI', '11.0.99');
 define('PLUGIN_DOMAINMANAGER_REPOSITORY_URL', 'https://github.com/TICGAL-GLPI-Plugins/domainmanager');
 
+// Plugin-owned search option IDs (§3.7) — used only as Log::history()'s
+// id_search_option so the Historical tab's "field" column reads
+// "Domain Manager", never exposed as a real editable/searchable value.
+// MUST be re-checked for collisions with `php tools/getsearchoptions.php
+// --type=Supplier` / `--type=Domain` against the target instance before
+// go-live: no other installed plugin may already use these IDs for the
+// same itemtype.
+define('PLUGIN_DOMAINMANAGER_SO_SUPPLIER', 9401);
+define('PLUGIN_DOMAINMANAGER_SO_DOMAIN', 9402);
+
 /**
  * Plugin_Version_Domainmanager
  *
@@ -61,6 +71,47 @@ function plugin_version_domainmanager(): array
             ],
         ],
     ];
+}
+
+/**
+ * Register the plugin's search options (§3.7): a single, non-functional
+ * "Domain Manager" entry per itemtype, used only so Log::history() can set
+ * id_search_option to something whose 'name' resolves to "Domain Manager"
+ * in the Historical tab's "field" column. Bound to the itemtype's own
+ * 'name' column so the Search UI (where this also appears as a normal,
+ * selectable column/filter — an accepted side effect of this mechanism)
+ * never hits a SQL error if a user actually tries to use it.
+ *
+ * @param  string $itemtype
+ * @return array
+ */
+function plugin_domainmanager_getAddSearchOptionsNew($itemtype): array
+{
+    $options = [];
+
+    if ($itemtype === Supplier::class) {
+        $options[] = [
+            'id'            => PLUGIN_DOMAINMANAGER_SO_SUPPLIER,
+            'table'         => Supplier::getTable(),
+            'field'         => 'name',
+            'name'          => __('Domain Manager', 'domainmanager'),
+            'datatype'      => 'string',
+            'massiveaction' => false,
+        ];
+    }
+
+    if ($itemtype === Domain::class) {
+        $options[] = [
+            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN,
+            'table'         => Domain::getTable(),
+            'field'         => 'name',
+            'name'          => __('Domain Manager', 'domainmanager'),
+            'datatype'      => 'string',
+            'massiveaction' => false,
+        ];
+    }
+
+    return $options;
 }
 
 /**

@@ -316,7 +316,7 @@ class SupplierConfig extends CommonDBTM
         }
 
         foreach ($this->pendingHistoryLines as $line) {
-            Log::history($suppliers_id, Supplier::class, [0, '', '[Domain Manager] ' . $line]);
+            Log::history($suppliers_id, Supplier::class, [PLUGIN_DOMAINMANAGER_SO_SUPPLIER, '', $line]);
         }
         $this->pendingHistoryLines = [];
     }
@@ -350,7 +350,11 @@ class SupplierConfig extends CommonDBTM
             Log::history(
                 $suppliers_id,
                 Supplier::class,
-                [0, '', sprintf(__('[Domain Manager] API configuration removed (was %s)', 'domainmanager'), DriverRegistry::getDriverLabels()[$driver] ?? $driver)]
+                [
+                    PLUGIN_DOMAINMANAGER_SO_SUPPLIER,
+                    '',
+                    sprintf(__('API configuration removed (was %s)', 'domainmanager'), DriverRegistry::getDriverLabels()[$driver] ?? $driver),
+                ]
             );
         }
         parent::post_purgeItem();

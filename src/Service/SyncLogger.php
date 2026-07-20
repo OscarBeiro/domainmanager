@@ -50,7 +50,7 @@ class SyncLogger
      */
     public function milestone(int $domains_id, string $message): void
     {
-        Log::history($domains_id, Domain::class, [0, '', '[Domain Manager] ' . $message]);
+        Log::history($domains_id, Domain::class, [PLUGIN_DOMAINMANAGER_SO_DOMAIN, '', $message]);
         PluginLogger::activity('Domain #' . $domains_id . ': ' . $message);
     }
 

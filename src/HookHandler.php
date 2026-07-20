@@ -148,12 +148,12 @@ class HookHandler
         $new_name = $new_suppliers_id > 0 ? Dropdown::getDropdownName(Supplier::getTable(), $new_suppliers_id) : '';
 
         $message = match (true) {
-            $old_suppliers_id === 0 && $new_suppliers_id > 0 => sprintf(__('[Domain Manager] Registrar supplier set to %s', 'domainmanager'), $new_name),
-            $old_suppliers_id > 0 && $new_suppliers_id === 0 => __('[Domain Manager] Registrar supplier cleared', 'domainmanager'),
-            default => sprintf(__('[Domain Manager] Registrar supplier changed from %1$s to %2$s', 'domainmanager'), $old_name, $new_name),
+            $old_suppliers_id === 0 && $new_suppliers_id > 0 => sprintf(__('Registrar supplier set to %s', 'domainmanager'), $new_name),
+            $old_suppliers_id > 0 && $new_suppliers_id === 0 => __('Registrar supplier cleared', 'domainmanager'),
+            default => sprintf(__('Registrar supplier changed from %1$s to %2$s', 'domainmanager'), $old_name, $new_name),
         };
 
-        Log::history($domains_id, Domain::class, [0, '', $message]);
+        Log::history($domains_id, Domain::class, [PLUGIN_DOMAINMANAGER_SO_DOMAIN, '', $message]);
     }
 
     /**

@@ -536,55 +536,76 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
 - **Steps:** on a supplier with no prior Domain Manager configuration, select
   a driver (e.g. Cloudflare) and fill in its credential field(s), Save, then
   open that Supplier's own **Historical** tab.
-- **Expected:** one entry `"[Domain Manager] API driver set to Cloudflare"`
-  and one `"[Domain Manager] API Token set"` (or the equivalent per-field
-  lines for a multi-field driver) — never containing the actual token/secret
-  value.
+- **Expected:** the **"field" column reads "Domain Manager"** (not blank) on
+  every new row — verifies the `plugin_domainmanager_getAddSearchOptionsNew()`
+  registration (§3.7.1) resolved correctly. One row's change text is `"Change
+  to Cloudflare"` (driver set) and another `"Change to API Token set"` (or
+  the equivalent per-field lines for a multi-field driver) — never containing
+  the actual token/secret value.
 - [ ] Pass
 
 ### 3.7.2 Updating a single credential field logs only that field
 - **Steps:** on an already-configured supplier (same driver), change only one
   credential field (e.g. just the secret, leaving other fields as their
   "saved" placeholder) and Save.
-- **Expected:** exactly one new Historical line, `"[Domain Manager] <Field
-  label> updated"`, for the changed field only — no lines for the untouched
-  fields, no driver-change line.
+- **Expected:** exactly one new Historical row, field "Domain Manager", change
+  `"Change to <Field label> updated"`, for the changed field only — no rows
+  for the untouched fields, no driver-change row.
 - [ ] Pass
 
 ### 3.7.3 Clearing a secret field logs "cleared"
 - **Steps:** on an already-configured supplier, submit the form with a
   previously-saved secret field now empty (same driver).
-- **Expected:** `"[Domain Manager] <Field label> cleared"` in the Historical
-  tab; the field is actually removed from the stored encrypted payload (not
-  just cosmetically).
+- **Expected:** field "Domain Manager", change `"Change to <Field label>
+  cleared"` in the Historical tab; the field is actually removed from the
+  stored encrypted payload (not just cosmetically).
 - [ ] Pass
 
 ### 3.7.4 Switching driver logs the driver change + new fields only
 - **Steps:** on a supplier configured with one driver (e.g. Dinahosting),
   switch the driver select to a different one (e.g. Cloudflare), fill its
   field(s), Save.
-- **Expected:** `"[Domain Manager] API driver changed from Dinahosting to
-  Cloudflare"` plus one `"<Field> set"` line per newly-populated field of the
-  new driver — no spurious "cleared"/"updated" lines referencing the old
-  driver's now-irrelevant fields (user/password).
+- **Expected:** field "Domain Manager", change `"Change to API driver changed
+  from Dinahosting to Cloudflare"` plus one `"Change to <Field> set"` row per
+  newly-populated field of the new driver — no spurious "cleared"/"updated"
+  rows referencing the old driver's now-irrelevant fields (user/password).
 - [ ] Pass
 
 ### 3.7.5 Purging a SupplierConfig row logs removal
 - **Steps:** delete/purge a supplier's Domain Manager configuration (via the
   right-holder unlock path or direct DB-admin action), then check the
   Supplier's Historical tab.
-- **Expected:** `"[Domain Manager] API configuration removed (was <driver
-  label>)"`.
+- **Expected:** field "Domain Manager", change `"Change to API configuration
+  removed (was <driver label>)"`.
 - [ ] Pass
 
 ### 3.7.6 Registrar supplier assignment logs to the Domain's Historical tab
 - **Steps:** on a Domain, set the Registrar dropdown to a supplier, Save;
   then change it to a different supplier, Save; then clear it, Save. Check
   the Domain's own **Historical** tab after each save.
-- **Expected:** three distinct entries — `"[Domain Manager] Registrar
-  supplier set to X"`, `"...changed from X to Y"`, `"...cleared"` — logged
-  only on saves where the value actually changed (a no-op save produces no
-  new entry).
+- **Expected:** three distinct rows, field "Domain Manager" on each —
+  `"Change to Registrar supplier set to X"`, `"...changed from X to Y"`,
+  `"...cleared"` — logged only on saves where the value actually changed (a
+  no-op save produces no new row). Sync milestones (`SyncEngine`'s "Update
+  Now"/cron outcomes, §5) also now appear as "Domain Manager" rows on the
+  same tab.
+- [ ] Pass
+
+### 3.7.7 Search-option ID collision check
+- **Steps:** run `php tools/getsearchoptions.php --type=Supplier` and
+  `--type=Domain` against the target instance (requires DB access) before
+  go-live; separately, check that "Domain Manager" appears exactly once as a
+  selectable column in Supplier's and Domain's Search config (Setup → search
+  options / the search page's "+" column picker) and that adding it as a
+  displayed/sorted column doesn't error (it's bound to the itemtype's own
+  `name` column, so it should just behave like a redundant Name column, not
+  crash).
+- **Expected:** IDs `9401` (Supplier) / `9402` (Domain,
+  `PLUGIN_DOMAINMANAGER_SO_SUPPLIER`/`PLUGIN_DOMAINMANAGER_SO_DOMAIN` in
+  `setup.php`) are not already used by another installed plugin for that
+  itemtype; no SQL error when the column is added to a search/sort. If a
+  collision is found, change the constants in `setup.php` to unused values
+  and re-test.
 - [ ] Pass
 
 > Verification status: Phase 1 items were exercised on GLPI 11.0.8 via CLI on
@@ -647,3 +668,14 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
 > `post_purgeItem()` and `Dropdown::getDropdownName()` signatures on
 > `11.0/bugfixes`. `php -l` clean on all touched files; no container run yet —
 > all of 3.5.9–3.5.11 and 3.7.1–3.7.6 need a manual pass on a live instance.
+> 2026-07-20: the Historical tab's "field" column was blank on the first live
+> pass — traced to `Log::history()`'s generic `id_search_option = 0` never
+> matching a real search option (verified against `src/Log.php` on
+> `11.0/bugfixes`). Fixed by registering a real, non-functional "Domain
+> Manager" search option per itemtype via
+> `plugin_domainmanager_getAddSearchOptionsNew()` (`setup.php`,
+> `PLUGIN_DOMAINMANAGER_SO_SUPPLIER`/`_SO_DOMAIN`) and passing it as
+> `id_search_option` everywhere; all message text dropped its now-redundant
+> `"[Domain Manager] "` text prefix. New item 3.7.7 covers the required
+> collision check for these IDs, which cannot be verified without a live
+> instance. `php -l` clean; no container run yet.
