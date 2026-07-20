@@ -1,0 +1,30 @@
+{
+  "$schema-note": "TICGAL-wide GLPI plugin search-option ID registry. Search options are how a plugin gets a custom, non-blank 'field' label in a native GLPI Historical tab (Log::history()'s id_search_option resolves against SearchOption::getOptionsForItemtype()) — see the glpi-plugin-builder skill's 'History/audit-trail requirement' section and this plugin's ARCHITECTURE.md §3.7 for why these exist. This file exists to keep IDs collision-free BETWEEN TICGAL's OWN plugins (a mechanically checkable problem); it does NOT and cannot guarantee collision-freedom against third-party/public plugins — that can only be verified per-instance with tools/getsearchoptions.php --type=<Itemtype> against the actual target GLPI install before go-live. Workflow for adding a new option: (1) check no entry below already claims that id for the same itemtype; (2) run the collision check tool against a representative live instance; (3) add the entry here in the SAME change that registers it in code; (4) if this ever grows to cover multiple plugin repos, extract this file into a shared 'ticgal-glpi-conventions' repo and have each plugin vendor/submodule it instead of duplicating.",
+  "plugins": {
+    "domainmanager": {
+      "repository": "https://github.com/TICGAL-GLPI-Plugins/domainmanager",
+      "reserved_block": "9400-9409",
+      "registered_in": "setup.php::plugin_domainmanager_getAddSearchOptionsNew()",
+      "search_options": [
+        {
+          "itemtype": "Supplier",
+          "id": 9401,
+          "name": "Domain Manager",
+          "table": "glpi_suppliers",
+          "field": "name",
+          "purpose": "Log::history() field-column label for SupplierConfig driver/credential changes (ARCHITECTURE.md §3.7)",
+          "verified_collision_free": false
+        },
+        {
+          "itemtype": "Domain",
+          "id": 9402,
+          "name": "Domain Manager",
+          "table": "glpi_domains",
+          "field": "name",
+          "purpose": "Log::history() field-column label for registrar-supplier-assignment changes and sync milestones (ARCHITECTURE.md §3.7)",
+          "verified_collision_free": false
+        }
+      ]
+    }
+  }
+}

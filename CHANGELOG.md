@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - The native History ("Historical" tab) entries added by Phase 3.7 rendered with a blank "field" column: `Log::history()`'s generic `id_search_option = 0` never matches a real search option (verified against `src/Log.php` on `11.0/bugfixes`). Fixed by registering a real, non-functional "Domain Manager" search option per itemtype (`plugin_domainmanager_getAddSearchOptionsNew()`, `PLUGIN_DOMAINMANAGER_SO_SUPPLIER`/`_SO_DOMAIN` in `setup.php`) bound to each itemtype's own `name` column — used only as `id_search_option` in every `Log::history()` call, so the field column now reads "Domain Manager" and message text no longer needs its own `"[Domain Manager] "` prefix. Accepted side effect: "Domain Manager" also appears as a normal, selectable (non-functional) column/filter in Supplier's and Domain's Search UI; the chosen IDs still need a collision check against the target instance via `tools/getsearchoptions.php`.
 
+### Added
+- `search-options-registry.json` (repo root): the TICGAL-wide ledger of search-option IDs any TICGAL plugin registers, keyed by plugin then itemtype, to keep collisions mechanically checkable between TICGAL's own plugins — seeded with Domain Manager's two entries (`9401`/`9402`, reserved block `9400-9409`). Does not and cannot cover third-party/public plugins; that still requires the live-instance `tools/getsearchoptions.php` check.
+
 ## [0.1.2] - 2026-07-19
 ### Fixed
 - `PluginLogger` (`domainmanager.log`/`domainmanager-errors.log`) silently wrote nothing on a stock install: `Toolbox::logInFile()` only writes when `$CFG_GLPI['use_log_in_files']` is set (verified absent from this GLPI 11 branch's default config) or `$force=true` is passed — both calls now pass `true` explicitly.

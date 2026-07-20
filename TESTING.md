@@ -605,7 +605,9 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
   `setup.php`) are not already used by another installed plugin for that
   itemtype; no SQL error when the column is added to a search/sort. If a
   collision is found, change the constants in `setup.php` to unused values
-  and re-test.
+  and re-test. Once confirmed clean, flip `verified_collision_free` to `true`
+  for both entries in `search-options-registry.json` (repo root) — the
+  TICGAL-wide ledger of every search-option ID any TICGAL plugin registers.
 - [ ] Pass
 
 > Verification status: Phase 1 items were exercised on GLPI 11.0.8 via CLI on
