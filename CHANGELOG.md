@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.2.0] - 2026-07-20
 ### Fixed
 - The native History ("Historical" tab) entries added by Phase 3.7 rendered with a blank "field" column: `Log::history()`'s generic `id_search_option = 0` never matches a real search option (verified against `src/Log.php` on `11.0/bugfixes`). Fixed by registering a real, non-functional "Domain Manager" search option per itemtype (`plugin_domainmanager_getAddSearchOptionsNew()`, `PLUGIN_DOMAINMANAGER_SO_SUPPLIER`/`_SO_DOMAIN` in `setup.php`) bound to each itemtype's own `name` column — used only as `id_search_option` in every `Log::history()` call, so the field column now reads "Domain Manager" and message text no longer needs its own `"[Domain Manager] "` prefix. Accepted side effect: "Domain Manager" also appears as a normal, selectable (non-functional) column/filter in Supplier's and Domain's Search UI; the chosen IDs still need a collision check against the target instance via `tools/getsearchoptions.php`.
 
