@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- **Richer registrar domain metadata (Phase 7a)**: the Domain form's "Domain Manager" panel now shows a "Registrar details" section (WHOIS privacy, domain lock, transfer lock, auto-renew, DNSSEC, domain type, and whether a transfer/EPP auth code is on file) once a domain's registrar sync succeeds. IONOS's registrar API can report all 7 fields; Cloudflare reports 3 of them (WHOIS privacy, transfer lock, auto-renew — confirmed live against its current API spec); Dinahosting reports 1 (the auth code, via a real command whose response shape was safely inferred from two already-trusted sibling commands) — every other per-driver gap is a confirmed, spec-verified structural absence or an explicitly flagged pending-live-verification case, never a guess. The EPP/transfer auth code itself is persisted but deliberately never displayed in the UI — it's a transfer-enabling secret, and the panel only shows whether one is on file. Verified live end-to-end against both a real IONOS-registered and a real Dinahosting-registered domain. See ARCHITECTURE.md §9 Phase 7a for the full per-driver support matrix and reasoning.
+
+### Fixed
+- **Found and fixed while implementing Phase 7a**: a native PHP `true`/`false` passed into a `CommonDBTM::update()`/`add()` input array is silently persisted as `NULL` instead of `1`/`0` — caught live when a real sync's in-memory result held `true` for two fields that ended up `NULL` in the database. Every nullable boolean-ish column this plugin writes now goes through an explicit `int`/`null` cast before reaching an update/add call, matching the `1`/`0` convention this codebase's *existing* tinyint columns (`is_active`, `is_managed`) already happened to follow. See ARCHITECTURE.md §0.10 — directly relevant to Phase 7b's planned `is_proxied` tri-state column.
 
 ## [0.4.0] - 2026-07-21
 ### Fixed

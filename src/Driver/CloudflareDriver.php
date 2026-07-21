@@ -233,7 +233,24 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
         return new DomainLifecycle(
             $registration,
             $expiration,
-            self::mapStatus($result, $expiration)
+            self::mapStatus($result, $expiration),
+            // §9 Phase 7: confirmed live against Cloudflare's current
+            // Registrar API OpenAPI spec (`registrar-api_domain_properties`,
+            // 2026-07-21) — `authInfo`/`domainLock`/`domainType`/
+            // `dnsSecEnabled` are genuinely absent from this schema, not
+            // merely undocumented (same "confirmed absent" bar already
+            // applied to IONOS's missing registrationDate), so they stay
+            // null for this driver. `locked` is the *only* lock concept
+            // Cloudflare's Registrar API exposes — no separate
+            // general-edit-lock field distinct from transfer protection —
+            // so it maps to `transferLock`, never `domainLock`.
+            null,
+            isset($result['privacy']) ? (bool) $result['privacy'] : null,
+            null,
+            isset($result['locked']) ? (bool) $result['locked'] : null,
+            isset($result['auto_renew']) ? (bool) $result['auto_renew'] : null,
+            null,
+            null
         );
     }
 

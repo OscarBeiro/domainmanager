@@ -259,6 +259,30 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
 
     /**
      * {@inheritDoc}
+     *
+     * §9 Phase 7: only `authInfo` is populated for this driver, via
+     * `Domain_GetAuthcode` — confirmed to exist as a real command (live
+     * probe 2026-07-21 returned the account-wide auth-error envelope, not
+     * "Unknown command", the same signal used to confirm every other
+     * command this driver already calls) and inferred to share the exact
+     * `Domain_Get*` → single-string-in-`data` shape already trusted for
+     * `Domain_GetExpirationDate`/`Domain_GetRegistrationDate` above. A
+     * failure fetching it (including "not found") is swallowed, not
+     * thrown — it's an enrichment, not core lifecycle data the rest of
+     * the sync depends on.
+     *
+     * `privacyEnabled`/`domainLock`/`transferLock`/`autoRenew` each have a
+     * real, live-confirmed-to-exist Dinahosting command
+     * (`Domain_WhoisPrivacy_Get`, `Domain_Status_IsLocked`/`Domain_Status_Get`,
+     * `Billing_Autorenew_GetAll`) but none publish an example response
+     * body anywhere (same documentation gap already noted for
+     * `Domain_GetExpirationDate`'s date format), and none share
+     * `Domain_GetAuthcode`'s safe-to-infer shape — `Billing_Autorenew_GetAll`
+     * in particular is named as a bulk *list* endpoint, not obviously
+     * domain-scoped. Left null rather than guessed, pending live
+     * verification against a real account. `domainType`/`dnsSecEnabled`
+     * have no matching command anywhere in the documented command index
+     * at all — confirmed absent, not just unconfirmed.
      */
     public function fetchLifecycle(string $domain): DomainLifecycle
     {
@@ -277,7 +301,25 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
             ? LifecycleStatus::Expired
             : LifecycleStatus::Ok;
 
-        return new DomainLifecycle($registration, $expiration, $status);
+        return new DomainLifecycle($registration, $expiration, $status, self::fetchAuthInfo($domain));
+    }
+
+    /**
+     * @param  string $domain already-normalized FQDN
+     * @return string|null
+     */
+    private function fetchAuthInfo(string $domain): ?string
+    {
+        try {
+            $data = $this->request('Domain_GetAuthcode', ['domain' => $domain]);
+        } catch (Throwable $e) {
+            PluginLogger::activity("Dinahosting auth code fetch skipped for $domain: " . $e->getMessage());
+            return null;
+        }
+
+        $authInfo = trim((string) ($data['data'] ?? ''));
+
+        return $authInfo !== '' ? $authInfo : null;
     }
 
     /**

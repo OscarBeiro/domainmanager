@@ -133,6 +133,60 @@
                     </a>
                 </div>
             </div>
+
+            {# §9 Phase 7: registrar administrative metadata. Only shown once
+               the most recent registrar sync actually succeeded — a field
+               left null here can mean either "this driver doesn't report
+               it" (§6.2 boolean/text fallback below) or "never synced",
+               and gating the whole block on rstatus == 'ok' avoids
+               presenting a bare wall of "—" for a domain that was never
+               synced at all. #}
+            {% if rstatus == 'ok' %}
+                <hr class="m-0">
+                <div class="p-3">
+                    <h5 class="mb-3">{{ __('Registrar details', 'domainmanager') }}</h5>
+                    <div class="row">
+                        {% for field, label in {
+                            'registrar_privacy_enabled': __('WHOIS privacy', 'domainmanager'),
+                            'registrar_transfer_lock':   __('Transfer lock', 'domainmanager'),
+                            'registrar_domain_lock':     __('Domain lock', 'domainmanager'),
+                            'registrar_auto_renew':      __('Auto-renew', 'domainmanager'),
+                            'registrar_dnssec_enabled':  __('DNSSEC', 'domainmanager'),
+                        } %}
+                            <div class="mb-2 col-12 col-sm-4">
+                                <label class="form-label mb-0">{{ label }}</label>
+                                {% if state[field] is null %}
+                                    <div class="text-muted">{{ __('Not reported by this driver', 'domainmanager') }}</div>
+                                {% elseif state[field] %}
+                                    <span class="badge text-bg-success">{{ __('Yes', 'domainmanager') }}</span>
+                                {% else %}
+                                    <span class="badge text-bg-secondary">{{ __('No', 'domainmanager') }}</span>
+                                {% endif %}
+                            </div>
+                        {% endfor %}
+                        <div class="mb-2 col-12 col-sm-4">
+                            <label class="form-label mb-0">{{ __('Domain type', 'domainmanager') }}</label>
+                            <div>
+                                {% if state.registrar_domain_type %}
+                                    {{ domain_type_labels[state.registrar_domain_type]|default(state.registrar_domain_type) }}
+                                {% else %}
+                                    <span class="text-muted">{{ __('Not reported by this driver', 'domainmanager') }}</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="mb-2 col-12 col-sm-4">
+                            <label class="form-label mb-0">{{ __('Transfer / EPP auth code', 'domainmanager') }}</label>
+                            <div>
+                                {% if state.registrar_auth_info %}
+                                    <span class="badge text-bg-secondary"><i class="ti ti-lock me-1"></i>{{ __('On file', 'domainmanager') }}</span>
+                                {% else %}
+                                    <span class="text-muted">{{ __('Not on file', 'domainmanager') }}</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            {% endif %}
         </div>
     {% else %}
         <div class="card-body">

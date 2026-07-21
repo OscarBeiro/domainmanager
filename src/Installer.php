@@ -62,6 +62,7 @@ class Installer
         self::createTables($migration);
         self::addConnectionTestColumns($migration);
         self::migrateRecordManagedColumn($migration);
+        self::addRegistrarMetadataColumns($migration);
         self::seedDomainType();
         self::seedRecordTypes();
         self::registerRights($migration);
@@ -249,6 +250,40 @@ class Installer
         $migration->addField($table, 'is_managed', 'bool', ['value' => 1]);
         $migration->addKey($table, 'is_managed');
         $migration->dropField($table, 'is_stale');
+    }
+
+    /**
+     * Add the 7 registrar administrative-metadata columns to the states
+     * table (§9 Phase 7). These are plugin-only concepts with no native
+     * `glpi_domains` equivalent (unlike `date_domaincreation`/
+     * `date_expiration`/`is_active`, which already existed as native
+     * columns before this plugin — §0.2) — they live here, on the
+     * plugin's own read-only state table, exactly like `detected_provider`/
+     * `registrar_status` already do, and deliberately need no
+     * `ImportLock`/`LockEnforcer` treatment: nothing exposes them as an
+     * editable native Domain form field a user could otherwise touch, so
+     * there is nothing for a lock to protect (§9's own open question on
+     * lock-semantics parity, answered here rather than deferred).
+     * All 7 use a nullable raw type string (`Migration::addField()`'s
+     * `bool`/`string` shorthands always force `NOT NULL`, per precedent
+     * already noted for `registrar_test_http_code` above) — `null` means
+     * "this driver's API doesn't report it", a real, meaningful third
+     * state, not merely absent.
+     *
+     * @param  Migration $migration
+     * @return void
+     */
+    private static function addRegistrarMetadataColumns(Migration $migration): void
+    {
+        $table = 'glpi_plugin_domainmanager_states';
+
+        $migration->addField($table, 'registrar_auth_info', 'varchar(255) NULL DEFAULT NULL');
+        $migration->addField($table, 'registrar_privacy_enabled', 'tinyint NULL DEFAULT NULL');
+        $migration->addField($table, 'registrar_domain_lock', 'tinyint NULL DEFAULT NULL');
+        $migration->addField($table, 'registrar_transfer_lock', 'tinyint NULL DEFAULT NULL');
+        $migration->addField($table, 'registrar_auto_renew', 'tinyint NULL DEFAULT NULL');
+        $migration->addField($table, 'registrar_domain_type', 'varchar(50) NULL DEFAULT NULL');
+        $migration->addField($table, 'registrar_dnssec_enabled', 'tinyint NULL DEFAULT NULL');
     }
 
     /**

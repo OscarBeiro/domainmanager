@@ -63,7 +63,11 @@ class SyncEngine
      * @param  Domain $domain
      * @return array{registrar_status: string, dns_status: string,
      *               registrar_message: string, dns_message: string,
-     *               detected_provider: string, last_sync_date: string}
+     *               detected_provider: string, last_sync_date: string,
+     *               registrar_auth_info: ?string, registrar_privacy_enabled: ?int,
+     *               registrar_domain_lock: ?int, registrar_transfer_lock: ?int,
+     *               registrar_auto_renew: ?int, registrar_domain_type: ?string,
+     *               registrar_dnssec_enabled: ?int}
      */
     public function sync(Domain $domain): array
     {
@@ -94,6 +98,17 @@ class SyncEngine
             'dns_message'       => '',
             'detected_provider' => $detected,
             'last_sync_date'    => $now,
+            // §9 Phase 7: null unless syncRegistrarLeg() below actually
+            // fetches a fresh lifecycle — a leg that never ran (no
+            // supplier, inactive supplier, error) has nothing to report,
+            // same as every other registrar_* result field here.
+            'registrar_auth_info'       => null,
+            'registrar_privacy_enabled' => null,
+            'registrar_domain_lock'     => null,
+            'registrar_transfer_lock'   => null,
+            'registrar_auto_renew'      => null,
+            'registrar_domain_type'     => null,
+            'registrar_dnssec_enabled'  => null,
         ];
 
         LockEnforcer::$sync_in_progress = true;
@@ -153,6 +168,13 @@ class SyncEngine
             'dns_status'        => $result['dns_status'],
             'dns_message'       => $result['dns_message'],
             'last_sync_date'    => $now,
+            'registrar_auth_info'       => $result['registrar_auth_info'],
+            'registrar_privacy_enabled' => $result['registrar_privacy_enabled'],
+            'registrar_domain_lock'     => $result['registrar_domain_lock'],
+            'registrar_transfer_lock'   => $result['registrar_transfer_lock'],
+            'registrar_auto_renew'      => $result['registrar_auto_renew'],
+            'registrar_domain_type'     => $result['registrar_domain_type'],
+            'registrar_dnssec_enabled'  => $result['registrar_dnssec_enabled'],
         ];
         if ($state !== null) {
             $state->update(['id' => $state->getID()] + $state_input);
@@ -216,6 +238,24 @@ class SyncEngine
                 (int) $domain->getID(),
                 ['name' => $domain->fields['name']] + $updates
             );
+
+            // §9 Phase 7: plugin-owned state columns, not native Domain
+            // fields — no ImportLock entry needed (see Installer's
+            // addRegistrarMetadataColumns() docblock). Cast nullable bools
+            // to int (0/1)/null explicitly, matching this codebase's own
+            // existing convention for every other tinyint column
+            // (`is_active` just above, `is_managed` in Installer) — a raw
+            // PHP `true`/`false` written straight into a CommonDBTM update
+            // input was found live to be silently dropped (persisted as
+            // NULL) instead of 1/0, while int/string/null values in the
+            // same update() call persisted correctly.
+            $result['registrar_auth_info']       = $lifecycle->authInfo;
+            $result['registrar_privacy_enabled'] = self::toNullableInt($lifecycle->privacyEnabled);
+            $result['registrar_domain_lock']     = self::toNullableInt($lifecycle->domainLock);
+            $result['registrar_transfer_lock']   = self::toNullableInt($lifecycle->transferLock);
+            $result['registrar_auto_renew']      = self::toNullableInt($lifecycle->autoRenew);
+            $result['registrar_domain_type']     = $lifecycle->domainType;
+            $result['registrar_dnssec_enabled']  = self::toNullableInt($lifecycle->dnsSecEnabled);
 
             $result['registrar_status']  = DomainState::STATUS_OK;
             $result['registrar_message'] = sprintf(
@@ -298,6 +338,15 @@ class SyncEngine
                 . $e::class . ': ' . $e->getMessage()
             );
         }
+    }
+
+    /**
+     * @param  bool|null $value
+     * @return int|null
+     */
+    private static function toNullableInt(?bool $value): ?int
+    {
+        return $value === null ? null : (int) $value;
     }
 
     /**
