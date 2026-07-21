@@ -30,6 +30,7 @@
  */
 
 use GlpiPlugin\Domainmanager\Installer;
+use GlpiPlugin\Domainmanager\MassiveActionHandler;
 use GlpiPlugin\Domainmanager\Service\PluginLogger;
 
 /**
@@ -65,4 +66,17 @@ function plugin_domainmanager_activate(): void
 function plugin_domainmanager_uninstall(): bool
 {
     return Installer::uninstall(new Migration(PLUGIN_DOMAINMANAGER_VERSION));
+}
+
+/**
+ * Hooks::AUTO_MASSIVE_ACTIONS callback (only invoked because
+ * Hooks::USE_MASSIVE_ACTION is set in setup.php) — see MassiveActionHandler
+ * (§9 Phase 5.5) for the actual action/processor.
+ *
+ * @param  string $itemtype
+ * @return array<string, string>
+ */
+function plugin_domainmanager_MassiveActions(string $itemtype): array
+{
+    return MassiveActionHandler::getActions($itemtype);
 }

@@ -37,6 +37,7 @@ use Dropdown;
 use Glpi\Application\View\TemplateRenderer;
 use Session;
 use Supplier;
+use Toolbox;
 
 /**
  * "Domain Manager" tab on Supplier: API driver + credentials form
@@ -70,7 +71,19 @@ class SupplierTab extends CommonGLPI
             && $item->getID() > 0
             && $item->can($item->getID(), READ)
         ) {
-            return self::createTabEntry(self::getTypeName(1));
+            // Same union query the panel itself renders from
+            // (DomainState::getDomainsForSupplier()) — deliberately not a
+            // separate/simpler count, so this badge can never drift from
+            // what the tab actually shows (§9 Phase 5.5). Gated behind the
+            // same session preference core's own tab-count badges use
+            // (e.g. Document_Item::getTabNameForItem()) to avoid an
+            // unconditional extra query on every tab-list render.
+            $count = 0;
+            if (($_SESSION['glpishow_count_on_tabs'] ?? true) && Session::haveRight('domain', READ)) {
+                $count = count(DomainState::getDomainsForSupplier((int) $item->getID()));
+            }
+
+            return self::createTabEntry(self::getTypeName(1), $count);
         }
 
         return '';
@@ -123,6 +136,11 @@ class SupplierTab extends CommonGLPI
                 'dns'       => ['status' => 'never', 'message' => '', 'http_code' => null, 'date' => null],
             ];
 
+        $domains_raw        = Session::haveRight('domain', READ)
+            ? DomainState::getDomainsForSupplier((int) $supplier->getID())
+            : [];
+        $never_synced_count = self::countNeverSyncedRegistrarLinks($domains_raw);
+
         TemplateRenderer::getInstance()->display('@domainmanager/supplier_tab.html.twig', [
             'suppliers_id'         => (int) $supplier->getID(),
             'config_id'            => $config !== null ? (int) $config->getID() : 0,
@@ -144,9 +162,9 @@ class SupplierTab extends CommonGLPI
                 DriverRegistry::getAvailableDrivers(),
                 array_map([DriverRegistry::class, 'getPrimaryTestableCapability'], DriverRegistry::getAvailableDrivers())
             ),
-            'domains' => Session::haveRight('domain', READ)
-                ? self::buildDomainsListRows(DomainState::getDomainsForSupplier((int) $supplier->getID()))
-                : [],
+            'domains'            => self::buildDomainsListRows($domains_raw),
+            'never_synced_count' => $never_synced_count,
+            'domains_search_url' => self::getDomainsSearchUrl((int) $supplier->getID()),
         ]);
 
         return true;
@@ -161,7 +179,7 @@ class SupplierTab extends CommonGLPI
      * @param  array<int, array{domains_id:int, name:string, entities_id:int,
      *                registrar_suppliers_id:int, dns_suppliers_id:int,
      *                detected_provider:string, registrar_status:string,
-     *                dns_status:string}> $domains
+     *                dns_status:string, registrar_verified:bool}> $domains
      * @return array<int, array{domains_id:int, name:string, url:string,
      *                registrar:?array{name:string, url:string},
      *                registrar_status:string, dns:array{kind:string,
@@ -180,6 +198,50 @@ class SupplierTab extends CommonGLPI
                 'dns_status'       => $domain['dns_status'],
             ];
         }, $domains);
+    }
+
+    /**
+     * How many rows are registrar-linked (a real Supplier via Infocom, §0.1)
+     * but that link has never actually been verified by a sync — surfaced
+     * as a recommendation banner rather than a silent gap (§9 Phase 5.5).
+     *
+     * @param  array<int, array{registrar_suppliers_id:int, registrar_verified:bool}> $domains
+     * @return int
+     */
+    private static function countNeverSyncedRegistrarLinks(array $domains): int
+    {
+        $count = 0;
+        foreach ($domains as $domain) {
+            if ($domain['registrar_suppliers_id'] > 0 && !$domain['registrar_verified']) {
+                $count++;
+            }
+        }
+
+        return $count;
+    }
+
+    /**
+     * Deep link to Domain's native search, pre-filtered to domains whose
+     * Infocom Supplier is this one (`PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR`,
+     * setup.php) — reuses core's own search/criteria mechanism rather than
+     * a bespoke filtered view, per §9 Phase 5.5's recommendation banner.
+     *
+     * @param  int $suppliers_id
+     * @return string
+     */
+    private static function getDomainsSearchUrl(int $suppliers_id): string
+    {
+        $params = [
+            'criteria' => [
+                [
+                    'field'      => PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR,
+                    'searchtype' => 'equals',
+                    'value'      => $suppliers_id,
+                ],
+            ],
+        ];
+
+        return Domain::getSearchURL() . '?' . Toolbox::append_params($params);
     }
 
     /**
@@ -228,6 +290,6 @@ class SupplierTab extends CommonGLPI
             return ['kind' => 'unknown', 'name' => __('Unknown', 'domainmanager'), 'url' => null];
         }
 
-        return ['kind' => 'never', 'name' => __('Never synced', 'domainmanager'), 'url' => null];
+        return ['kind' => 'never', 'name' => __('Not yet checked', 'domainmanager'), 'url' => null];
     }
 }

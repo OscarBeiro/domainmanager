@@ -94,11 +94,38 @@ class DomainState extends CommonDBTM
      * shown on the Supplier's Domain Manager tab. Restricted to entities
      * visible to the current session, same as any other asset listing.
      *
+     * Union of two independent sources, exactly like the underlying
+     * relationship works (§9 Phase 5.5, revised):
+     * - **Registrar**: `glpi_infocoms.suppliers_id` (itemtype=Domain),
+     *   read live and directly — this is GLPI's own native, immediately
+     *   authoritative link (the same one that makes a domain show up
+     *   under a Supplier's native "Items" tab) and requires no sync/state
+     *   row to exist at all. Never gate a domain's presence in this list
+     *   on a state row existing just because the registrar link is real.
+     * - **DNS/NS provider**: `states.dns_suppliers_id`, which genuinely
+     *   cannot be known without at least one real sync — this half stays
+     *   sync-dependent, it just must not suppress a row the registrar
+     *   side already justifies.
+     * `registrar_status` only comes from the state row when that row's own
+     * `registrar_suppliers_id` mirror actually agrees with the live Infocom
+     * value queried here — otherwise it falls back to `STATUS_NEVER`
+     * ("not yet checked *for this supplier*"). This matters even when a
+     * state row genuinely exists: a domain can have been synced (DNS side
+     * populated) while its Infocom registrar assignment predates or
+     * otherwise missed `HookHandler::infocomSaved()`'s mirror (§0.1) — in
+     * that case the row's `registrar_status` describes some *other*
+     * registrar relationship (often "none"), not this supplier's, and
+     * showing it next to this supplier's real name would be actively
+     * misleading rather than merely stale. `dns_status` has no equivalent
+     * problem: a row only matches the DNS half of the union at all when
+     * `dns_suppliers_id` already equals `$suppliers_id`, written directly
+     * by the most recent real sync.
+     *
      * @param  int $suppliers_id
      * @return array<int, array{domains_id:int, name:string, entities_id:int,
      *               registrar_suppliers_id:int, dns_suppliers_id:int,
      *               detected_provider:string, registrar_status:string,
-     *               dns_status:string}>
+     *               dns_status:string, registrar_verified:bool}>
      */
     public static function getDomainsForSupplier(int $suppliers_id): array
     {
@@ -110,18 +137,28 @@ class DomainState extends CommonDBTM
         }
 
         $iterator = $DB->request([
-            'SELECT'     => [
+            'SELECT'    => [
                 'glpi_domains.id AS domains_id',
                 'glpi_domains.name AS name',
                 'glpi_domains.entities_id AS entities_id',
-                self::getTable() . '.registrar_suppliers_id AS registrar_suppliers_id',
+                'infocom.suppliers_id AS registrar_suppliers_id',
+                self::getTable() . '.registrar_suppliers_id AS state_registrar_suppliers_id',
                 self::getTable() . '.dns_suppliers_id AS dns_suppliers_id',
                 self::getTable() . '.detected_provider AS detected_provider',
                 self::getTable() . '.registrar_status AS registrar_status',
                 self::getTable() . '.dns_status AS dns_status',
             ],
-            'FROM'       => 'glpi_domains',
-            'INNER JOIN' => [
+            'FROM'      => 'glpi_domains',
+            'LEFT JOIN' => [
+                'glpi_infocoms AS infocom' => [
+                    'ON' => [
+                        'infocom'      => 'items_id',
+                        'glpi_domains' => 'id',
+                        [
+                            'AND' => ['infocom.itemtype' => 'Domain'],
+                        ],
+                    ],
+                ],
                 self::getTable() => [
                     'ON' => [
                         self::getTable() => 'domains_id',
@@ -129,31 +166,34 @@ class DomainState extends CommonDBTM
                     ],
                 ],
             ],
-            'WHERE'      => array_merge(
+            'WHERE'     => array_merge(
                 [
                     'glpi_domains.is_deleted'  => 0,
                     'glpi_domains.is_template' => 0,
                     'OR'                       => [
-                        self::getTable() . '.registrar_suppliers_id' => $suppliers_id,
-                        self::getTable() . '.dns_suppliers_id'       => $suppliers_id,
+                        'infocom.suppliers_id'                 => $suppliers_id,
+                        self::getTable() . '.dns_suppliers_id' => $suppliers_id,
                     ],
                 ],
                 getEntitiesRestrictCriteria('glpi_domains', '', '', true)
             ),
-            'ORDER'      => 'glpi_domains.name ASC',
+            'ORDER'     => 'glpi_domains.name ASC',
         ]);
 
         $rows = [];
         foreach ($iterator as $row) {
+            $registrar_verified = (int) ($row['state_registrar_suppliers_id'] ?? 0) === $suppliers_id;
+
             $rows[] = [
                 'domains_id'             => (int) $row['domains_id'],
                 'name'                   => (string) $row['name'],
                 'entities_id'            => (int) $row['entities_id'],
-                'registrar_suppliers_id' => (int) $row['registrar_suppliers_id'],
-                'dns_suppliers_id'       => (int) $row['dns_suppliers_id'],
-                'detected_provider'      => (string) $row['detected_provider'],
-                'registrar_status'       => (string) $row['registrar_status'],
-                'dns_status'             => (string) $row['dns_status'],
+                'registrar_suppliers_id' => (int) ($row['registrar_suppliers_id'] ?? 0),
+                'dns_suppliers_id'       => (int) ($row['dns_suppliers_id'] ?? 0),
+                'detected_provider'      => (string) ($row['detected_provider'] ?? ''),
+                'registrar_status'       => $registrar_verified ? (string) $row['registrar_status'] : self::STATUS_NEVER,
+                'dns_status'             => $row['dns_status'] !== null ? (string) $row['dns_status'] : self::STATUS_NEVER,
+                'registrar_verified'     => $registrar_verified,
             ];
         }
 

@@ -1018,3 +1018,112 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
 > was already populated and a sync had genuinely run, so "never synced" was
 > actively misleading; fixed in `SupplierTab::describeDnsProvider()` before
 > committing. `php -l` clean on all touched files.
+
+### 5.5.6 Domains list matches the native "Items" tab count (§9 Phase 5.5, fixed 2026-07-21)
+- **Steps:** on a Supplier with several domains whose Infocom "Supplier"
+  field is this supplier, but where a real sync has only ever run for
+  *some* of them (a common existing-instance-install scenario) — compare
+  the native "Items" tab's count against the "Domains" panel's row count
+  and the "Domain Manager" tab's own badge.
+- **Expected:** all three numbers agree, including domains that have never
+  been synced at all. Confirmed **not a bug in the earlier
+  implementation's intent, but a real query defect**: the original query
+  `INNER JOIN`ed the plugin's own state table, so a domain was invisible
+  until a sync had already produced a state row for it — even though its
+  registrar link (`glpi_infocoms.suppliers_id`) was already real. Fixed
+  via a `LEFT JOIN` read live from Infocom, unioned with the DNS-side
+  condition.
+- [ ] Pass
+
+### 5.5.7 Registrar status only trusted when the state row's mirror agrees with this supplier
+- **Steps:** find or create a domain with a real state row (DNS already
+  synced) whose `registrar_suppliers_id` does not match the supplier you're
+  viewing (e.g. set before the Infocom-mirror hook existed, or via a direct
+  DB write bypassing hooks) but whose Infocom "Supplier" field genuinely is
+  this supplier.
+- **Expected:** the Registrar column still correctly links to this
+  supplier (from the live Infocom read), but its status badge shows "Not
+  yet checked" — not whatever stale `registrar_status` the state row
+  happens to hold, which describes a different (often nonexistent)
+  registrar relationship, not this one. After running Update Now or the
+  massive action (5.5.9) on that domain, `registrar_suppliers_id` in the
+  state row should update to match, and the badge should switch to a real
+  status.
+- [ ] Pass
+
+### 5.5.8 Recommendation banner appears/disappears correctly, links to a real filtered search
+- **Steps:** on a supplier with at least one registrar-linked-but-never-verified
+  domain, open the Domains panel; click the banner's "Review and sync"
+  link; then sync every flagged domain and reload the panel.
+- **Expected:** banner text correctly pluralized (singular/plural via
+  `_n()`) and counts only unverified registrar links, not the whole list.
+  The link lands on Domain's native search, already filtered by the new
+  "Registrar (Financial information)" search option
+  (`PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR = 9403`) — confirm the value
+  dropdown resolves to the Supplier's real name (not "-----" / an Infocom
+  record lookup — an earlier, incorrect version of this search option
+  broke exactly that way, silently returning zero results too). After
+  every flagged domain has been synced once, the banner disappears
+  entirely.
+- [ ] Pass
+
+### 5.5.9 "Sync now (Domain Manager)" massive action (§9 Phase 5.5)
+- **Steps:** from the filtered search above (or any Domain list), select
+  several domains, open Actions, choose Sync now (Domain Manager), submit.
+- **Expected:** the action appears in GLPI's native massive-action
+  dropdown alongside core's own actions (Update, Clone, etc.) — not a
+  bespoke UI. Each domain is synced independently; one domain's sync
+  reporting a real error (`STATUS_ERROR` on either leg) doesn't stop the
+  rest of the batch from processing, and GLPI's native result summary
+  reports per-item OK/KO correctly (a domain with only
+  `unconfigured`/`unsupported`/`unknown` outcomes counts as OK — those are
+  expected states, not failures). Confirm every processed domain's
+  `registrar_suppliers_id` mirror is corrected to match live Infocom
+  afterward (5.5.7).
+- [ ] Pass
+
+> Undercount bug + SyncEngine live-Infocom fix + banner + massive action +
+> tab badge implemented and verified live on `glpi-claude` 2026-07-21, same
+> session as 5.5.1-5.5.5 above (Óscar's report: "Supplier ID 5 (IONOS)'s
+> native Items tab correctly shows 3 linked domains... The plugin's own
+> Domains panel... shows only 1"). Root cause confirmed against the actual
+> query before fixing, per his explicit request, rather than assumed —
+> `glpi_domains` genuinely has no `suppliers_id` column at all (verified
+> earlier this session too), the real native link is `glpi_infocoms`.
+> Reproduced live: 3 domains with real `Infocom.suppliers_id=5`, only 1
+> with a matching `states.registrar_suppliers_id` mirror.
+>
+> The massive action hit a real, fatal bug during verification, not a
+> cosmetic one: registering only `processMassiveActionsForOneItemtype()`
+> produced an `UndefinedMethodError` (`showMassiveActionsSubForm()` also
+> required, confirmed via `php-errors.log`) the moment a real browser
+> selected the action — caught via a full Playwright-driven browser test
+> (select-all, open Actions modal, choose the action, submit), not just
+> markup inspection, since GLPI's massive-action confirm/submit UI is
+> loaded via a live AJAX call.
+>
+> The new search option went through two wrong shapes before the working
+> one: first `'table' => 'glpi_infocoms', 'field' => 'suppliers_id',
+> 'datatype' => 'dropdown'` (GLPI resolved the dropdown's itemtype from
+> `table`, so it tried to look up `Infocom` records instead of `Supplier`s
+> — silently wrong display and zero query results, verified live via the
+> rendered `<select>`'s ajax config showing `"itemtype":"Infocom"`); then
+> adding `'searchtype' => ['equals', 'notequals']` alone (fixed the
+> searchtype list but not the underlying resolution). The working shape
+> combines `linkfield` (Computer's `users_id_tech` pattern) with
+> `joinparams.beforejoin` (Infocom's own `CartridgeItem`/`ConsumableItem`
+> pattern) for a genuine two-hop dropdown — verified by checking the
+> rendered value dropdown resolved to "IONOS" and the ajax config showed
+> `"itemtype":"Supplier"`, then confirming the actual filtered search
+> returned the right 3 domains, not just that no fatal error occurred.
+>
+> Separately during this session: a "credentials disappeared" report
+> turned out to be the concurrent-testing collision described earlier in
+> this file's connection-diagnostics sections — Claude was actively
+> toggling the same supplier's driver/credentials for its own test cleanup
+> while Óscar was independently testing the same shared `glpi-claude`
+> instance. Confirmed by asking which instance and getting agreement to
+> pause concurrent testing; not a regression in this session's actual code
+> changes (verified separately with a clean, uncontaminated save
+> round-trip). See the `glpi-dev-environment` memory for the standing
+> caveat this added.

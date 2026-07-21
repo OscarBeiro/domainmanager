@@ -50,6 +50,9 @@ define('PLUGIN_DOMAINMANAGER_REPOSITORY_URL', 'https://github.com/TICGAL-GLPI-Pl
 // same itemtype.
 define('PLUGIN_DOMAINMANAGER_SO_SUPPLIER', 9401);
 define('PLUGIN_DOMAINMANAGER_SO_DOMAIN', 9402);
+// Real, filterable search option (unlike the two above) — see its own
+// registration below and ARCHITECTURE.md §9 Phase 5.5 for why it exists.
+define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR', 9403);
 
 /**
  * Plugin_Version_Domainmanager
@@ -109,6 +112,49 @@ function plugin_domainmanager_getAddSearchOptionsNew($itemtype): array
             'datatype'      => 'string',
             'massiveaction' => false,
         ];
+
+        // A real, filterable option — unlike the one above. Infocom's own
+        // suppliers_id is never exposed as an add-on search option for any
+        // itemtype by core (verified against src/Infocom.php's
+        // rawSearchOptionsToAdd() on 11.0/bugfixes — it adds immo_number/
+        // order_number/dates/etc. for the same glpi_infocoms join, but not
+        // this field), so the Supplier tab's "Domains" list banner
+        // (§9 Phase 5.5) has nothing native to link a filtered Domain
+        // search to without this. Same join shape core itself uses for
+        // every other Infocom field added to an asset's search page.
+        $options[] = [
+            // A dropdown FK two hops away (Domain -> glpi_infocoms via
+            // itemtype_item -> glpi_suppliers via suppliers_id) needs both
+            // conventions combined: 'table'/'field' name the FINAL dropdown
+            // target (glpi_suppliers/name — this is what GLPI's dropdown
+            // datatype uses to resolve the *itemtype* for display/value
+            // lookup; pointing it at glpi_infocoms instead — verified live
+            // — makes GLPI try to resolve values as Infocom records, not
+            // Suppliers, silently breaking both display and filtering),
+            // 'linkfield' names the FK column, and 'joinparams.beforejoin'
+            // describes the first hop, mirroring how core's own
+            // CartridgeItem/ConsumableItem cases in
+            // Infocom::rawSearchOptionsToAdd() reach the right glpi_infocoms
+            // row before resolving a field on it — extended one hop further
+            // here since the field itself is on the table *after* that.
+            'id'           => PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR,
+            'table'        => 'glpi_suppliers',
+            'field'        => 'name',
+            'linkfield'    => 'suppliers_id',
+            'name'         => __('Registrar (Financial information)', 'domainmanager'),
+            'datatype'     => 'dropdown',
+            'forcegroupby' => true,
+            'joinparams'   => [
+                'beforejoin' => [
+                    [
+                        'table'      => 'glpi_infocoms',
+                        'joinparams' => [
+                            'jointype' => 'itemtype_item',
+                        ],
+                    ],
+                ],
+            ],
+        ];
     }
 
     return $options;
@@ -136,6 +182,10 @@ function plugin_init_domainmanager(): void
         $PLUGIN_HOOKS[Hooks::SECURED_FIELDS]['domainmanager'] = [
             'glpi_plugin_domainmanager_supplierconfigs.api_credentials',
         ];
+
+        // "Sync now (Domain Manager)" massive action on Domain (§9 Phase
+        // 5.5) — see MassiveActionHandler and plugin_domainmanager_MassiveActions().
+        $PLUGIN_HOOKS[Hooks::USE_MASSIVE_ACTION]['domainmanager'] = true;
 
         $PLUGIN_HOOKS[Hooks::ITEM_PURGE]['domainmanager'] = [
             Supplier::class     => [HookHandler::class, 'supplierPurged'],

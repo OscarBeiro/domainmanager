@@ -41,6 +41,7 @@ use GlpiPlugin\Domainmanager\ImportLock;
 use GlpiPlugin\Domainmanager\LockEnforcer;
 use GlpiPlugin\Domainmanager\NsProviderRegistry;
 use GlpiPlugin\Domainmanager\SupplierConfig;
+use Infocom;
 use Throwable;
 
 /**
@@ -69,6 +70,19 @@ class SyncEngine
         $state = DomainState::getForDomain((int) $domain->getID());
         $fqdn  = (string) $domain->fields['name'];
         $now   = $_SESSION['glpi_currenttime'] ?? date('Y-m-d H:i:s');
+
+        // Read live, not from the state row's own (possibly stale) mirror:
+        // Infocom's "Supplier" field (§0.1) is the single source of truth
+        // for the registrar, and every sync corrects the mirror to match
+        // it below (state upsert) — otherwise a domain whose Infocom
+        // assignment predates/missed HookHandler::infocomSaved()'s mirror
+        // would stay permanently "unconfigured" no matter how many times
+        // it's synced (§9 Phase 5.5).
+        $registrar_id = 0;
+        $infocom      = new Infocom();
+        if ($infocom->getFromDBByCrit(['itemtype' => Domain::class, 'items_id' => (int) $domain->getID()])) {
+            $registrar_id = (int) $infocom->fields['suppliers_id'];
+        }
 
         $detected   = $state !== null ? (string) $state->fields['detected_provider'] : '';
         $dns_config = null;
@@ -119,7 +133,7 @@ class SyncEngine
             }
 
             // 3. Registrar leg (isolated)
-            $this->syncRegistrarLeg($domain, $state, $result);
+            $this->syncRegistrarLeg($domain, $registrar_id, $result);
 
             // 4. DNS leg (isolated)
             if ($dns_config !== null) {
@@ -131,6 +145,7 @@ class SyncEngine
 
         // 5. State upsert
         $state_input = [
+            'registrar_suppliers_id' => $registrar_id,
             'dns_suppliers_id'  => $dns_config !== null ? (int) $dns_config->fields['suppliers_id'] : 0,
             'detected_provider' => $result['detected_provider'],
             'registrar_status'  => $result['registrar_status'],
@@ -149,16 +164,15 @@ class SyncEngine
     }
 
     /**
-     * @param  Domain           $domain
-     * @param  DomainState|null $state
-     * @param  array            $result
+     * @param  Domain $domain
+     * @param  int    $registrar_id live Infocom suppliers_id, 0 if none
+     * @param  array  $result
      * @return void
      */
-    private function syncRegistrarLeg(Domain $domain, ?DomainState $state, array &$result): void
+    private function syncRegistrarLeg(Domain $domain, int $registrar_id, array &$result): void
     {
         try {
-            $registrar_id = $state !== null ? (int) $state->fields['registrar_suppliers_id'] : 0;
-            $config       = $registrar_id > 0 ? SupplierConfig::getForSupplier($registrar_id) : null;
+            $config = $registrar_id > 0 ? SupplierConfig::getForSupplier($registrar_id) : null;
 
             if (
                 $config === null

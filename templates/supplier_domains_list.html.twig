@@ -28,7 +28,7 @@
  #}
 
 {% set registrar_status_labels = {
-    'never': __('Never synced', 'domainmanager'),
+    'never': __('Not yet checked', 'domainmanager'),
     'ok': __('OK', 'domainmanager'),
     'error': __('Error', 'domainmanager'),
     'unconfigured': __('Not configured', 'domainmanager'),
@@ -43,7 +43,7 @@
     'managed': __('Plugin managed', 'domainmanager'),
     'unmanaged': __('Known, unmanaged (yet)', 'domainmanager'),
     'unknown': __('Unknown', 'domainmanager'),
-    'never': __('Never synced', 'domainmanager'),
+    'never': __('Not yet checked', 'domainmanager'),
 } %}
 {% set dns_kind_classes = {
     'managed': 'text-bg-success',
@@ -61,6 +61,17 @@
             {{ __('Domains', 'domainmanager') }}
         </h4>
     </div>
+    {% if never_synced_count > 0 %}
+        <div class="alert alert-info d-flex align-items-center justify-content-between m-2 mb-0" role="alert">
+            <div>
+                <i class="ti ti-info-circle me-1"></i>
+                {{ _n('%d domain linked to this supplier hasn\'t been checked yet — run a sync to detect its DNS provider and status.', '%d domains linked to this supplier haven\'t been checked yet — run a sync to detect their DNS provider and status.', never_synced_count, 'domainmanager')|format(never_synced_count) }}
+            </div>
+            <a href="{{ domains_search_url }}" class="btn btn-sm btn-outline-info ms-3 text-nowrap">
+                {{ __('Review and sync', 'domainmanager') }}
+            </a>
+        </div>
+    {% endif %}
     <div class="card-body p-0">
         {% if domains is empty %}
             <div class="text-muted small p-3">

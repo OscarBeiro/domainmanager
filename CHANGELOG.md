@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- **Supplier tab's "Domains" list undercounted registrar-linked domains** — reported as "Supplier's native Items tab shows 3, the Domains panel shows 1 for the same supplier," confirmed live. The query only ever `INNER JOIN`ed the plugin's own state table, so a domain was invisible until a sync/detection had already produced a state row — even though its registrar link (via `glpi_infocoms.suppliers_id`, the same native link behind the Items tab count) was already real and immediately knowable, no sync required. Fixed to read that link live via a `LEFT JOIN`, unioned with the existing DNS-side condition; an existing GLPI instance with domains already assigned to suppliers now sees them correctly immediately after installing this plugin, with no cron cycle required. `registrar_status` now only comes from a state row when that row's own registrar mirror actually agrees with the live Infocom value — otherwise it honestly shows "Not yet checked" rather than a stale, possibly-wrong status.
+- **`SyncEngine` never actually resolved the registrar from Infocom, only from a state-row mirror that could go stale** — found while fixing the above (same root cause): a domain whose Infocom registrar assignment predated or otherwise missed the mirror-sync hook stayed permanently "unconfigured" no matter how many times it was synced. `sync()` now reads Infocom live and self-corrects the mirror on every run, so "run a sync" (the new recommendation banner and massive action below) actually resolves what it's flagging, not just cosmetically.
+
+### Added
+- A recommendation banner on the "Domains" panel when any registrar-linked domain hasn't actually been verified yet, linking to a real, filterable Domain search pre-filtered to the supplier (new search option, `PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR`) — since core never exposes Infocom's Supplier field as a search option on any itemtype.
+- A native GLPI Massive Action, "Sync now (Domain Manager)," on `Domain` — lets an admin batch-sync every domain the banner flags directly from the native search's massive-action dropdown, instead of opening each one individually. One domain's failure never aborts the rest of the batch.
+- A tab count badge on the Supplier's "Domain Manager" tab ("Domain Manager 3"), matching the native "Items 3" badge for the same supplier — computed from the exact same query the panel itself renders from, so the two numbers can never drift apart.
 
 ## [0.3.2] - 2026-07-21
 ### Fixed

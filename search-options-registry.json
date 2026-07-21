@@ -23,6 +23,15 @@
           "field": "name",
           "purpose": "Log::history() field-column label for registrar-supplier-assignment changes and sync milestones (ARCHITECTURE.md §3.7)",
           "verified_collision_free": false
+        },
+        {
+          "itemtype": "Domain",
+          "id": 9403,
+          "name": "Registrar (Financial information)",
+          "table": "glpi_infocoms",
+          "field": "suppliers_id",
+          "purpose": "Real, filterable search option (unlike 9401/9402) so the Supplier tab's \"Domains\" list recommendation banner (ARCHITECTURE.md §9 Phase 5.5) can deep-link to a native, pre-filtered Domain search instead of a bespoke view — core never exposes Infocom's suppliers_id as an add-on search option for any itemtype",
+          "verified_collision_free": false
         }
       ]
     }
