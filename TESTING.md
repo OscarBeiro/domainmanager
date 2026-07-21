@@ -1127,3 +1127,51 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
 > changes (verified separately with a clean, uncontaminated save
 > round-trip). See the `glpi-dev-environment` memory for the standing
 > caveat this added.
+
+## Phase 5.6 — API driver exclusivity + alphabetical dropdown (addendum)
+
+### 5.6.1 A driver already assigned to Supplier A is hidden from Supplier B's dropdown
+- **Steps:** save IONOS as Supplier A's API driver. Open Supplier B's
+  Domain Manager tab.
+- **Expected:** Supplier B's API driver dropdown does not offer "IONOS".
+  "None" and every other unclaimed driver are still offered.
+- [ ] Pass
+
+### 5.6.2 Supplier A's own dropdown still shows/selects its claimed driver
+- **Steps:** with IONOS saved on Supplier A (5.6.1), reopen Supplier A's
+  Domain Manager tab.
+- **Expected:** "IONOS" is present in the dropdown and pre-selected;
+  credentials fields still show their saved state. Excluding
+  drivers-claimed-elsewhere never hides a supplier's own current driver.
+- [ ] Pass
+
+### 5.6.3 Direct POST cannot assign an already-claimed driver (server-side guard)
+- **Steps:** with IONOS saved on Supplier A, submit a direct POST to
+  `SupplierConfig::getFormURL()` for Supplier B with `api_driver=ionos`
+  (e.g. via curl/browser devtools), bypassing the dropdown entirely.
+- **Expected:** the save is rejected with a clear error message ("IONOS is
+  already assigned to another supplier") via
+  `Session::addMessageAfterRedirect`, and Supplier B's stored
+  `api_driver`/credentials are unchanged. This must hold even though the
+  client-side dropdown would never have offered "IONOS" for Supplier B —
+  the check in `SupplierConfig::prepareDriverAndCredentials()` is
+  independent of the dropdown's filtering.
+- [ ] Pass
+
+### 5.6.4 Dropdown order is alphabetical by label, "None" always first
+- **Steps:** open the Domain Manager tab for a supplier with no driver set,
+  then for one with an existing driver selected.
+- **Expected:** options render as None, Cloudflare, Dinahosting, IONOS (or
+  whatever subset remains after 5.6.1's exclusion) — sorted alphabetically
+  by display label with "None" always pinned first, in both cases.
+- [ ] Pass
+
+> No massive-action / bulk-edit path exists for `SupplierConfig.api_driver`
+> — `MassiveActionHandler` only implements the Domain "Sync now" action
+> (5.5.9), and `SupplierConfig` has no search/list page of its own, so
+> there is no bulk path that could assign the same driver to multiple
+> suppliers today. The addendum's massive-action requirement is therefore
+> not applicable; if a bulk-edit path for the driver is added later, it
+> must reuse `SupplierConfig::isDriverClaimedByOtherSupplier()` /
+> `getDriversClaimedByOtherSuppliers()` and skip colliding items with a
+> per-item reason rather than failing the whole batch.

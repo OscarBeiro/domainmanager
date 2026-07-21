@@ -161,6 +161,50 @@ class SupplierConfig extends CommonDBTM
     }
 
     /**
+     * Driver keys already claimed by a supplier other than $suppliers_id —
+     * each driver may only ever be assigned to one supplier at a time.
+     * 'none' is never "claimed" (it's not a real driver, §addendum).
+     *
+     * @param  int $suppliers_id supplier to exclude from the check (0 = none)
+     * @return string[]
+     */
+    public static function getDriversClaimedByOtherSuppliers(int $suppliers_id): array
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $iterator = $DB->request([
+            'SELECT' => 'api_driver',
+            'FROM'   => self::getTable(),
+            'WHERE'  => [
+                'NOT'        => ['suppliers_id' => $suppliers_id],
+                'api_driver' => ['<>', DriverRegistry::DRIVER_NONE],
+            ],
+        ]);
+
+        $claimed = [];
+        foreach ($iterator as $row) {
+            $claimed[] = (string) $row['api_driver'];
+        }
+
+        return $claimed;
+    }
+
+    /**
+     * @param  string $driver
+     * @param  int    $suppliers_id supplier to exclude from the check (0 = none)
+     * @return bool
+     */
+    public static function isDriverClaimedByOtherSupplier(string $driver, int $suppliers_id): bool
+    {
+        if ($driver === DriverRegistry::DRIVER_NONE) {
+            return false;
+        }
+
+        return in_array($driver, self::getDriversClaimedByOtherSuppliers($suppliers_id), true);
+    }
+
+    /**
      * {@inheritDoc}
      */
     public function prepareInputForAdd($input)
@@ -174,7 +218,13 @@ class SupplierConfig extends CommonDBTM
             return false;
         }
 
-        return $this->prepareDriverAndCredentials($input, [], DriverRegistry::DRIVER_NONE, []);
+        return $this->prepareDriverAndCredentials(
+            $input,
+            [],
+            DriverRegistry::DRIVER_NONE,
+            [],
+            (int) $input['suppliers_id']
+        );
     }
 
     /**
@@ -182,6 +232,8 @@ class SupplierConfig extends CommonDBTM
      */
     public function prepareInputForUpdate($input)
     {
+        $suppliers_id = (int) ($this->fields['suppliers_id'] ?? 0);
+
         // The supplier link is immutable
         unset($input['suppliers_id']);
 
@@ -206,7 +258,7 @@ class SupplierConfig extends CommonDBTM
             $stored = $old_credentials;
         }
 
-        return $this->prepareDriverAndCredentials($input, $stored, $old_driver, $old_credentials);
+        return $this->prepareDriverAndCredentials($input, $stored, $old_driver, $old_credentials, $suppliers_id);
     }
 
     /**
@@ -218,14 +270,36 @@ class SupplierConfig extends CommonDBTM
      * @param  array                $stored          decrypted credentials to fall back to on empty submit
      * @param  string               $old_driver      driver before this save ('none' on add)
      * @param  array<string,string> $old_credentials decrypted credentials before this save ([] on add)
+     * @param  int                  $suppliers_id    supplier this config row belongs/will belong to
      * @return array|false
      */
-    private function prepareDriverAndCredentials(array $input, array $stored, string $old_driver, array $old_credentials): array|false
-    {
+    private function prepareDriverAndCredentials(
+        array $input,
+        array $stored,
+        string $old_driver,
+        array $old_credentials,
+        int $suppliers_id
+    ): array|false {
         $driver = (string) ($input['api_driver'] ?? DriverRegistry::DRIVER_NONE);
         if (!DriverRegistry::isValidDriver($driver)) {
             Session::addMessageAfterRedirect(
                 __s('Invalid API driver', 'domainmanager'),
+                false,
+                ERROR
+            );
+            return false;
+        }
+
+        // A driver may only ever be assigned to one supplier at a time —
+        // re-checked here server-side (not just hidden from the dropdown,
+        // SupplierTab::getDriverOptions()) since a direct POST could still
+        // submit a driver claimed elsewhere.
+        if (self::isDriverClaimedByOtherSupplier($driver, $suppliers_id)) {
+            Session::addMessageAfterRedirect(
+                sprintf(
+                    __s('%s is already assigned to another supplier', 'domainmanager'),
+                    DriverRegistry::getDriverLabels()[$driver] ?? $driver
+                ),
                 false,
                 ERROR
             );

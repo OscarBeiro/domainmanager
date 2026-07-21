@@ -147,7 +147,7 @@ class SupplierTab extends CommonGLPI
             'form_url'             => SupplierConfig::getFormURL(),
             'can_edit'             => $supplier->can((int) $supplier->getID(), UPDATE),
             'current_driver'       => $current_driver,
-            'driver_labels'        => DriverRegistry::getDriverLabels(),
+            'driver_labels'        => self::getDriverOptions((int) $supplier->getID(), $current_driver),
             'credential_fields'    => DriverRegistry::getAllCredentialFields(),
             'saved'                => $saved,
             'values'               => $values,
@@ -168,6 +168,41 @@ class SupplierTab extends CommonGLPI
         ]);
 
         return true;
+    }
+
+    /**
+     * API driver dropdown options for this supplier: a driver already
+     * claimed by a *different* supplier (SupplierConfig::
+     * getDriversClaimedByOtherSuppliers()) is excluded — each driver may
+     * only ever be assigned to one supplier at a time — while 'none' and
+     * this supplier's own current driver (if any) always remain available.
+     * Sorted alphabetically by display label, 'none' pinned first.
+     *
+     * @param  int    $suppliers_id
+     * @param  string $current_driver
+     * @return array<string, string>
+     */
+    private static function getDriverOptions(int $suppliers_id, string $current_driver): array
+    {
+        $claimed_elsewhere = SupplierConfig::getDriversClaimedByOtherSuppliers($suppliers_id);
+
+        $options = [];
+        foreach (DriverRegistry::getDriverLabels() as $driver => $label) {
+            if ($driver !== $current_driver && in_array($driver, $claimed_elsewhere, true)) {
+                continue;
+            }
+            $options[$driver] = $label;
+        }
+
+        $none_label = $options[DriverRegistry::DRIVER_NONE] ?? null;
+        unset($options[DriverRegistry::DRIVER_NONE]);
+        uasort($options, static fn (string $a, string $b): int => strcasecmp($a, $b));
+
+        if ($none_label !== null) {
+            $options = [DriverRegistry::DRIVER_NONE => $none_label] + $options;
+        }
+
+        return $options;
     }
 
     /**
