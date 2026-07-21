@@ -89,6 +89,78 @@ class DomainState extends CommonDBTM
     }
 
     /**
+     * Every non-deleted, non-template Domain where this supplier is the
+     * registrar and/or the resolved DNS provider — read-only "Domains" list
+     * shown on the Supplier's Domain Manager tab. Restricted to entities
+     * visible to the current session, same as any other asset listing.
+     *
+     * @param  int $suppliers_id
+     * @return array<int, array{domains_id:int, name:string, entities_id:int,
+     *               registrar_suppliers_id:int, dns_suppliers_id:int,
+     *               detected_provider:string, registrar_status:string,
+     *               dns_status:string}>
+     */
+    public static function getDomainsForSupplier(int $suppliers_id): array
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        if ($suppliers_id <= 0) {
+            return [];
+        }
+
+        $iterator = $DB->request([
+            'SELECT'     => [
+                'glpi_domains.id AS domains_id',
+                'glpi_domains.name AS name',
+                'glpi_domains.entities_id AS entities_id',
+                self::getTable() . '.registrar_suppliers_id AS registrar_suppliers_id',
+                self::getTable() . '.dns_suppliers_id AS dns_suppliers_id',
+                self::getTable() . '.detected_provider AS detected_provider',
+                self::getTable() . '.registrar_status AS registrar_status',
+                self::getTable() . '.dns_status AS dns_status',
+            ],
+            'FROM'       => 'glpi_domains',
+            'INNER JOIN' => [
+                self::getTable() => [
+                    'ON' => [
+                        self::getTable() => 'domains_id',
+                        'glpi_domains'   => 'id',
+                    ],
+                ],
+            ],
+            'WHERE'      => array_merge(
+                [
+                    'glpi_domains.is_deleted'  => 0,
+                    'glpi_domains.is_template' => 0,
+                    'OR'                       => [
+                        self::getTable() . '.registrar_suppliers_id' => $suppliers_id,
+                        self::getTable() . '.dns_suppliers_id'       => $suppliers_id,
+                    ],
+                ],
+                getEntitiesRestrictCriteria('glpi_domains', '', '', true)
+            ),
+            'ORDER'      => 'glpi_domains.name ASC',
+        ]);
+
+        $rows = [];
+        foreach ($iterator as $row) {
+            $rows[] = [
+                'domains_id'             => (int) $row['domains_id'],
+                'name'                   => (string) $row['name'],
+                'entities_id'            => (int) $row['entities_id'],
+                'registrar_suppliers_id' => (int) $row['registrar_suppliers_id'],
+                'dns_suppliers_id'       => (int) $row['dns_suppliers_id'],
+                'detected_provider'      => (string) $row['detected_provider'],
+                'registrar_status'       => (string) $row['registrar_status'],
+                'dns_status'             => (string) $row['dns_status'],
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
      * Detach a purged supplier from every state row referencing it
      *
      * @param  int $suppliers_id

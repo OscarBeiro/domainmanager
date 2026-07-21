@@ -32,7 +32,10 @@
 namespace GlpiPlugin\Domainmanager;
 
 use CommonGLPI;
+use Domain;
+use Dropdown;
 use Glpi\Application\View\TemplateRenderer;
+use Session;
 use Supplier;
 
 /**
@@ -141,8 +144,90 @@ class SupplierTab extends CommonGLPI
                 DriverRegistry::getAvailableDrivers(),
                 array_map([DriverRegistry::class, 'getPrimaryTestableCapability'], DriverRegistry::getAvailableDrivers())
             ),
+            'domains' => Session::haveRight('domain', READ)
+                ? self::buildDomainsListRows(DomainState::getDomainsForSupplier((int) $supplier->getID()))
+                : [],
         ]);
 
         return true;
+    }
+
+    /**
+     * Presentation-layer enrichment of DomainState::getDomainsForSupplier()'s
+     * raw rows: itemtype hyperlinks and the plugin-managed/known-unmanaged/
+     * unknown classification for the DNS/NS column (reuses the sync engine's
+     * existing states verbatim, no new classification logic — §5, §9 Phase 5.5).
+     *
+     * @param  array<int, array{domains_id:int, name:string, entities_id:int,
+     *                registrar_suppliers_id:int, dns_suppliers_id:int,
+     *                detected_provider:string, registrar_status:string,
+     *                dns_status:string}> $domains
+     * @return array<int, array{domains_id:int, name:string, url:string,
+     *                registrar:?array{name:string, url:string},
+     *                registrar_status:string, dns:array{kind:string,
+     *                name:string, url:?string}, dns_status:string}>
+     */
+    private static function buildDomainsListRows(array $domains): array
+    {
+        return array_map(static function (array $domain): array {
+            return [
+                'domains_id'       => $domain['domains_id'],
+                'name'             => $domain['name'],
+                'url'              => Domain::getFormURLWithID($domain['domains_id']),
+                'registrar'        => self::describeSupplierRole($domain['registrar_suppliers_id']),
+                'registrar_status' => $domain['registrar_status'],
+                'dns'              => self::describeDnsProvider($domain),
+                'dns_status'       => $domain['dns_status'],
+            ];
+        }, $domains);
+    }
+
+    /**
+     * @param  int $suppliers_id
+     * @return ?array{name:string, url:string}
+     */
+    private static function describeSupplierRole(int $suppliers_id): ?array
+    {
+        if ($suppliers_id <= 0) {
+            return null;
+        }
+
+        return [
+            'name' => Dropdown::getDropdownName(Supplier::getTable(), $suppliers_id),
+            'url'  => Supplier::getFormURLWithID($suppliers_id),
+        ];
+    }
+
+    /**
+     * @param  array{dns_suppliers_id:int, detected_provider:string, dns_status:string} $domain
+     * @return array{kind:string, name:string, url:?string}
+     */
+    private static function describeDnsProvider(array $domain): array
+    {
+        if ($domain['dns_suppliers_id'] > 0) {
+            return [
+                'kind' => 'managed',
+                'name' => Dropdown::getDropdownName(Supplier::getTable(), $domain['dns_suppliers_id']),
+                'url'  => Supplier::getFormURLWithID($domain['dns_suppliers_id']),
+            ];
+        }
+
+        if (
+            $domain['dns_status'] === DomainState::STATUS_UNSUPPORTED
+            || $domain['dns_status'] === DomainState::STATUS_UNCONFIGURED
+        ) {
+            // A real provider was detected either way — 'unsupported' means
+            // no driver exists for it yet, 'unconfigured' means a driver
+            // exists but no Supplier has been set up with it. Both read as
+            // "known, not actively managed yet" from this list's point of
+            // view (§9 Phase 5.5).
+            return ['kind' => 'unmanaged', 'name' => $domain['detected_provider'], 'url' => null];
+        }
+
+        if ($domain['dns_status'] === DomainState::STATUS_UNKNOWN) {
+            return ['kind' => 'unknown', 'name' => __('Unknown', 'domainmanager'), 'url' => null];
+        }
+
+        return ['kind' => 'never', 'name' => __('Never synced', 'domainmanager'), 'url' => null];
     }
 }

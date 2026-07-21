@@ -828,3 +828,64 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
 > `"[Domain Manager] "` text prefix. New item 3.7.7 covers the required
 > collision check for these IDs, which cannot be verified without a live
 > instance. `php -l` clean; no container run yet.
+
+---
+
+## Phase 5.5 — Supplier-scoped "Domains" list (§9)
+
+### 5.5.1 Domains list shows every domain where this supplier is registrar and/or DNS
+- **Steps:** on a Supplier's Domain Manager tab, with at least one Domain
+  having this supplier as Infocom's Supplier (Registrar) and/or a different
+  Domain having it as the resolved, plugin-managed DNS provider.
+- **Expected:** a "Domains" card below the credentials/connection panels
+  lists every such Domain, each name a real hyperlink to
+  `/front/domain.form.php?id=<id>`. A Domain unrelated to this supplier
+  (neither Registrar nor DNS) never appears.
+- [ ] Pass
+
+### 5.5.2 Registrar/DNS columns show the right role and provider
+- **Steps:** on the same list, check a row where this supplier is the
+  Registrar but a *different* supplier is the actively-managed DNS provider.
+- **Expected:** the Registrar column links to this supplier itself with a
+  status badge from `registrar_status`; the DNS column links to the *other*
+  supplier (not this one) with a green "Plugin managed" badge. A row where
+  this supplier is only the DNS provider (not the registrar) shows "None" in
+  the Registrar column.
+- [ ] Pass
+
+### 5.5.3 DNS status three-way classification (§9 Phase 5.5)
+- **Steps:** find or create rows in each of these states: (a) a driver
+  actively syncing this domain's DNS (`dns_status='ok'`/`'error'`,
+  `dns_suppliers_id` set), (b) NS detected a real provider with a driver but
+  no Supplier has valid credentials configured (`dns_status='unconfigured'`),
+  (c) NS detected a real provider with no driver implemented at all
+  (`dns_status='unsupported'`), (d) NS didn't match anything
+  (`dns_status='unknown'`).
+- **Expected:** (a) green "Plugin managed" (red if `error`); (b) and (c) both
+  show amber "Known, unmanaged (yet)" with the real detected provider name —
+  confirm via DB that these are genuinely different `dns_status` values even
+  though the badge/label is intentionally the same; (d) grey "Unknown".
+- [ ] Pass
+
+### 5.5.4 List respects entity visibility and the `domain` READ right
+- **Steps:** (a) as a user with supplier READ but domains in an entity this
+  user cannot see, open the Domains list. (b) as a user with supplier READ
+  but no `domain` READ right at all.
+- **Expected:** (a) domains outside the user's visible entities never appear
+  in the list (`getEntitiesRestrictCriteria()`). (b) the whole "Domains" card
+  either shows no rows or is suppressed — never a DB error.
+- [ ] Pass
+
+> Implemented and smoke-tested 2026-07-21 on `glpi-claude` (Óscar's request:
+> "the list will be easy to build I want it before v1" — pulled forward from
+> the original Phase 6 sketch since it needed no schema change and no
+> discovery/entity-assignment design work). Verified live against a real
+> Domain (`beiro.net`) already linked to a real Supplier as its Registrar.
+> Caught and fixed a real classification bug during this testing: `dns_status
+> = 'unconfigured'` (a driver exists for the detected provider but no
+> Supplier has valid credentials) was initially falling into the generic
+> "Never synced" bucket instead of "known, unmanaged (yet)" —
+> `detected_provider` was already populated and a sync had genuinely run, so
+> "never synced" was actively misleading; fixed in
+> `SupplierTab::describeDnsProvider()` before committing. `php -l` clean on
+> all touched files.
