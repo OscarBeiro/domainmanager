@@ -27,17 +27,13 @@
  # -------------------------------------------------------------------------
  #}
 
-{% import 'components/form/fields_macros.html.twig' as fields %}
-
 {% set detected = state ? state.detected_provider : '' %}
-
-{% set registrar_value %}
-    {% if registrar_supplier %}
-        <a href="{{ registrar_supplier.getLinkURL() }}">{{ registrar_supplier.getName() }}</a>
-    {% else %}
-        {{ __('No registrar supplier set', 'domainmanager') }}
-    {% endif %}
-{% endset %}
+{% set rstatus = state ? state.registrar_status : 'never' %}
+{% set dstatus = state ? state.dns_status : 'never' %}
+{# Deep-link to a Supplier's own Domain Manager tab (verified against the
+   real tab identifier GLPI renders for this class, §6.2); falls back
+   gracefully to the Supplier's main record if this convention ever changes. #}
+{% set supplier_tab_forcetab = '&forcetab=GlpiPlugin%5CDomainmanager%5CSupplierTab%241' %}
 
 <div id="domainmanager-panel" class="card mt-3">
     <div class="card-header">
@@ -49,22 +45,73 @@
     <div class="card-body">
         <div class="row">
             {% if not is_new %}
-                {{ fields.readOnlyField('_domainmanager_registrar_display', registrar_value, __('Registrar', 'domainmanager'), {
-                    'field_class': 'col-12 col-md-6 mb-2',
-                    'add_field_html': '<div class="form-text">' ~ (infocom_tab_url != '' ? ('<a href="' ~ infocom_tab_url ~ '">' ~ __('Set via the Financial and administrative information tab', 'domainmanager') ~ '</a>') : __('Set via the Financial and administrative information tab', 'domainmanager')) ~ '</div>',
-                }) }}
+                <div class="col-12 col-md-6 mb-3">
+                    <label class="form-label mb-1">{{ __('Registrar', 'domainmanager') }}</label>
+                    <div>
+                        {% if registrar_supplier %}
+                            <a href="{{ registrar_supplier.getLinkURL() ~ supplier_tab_forcetab }}">{{ registrar_supplier.getName() }}</a>
+                        {% else %}
+                            <span class="text-muted">{{ __('No registrar supplier set', 'domainmanager') }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="form-text mb-2">
+                        <a href="{{ infocom_tab_url }}">{{ __('Set via the Financial and administrative information tab', 'domainmanager') }}</a>
+                    </div>
 
-                <div class="col-12 col-md-6 mb-2">
-                    <label class="form-label">{{ __('DNS Provider (detected)', 'domainmanager') }}</label>
+                    <div class="mt-2">
+                        <span class="text-muted">{{ __('Registrar sync', 'domainmanager') }}</span>
+                        <span class="badge {{ status_classes[rstatus]|default('text-bg-secondary') }}"
+                              id="domainmanager-badge-registrar"
+                              title="{{ state ? state.registrar_message : '' }}">
+                            {{ status_labels[rstatus]|default(rstatus) }}
+                        </span>
+                    </div>
+                    {% if state and state.registrar_message %}
+                        <div class="form-text"><span id="domainmanager-msg-registrar">{{ state.registrar_message }}</span></div>
+                    {% else %}
+                        <div class="form-text d-none"><span id="domainmanager-msg-registrar"></span></div>
+                    {% endif %}
+                </div>
+
+                <div class="col-12 col-md-6 mb-3">
+                    <label class="form-label mb-1">{{ __('DNS Provider (detected)', 'domainmanager') }}</label>
                     <div id="domainmanager-provider">
                         {% if detected == '' %}
                             <span class="text-muted">{{ __('Never synchronized', 'domainmanager') }}</span>
                         {% elseif dns_supplier %}
-                            {{ detected }}
-                            (<a href="{{ dns_supplier.getLinkURL() }}">{{ dns_supplier.getName() }}</a>)
+                            <a href="{{ dns_supplier.getLinkURL() ~ supplier_tab_forcetab }}">{{ detected }}</a>
                         {% else %}
                             {{ detected }}
                         {% endif %}
+                    </div>
+
+                    <div class="mt-2">
+                        <span class="text-muted">{{ __('DNS sync', 'domainmanager') }}</span>
+                        <span class="badge {{ status_classes[dstatus]|default('text-bg-secondary') }}"
+                              id="domainmanager-badge-dns"
+                              title="{{ state ? state.dns_message : '' }}">
+                            {{ status_labels[dstatus]|default(dstatus) }}
+                        </span>
+                    </div>
+                    {% if state and state.dns_message %}
+                        <div class="form-text"><span id="domainmanager-msg-dns">{{ state.dns_message }}</span></div>
+                    {% else %}
+                        <div class="form-text d-none"><span id="domainmanager-msg-dns"></span></div>
+                    {% endif %}
+
+                    <div class="alert alert-warning mt-2 mb-0 {{ dstatus in ['unsupported', 'unknown'] ? '' : 'd-none' }}"
+                         id="domainmanager-provider-warning">
+                        <i class="ti ti-alert-triangle me-1"></i>
+                        <span id="domainmanager-provider-warning-text">
+                            {% if dstatus == 'unsupported' %}
+                                {{ __('API integration for %s is not currently supported.', 'domainmanager')|format(detected) }}
+                            {% elseif dstatus == 'unknown' %}
+                                {{ __('The DNS provider of this domain could not be identified.', 'domainmanager') }}
+                            {% endif %}
+                        </span>
+                        <a href="{{ repository_url }}" target="_blank" rel="noopener noreferrer">
+                            {{ __('Help us support this provider', 'domainmanager') }}
+                        </a>
                     </div>
                 </div>
             {% else %}
@@ -77,25 +124,8 @@
         </div>
 
         {% if not is_new %}
-            <div class="d-flex flex-wrap align-items-center gap-3 mt-2" id="domainmanager-statuscard">
-                <div>
-                    <span class="text-muted">{{ __('Registrar sync', 'domainmanager') }}</span>
-                    {% set rstatus = state ? state.registrar_status : 'never' %}
-                    <span class="badge {{ status_classes[rstatus]|default('text-bg-secondary') }}"
-                          id="domainmanager-badge-registrar"
-                          title="{{ state ? state.registrar_message : '' }}">
-                        {{ status_labels[rstatus]|default(rstatus) }}
-                    </span>
-                </div>
-                <div>
-                    <span class="text-muted">{{ __('DNS sync', 'domainmanager') }}</span>
-                    {% set dstatus = state ? state.dns_status : 'never' %}
-                    <span class="badge {{ status_classes[dstatus]|default('text-bg-secondary') }}"
-                          id="domainmanager-badge-dns"
-                          title="{{ state ? state.dns_message : '' }}">
-                        {{ status_labels[dstatus]|default(dstatus) }}
-                    </span>
-                </div>
+            <hr class="my-2">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2" id="domainmanager-statuscard">
                 <div>
                     <span class="text-muted">{{ __('Last synchronization', 'domainmanager') }}</span>
                     <span id="domainmanager-lastsync">
@@ -108,35 +138,6 @@
                         {{ __('Update Now', 'domainmanager') }}
                     </button>
                 {% endif %}
-            </div>
-
-            <div id="domainmanager-messages" class="mt-2">
-                {% if state and state.registrar_message %}
-                    <div class="form-text">{{ __('Registrar', 'domainmanager') }}: <span id="domainmanager-msg-registrar">{{ state.registrar_message }}</span></div>
-                {% else %}
-                    <div class="form-text d-none">{{ __('Registrar', 'domainmanager') }}: <span id="domainmanager-msg-registrar"></span></div>
-                {% endif %}
-                {% if state and state.dns_message %}
-                    <div class="form-text">{{ __('DNS', 'domainmanager') }}: <span id="domainmanager-msg-dns">{{ state.dns_message }}</span></div>
-                {% else %}
-                    <div class="form-text d-none">{{ __('DNS', 'domainmanager') }}: <span id="domainmanager-msg-dns"></span></div>
-                {% endif %}
-            </div>
-
-            {% set dstatus = state ? state.dns_status : 'never' %}
-            <div class="alert alert-warning mt-2 {{ dstatus in ['unsupported', 'unknown'] ? '' : 'd-none' }}"
-                 id="domainmanager-provider-warning">
-                <i class="ti ti-alert-triangle me-1"></i>
-                <span id="domainmanager-provider-warning-text">
-                    {% if dstatus == 'unsupported' %}
-                        {{ __('API integration for %s is not currently supported.', 'domainmanager')|format(detected) }}
-                    {% elseif dstatus == 'unknown' %}
-                        {{ __('The DNS provider of this domain could not be identified.', 'domainmanager') }}
-                    {% endif %}
-                </span>
-                <a href="{{ repository_url }}" target="_blank" rel="noopener noreferrer">
-                    {{ __('Help us support this provider', 'domainmanager') }}
-                </a>
             </div>
         {% endif %}
     </div>

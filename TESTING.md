@@ -368,10 +368,49 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
 
 ### 4.2 Status card and DNS provider display (§6.2)
 - **Steps:** open a synced domain with *domain* READ.
-- **Expected:** panel shows the detected DNS provider (linked to the supplier when
-  resolved), Registrar/DNS badges colored by status (green ok, red error, grey
-  never/unconfigured, yellow unsupported/unknown), last sync date, and the
-  per-pipeline messages. A domain never synced shows "Never synchronized".
+- **Expected:** panel shows the detected DNS provider (hyperlinked to that
+  supplier's own Domain Manager tab when resolved, plain text otherwise),
+  Registrar/DNS badges colored by status (green ok, red error, grey
+  never/unconfigured, yellow unsupported/unknown) directly beneath their own
+  value, last sync date, and the per-pipeline messages directly beneath
+  their own badge. A domain never synced shows "Never synchronized".
+- [ ] Pass
+
+### 4.2.1 Registrar and DNS Provider render identically and hyperlink correctly (§6.2)
+- **Steps:** (a) open a domain with no registrar set and an unsupported or
+  unknown detected provider. (b) open a domain with both a registrar
+  supplier set (via Infocom) and a DNS-driver-matched, configured supplier.
+- **Expected:** (a) both values render as plain text, same font
+  weight/size/label style, no box/select styling, no link cursor/underline.
+  (b) both values render as real, working hyperlinks (`Supplier::getLinkURL()`
+  + `forcetab`) landing on the correct Supplier's Domain Manager tab.
+- [ ] Pass
+
+### 4.2.2 Two-column layout: badges/messages stay with their own column (§6.2)
+- **Steps:** open a domain where registrar and DNS have different statuses
+  (e.g. registrar `error`, DNS `ok`).
+- **Expected:** Registrar's value, badge and detail message all sit in the
+  left column; DNS Provider's value, badge and detail message all sit in
+  the right column — neither leaks into the other's column. "Last
+  synchronization" and **Update Now** sit in a single footer row below both
+  columns, visually separated by a divider. On a narrow viewport the two
+  columns stack vertically (Registrar, then DNS, then the footer row).
+- [ ] Pass
+
+### 4.2.3 "Not configured" reflects staleness, not a lookup bug (§6.2, investigated 2026-07-21)
+- **Steps:** configure a Supplier with a real driver + credentials (e.g.
+  Dinahosting) whose NS a domain genuinely resolves to; if that domain's
+  state was last computed *before* the credentials were saved, its DNS
+  badge will show "Not configured" with "No supplier is configured with
+  the X driver" even though a matching Supplier now exists. Click
+  **Update Now**.
+- **Expected:** confirmed **not a bug** — `SyncEngine::findSupplierConfigForDriver()`
+  correctly finds a Supplier with matching `api_driver` and non-empty
+  decrypted credentials; reproduced live with a real Supplier + real NS
+  match (`dinahosting.com`, genuinely NS-hosted at Dinahosting) and got a
+  real API call (a genuine auth error, not "unconfigured"). After
+  **Update Now**, the badge must change to a real `ok`/`error` status — if
+  it doesn't, that would be a real regression worth re-opening.
 - [ ] Pass
 
 ### 4.3 Update Now (§6.3)

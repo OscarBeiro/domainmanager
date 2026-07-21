@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- Domain form's "Domain Manager" panel restructured to a two-column layout: Registrar and DNS Provider each own a full vertical stack (value, sync badge, detail message directly beneath), with "Last synchronization"/"Update Now" moved to a shared footer row below both columns — previously all of this was crammed onto one shared horizontal strip with uneven spacing, and the two detail messages sat disconnected below it.
+- Registrar field's boxed/disabled-input look (from the earlier Infocom-mirror change) dropped in favor of plain text, matching DNS Provider's existing style — both fields now render identically (label + plain value, no box).
+- Both Registrar and DNS Provider values are now real hyperlinks to the resolved Supplier's own Domain Manager tab when one exists (`Supplier::getLinkURL()` + a verified `forcetab` deep link, §6.2) — previously DNS Provider showed the detected name with the supplier as a separate parenthetical link, and Registrar wasn't linked at all beyond the Infocom tab helper. When no Supplier is resolved (unsupported/unknown provider, or no registrar set), the value stays plain, non-clickable text.
+
+### Fixed/Investigated
+- **Diagnosed a "DNS sync: Not configured" report despite a matching Supplier existing with saved credentials — confirmed not a bug.** Reproduced the exact scenario live (a real Supplier configured with a matching driver and real saved credentials, a Domain whose NS genuinely resolves to that provider): `SyncEngine::findSupplierConfigForDriver()` correctly found the configured supplier and the DNS leg made a real live API call (returning a real auth error, not "unconfigured"). The reported symptom is **staleness** — `glpi_plugin_domainmanager_states` reflects whatever the *last* sync computed, and nothing recomputes it just from viewing the page; if the supplier's credentials were saved after that last sync, the stale "not configured" result lingers until the next sync (cron or "Update Now"). This session's two-column layout change (above) already addresses the underlying communication gap by giving "Last synchronization" a clear, dedicated footer position instead of burying it in a cramped shared strip.
 
 ## [0.3.0] - 2026-07-21
 ### Fixed
