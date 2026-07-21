@@ -645,6 +645,31 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
   failing on an empty credential.
 - [ ] Pass
 
+### 3.5.5.1 CRITICAL REGRESSION: credentials survive repeated connection tests and syncs (§3.5.3, fixed 2026-07-21)
+- **Steps:** save real (or real-shaped) credentials for a supplier. Click
+  **Check Connection** three or more times in a row, with no other action
+  in between. Separately: with the same saved credentials, trigger
+  **Update Now** on a domain synced through that supplier, more than once.
+- **Expected:** every single click/sync returns the same real, credential-dependent
+  result (e.g. a live `auth_failed`/401 or a real success) — **never**
+  "API key/secret are not configured" after the first click. Confirm via
+  DB: `SELECT LENGTH(api_credentials) FROM
+  glpi_plugin_domainmanager_supplierconfigs WHERE suppliers_id=<id>` must
+  stay constant (non-zero) across every click. **Root cause of the
+  original bug:** `recordConnectionTestResults()`'s `update()` call (only
+  touching `*_test_*` columns) was misread by
+  `SupplierConfig::prepareInputForUpdate()` as a driver-less credentials
+  save, silently wiping `api_credentials` as a side effect of persisting
+  the *previous* test's result — so the credentials were destroyed one
+  click after being confirmed to work, which is exactly what made this
+  look like it correlated with unrelated actions (a plugin
+  disable/re-enable cycle, in the original report) rather than with the
+  Check Connection click itself. Also confirm the *unaffected* paths still
+  work: an empty-submit save with the same driver selected still keeps the
+  stored secret (3.5.5); switching to a genuinely different driver still
+  clears the old driver's now-irrelevant credentials.
+- [ ] Pass
+
 ### 3.5.6 Rights and CSRF on the endpoint (§8)
 - **Steps:** hide check: confirm the **Check Connection** button is absent
   for a user without supplier UPDATE on that supplier. Then hand-craft a POST

@@ -185,11 +185,23 @@ class SupplierConfig extends CommonDBTM
         // The supplier link is immutable
         unset($input['suppliers_id']);
 
+        // Only a real credentials-form submission includes `api_driver`
+        // (supplier_tab.html.twig always sends it). Any other partial
+        // update — e.g. recordConnectionTestResults(), which only touches
+        // the *_test_* columns — must leave driver/credentials completely
+        // untouched. Without this guard, `$input['api_driver'] ?? ''`
+        // silently evaluated to '' below, which never matched the stored
+        // driver, so every such update was misread as "switch to no
+        // driver" and wiped the encrypted credentials as a side effect.
+        if (!array_key_exists('api_driver', $input)) {
+            return $input;
+        }
+
         $old_driver      = (string) ($this->fields['api_driver'] ?? DriverRegistry::DRIVER_NONE);
         $old_credentials = $this->getDecryptedCredentials();
 
         $stored = [];
-        if ($old_driver === ($input['api_driver'] ?? '')) {
+        if ($old_driver === $input['api_driver']) {
             // Same driver: empty submitted secrets keep their stored value
             $stored = $old_credentials;
         }

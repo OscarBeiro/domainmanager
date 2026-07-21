@@ -130,6 +130,13 @@ function plugin_init_domainmanager(): void
         Plugin::registerClass(DomainmanagerProfile::class, ['addtabon' => Profile::class]);
         Plugin::registerClass(SupplierTab::class, ['addtabon' => Supplier::class]);
 
+        // So a core-wide `security:change_key` rotation re-encrypts this
+        // field instead of silently orphaning it (leaving it encrypted
+        // with the old, now-discarded key — permanently undecryptable).
+        $PLUGIN_HOOKS[Hooks::SECURED_FIELDS]['domainmanager'] = [
+            'glpi_plugin_domainmanager_supplierconfigs.api_credentials',
+        ];
+
         $PLUGIN_HOOKS[Hooks::ITEM_PURGE]['domainmanager'] = [
             Supplier::class     => [HookHandler::class, 'supplierPurged'],
             Domain::class       => [HookHandler::class, 'domainPurged'],

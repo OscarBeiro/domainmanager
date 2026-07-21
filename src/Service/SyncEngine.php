@@ -166,7 +166,7 @@ class SyncEngine
                 || $config->getDecryptedCredentials() === []
             ) {
                 $result['registrar_status']  = DomainState::STATUS_UNCONFIGURED;
-                $result['registrar_message'] = __('No registrar supplier with API access configured', 'domainmanager');
+                $result['registrar_message'] = __('No supplier with API access configured', 'domainmanager');
                 return;
             }
 
