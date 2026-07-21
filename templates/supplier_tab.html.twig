@@ -112,6 +112,7 @@
             (function () {
                 const select = document.getElementById('domainmanager-driver');
                 const allCapabilities = {{ all_testable_capabilities|json_encode|raw }};
+                const allPrimaryCapabilities = {{ all_primary_capabilities|json_encode|raw }};
 
                 const toggle = function () {
                     document.querySelectorAll('.domainmanager-driver-fields').forEach(function (block) {
@@ -124,7 +125,7 @@
 
                     const capabilities = allCapabilities[select.value] || [];
                     document.querySelectorAll('.domainmanager-test-capability').forEach(function (block) {
-                        block.hidden = capabilities.indexOf(block.dataset.capability) === -1;
+                        block.hidden = capabilities.length === 0;
                     });
                     const none = document.getElementById('domainmanager-test-none');
                     if (none) {
@@ -157,7 +158,7 @@
                         });
 
                         const csrf = document.querySelector('meta[property="glpi:csrf_token"]');
-                        fetch({{ path('@domainmanager:domainmanager_connectiontest', {'suppliers_id': suppliers_id})|json_encode|raw }}, {
+                        fetch({{ ('/plugins/domainmanager/connectiontest/' ~ suppliers_id)|json_encode|raw }}, {
                             method: 'POST',
                             headers: {
                                 'X-Glpi-Csrf-Token': csrf ? csrf.getAttribute('content') : '',
@@ -183,14 +184,11 @@
                                 throw new Error('HTTP ' + result.status + ': ' + (result.data.message || result.data.error || 'unknown error'));
                             }
 
-                            const captions = {
-                                registrar: {{ __('Registrar connection', 'domainmanager')|json_encode|raw }},
-                                dns: {{ __('DNS connection', 'domainmanager')|json_encode|raw }}
-                            };
+                            const primary = allPrimaryCapabilities[driver];
+                            const entry = primary ? result.data.results[primary] : null;
 
-                            Object.keys(result.data.results).forEach(function (capability) {
-                                const entry = result.data.results[capability];
-                                const caption = captions[capability] || capability;
+                            if (entry) {
+                                const caption = {{ __('Connection', 'domainmanager')|json_encode|raw }};
 
                                 if (entry.status === 'success') {
                                     glpi_toast_success(entry.user_message, caption);
@@ -200,18 +198,18 @@
                                     glpi_toast_error(entry.user_message, caption);
                                 }
 
-                                const badge = document.getElementById('domainmanager-test-badge-' + capability);
+                                const badge = document.getElementById('domainmanager-test-badge');
                                 if (badge) {
                                     badge.className = 'badge ' + (domainmanagerStatusClasses[entry.status] || 'text-bg-secondary');
                                     badge.textContent = domainmanagerStatusLabels[entry.status] || entry.status;
                                 }
 
-                                const message = document.getElementById('domainmanager-test-message-' + capability);
+                                const message = document.getElementById('domainmanager-test-message');
                                 if (message) {
                                     message.textContent = entry.user_message;
                                 }
 
-                                const httpcode = document.getElementById('domainmanager-test-httpcode-' + capability);
+                                const httpcode = document.getElementById('domainmanager-test-httpcode');
                                 if (httpcode) {
                                     if (entry.http_status_code) {
                                         httpcode.textContent = 'HTTP ' + entry.http_status_code;
@@ -221,12 +219,12 @@
                                     }
                                 }
 
-                                const date = document.getElementById('domainmanager-test-date-' + capability);
+                                const date = document.getElementById('domainmanager-test-date');
                                 if (date) {
                                     date.textContent = entry.checked_at;
                                     date.title = entry.checked_at;
                                 }
-                            });
+                            }
                         }).catch(function (error) {
                             glpi_toast_error({{ __('Connection test request failed:', 'domainmanager')|json_encode|raw }} + ' ' + error.message);
                             if (window.console && console.error) {

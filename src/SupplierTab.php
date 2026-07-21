@@ -136,6 +136,11 @@ class SupplierTab extends CommonGLPI
                 DriverRegistry::getAvailableDrivers(),
                 array_map([DriverRegistry::class, 'getTestableCapabilities'], DriverRegistry::getAvailableDrivers())
             ),
+            'primary_capability'   => DriverRegistry::getPrimaryTestableCapability($current_driver),
+            'all_primary_capabilities' => array_combine(
+                DriverRegistry::getAvailableDrivers(),
+                array_map([DriverRegistry::class, 'getPrimaryTestableCapability'], DriverRegistry::getAvailableDrivers())
+            ),
         ]);
 
         return true;

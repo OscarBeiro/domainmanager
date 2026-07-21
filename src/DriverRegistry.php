@@ -141,4 +141,28 @@ class DriverRegistry
             default                                      => [],
         };
     }
+
+    /**
+     * The single capability whose result the Check Connection UI surfaces as
+     * one combined badge/toast (§3.5, §6.1) — this is a display simplification
+     * only, both capabilities are still tested and persisted as before. 'dns'
+     * is preferred: it's the one capability that's a real, meaningful login
+     * probe for every current driver (Cloudflare only has 'dns'; Dinahosting's
+     * 'registrar'/'dns' come from the same single auth check anyway; IONOS's
+     * 'registrar' is a permanent "not implemented" stub that would otherwise
+     * always mask a real, successful 'dns' result).
+     *
+     * @param  string $driver
+     * @return string|null null when the driver has nothing testable at all
+     */
+    public static function getPrimaryTestableCapability(string $driver): ?string
+    {
+        $capabilities = self::getTestableCapabilities($driver);
+
+        if (in_array('dns', $capabilities, true)) {
+            return 'dns';
+        }
+
+        return $capabilities[0] ?? null;
+    }
 }

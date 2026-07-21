@@ -498,34 +498,38 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
 ### 3.5.1 Happy path — Cloudflare DNS capability (§3.5.1, §6.1)
 - **Steps:** on a supplier with driver *Cloudflare* and a **valid** API token
   saved, click **Check Connection** on the Domain Manager tab.
-- **Expected:** a green `glpi_toast_success` toast captioned "DNS connection"
-  appears; the detail panel's DNS badge turns green ("Success"), shows HTTP
-  200 and an updated "Last checked" timestamp. No Registrar badge is shown or
-  attempted (Cloudflare only reports the `dns` capability, §3.5.1).
+- **Expected:** a green `glpi_toast_success` toast captioned "Connection"
+  appears; the detail panel's single Connection badge turns green ("Success"),
+  shows HTTP 200 and an updated "Last checked" timestamp (Cloudflare only ever
+  had one capability to show here anyway, §3.5.1).
 - [ ] Pass
 
 ### 3.5.2 Auth failure persists the error (§3.5.2, §2)
 - **Steps:** edit the Cloudflare token field to an invalid value (do **not**
   save) and click **Check Connection**.
 - **Expected:** a red `glpi_toast_error` toast with the auth-failed message;
-  the DNS badge turns red with HTTP 401 and the message "Authentication
-  failed — the API token or credentials were rejected."; since this supplier
-  already has a saved `supplierconfigs` row, the result (status
-  `auth_failed`, http code 401, message, timestamp) is persisted to
+  the Connection badge turns red with HTTP 401 and the message
+  "Authentication failed — the API token or credentials were rejected.";
+  since this supplier already has a saved `supplierconfigs` row, the result
+  (status `auth_failed`, http code 401, message, timestamp) is persisted to
   `dns_test_*` columns — reload the page and confirm the panel still shows it
   without re-testing.
 - [ ] Pass
 
-### 3.5.3 IONOS: registrar not-implemented, DNS is a real check (§3.5.1, §3.9)
+### 3.5.3 IONOS: registrar not-implemented, DNS is a real check (§3.5.1, §3.9, §6.1)
 - **Steps:** select driver *IONOS*, fill in (a) deliberately wrong key/secret,
   or (b) real IONOS key/secret if available, click **Check Connection**.
-- **Expected:** "Registrar connection" **always** shows a red toast/badge
-  "Not yet implemented for this driver" (status `unknown_error`, no HTTP
-  code) regardless of the credentials entered — this is the documented gap
-  in §3.9, not a bug. "DNS connection" is a **real** check against
-  `GET /zones`: (a) wrong credentials → red badge, HTTP 401, "Authentication
+- **Expected:** the UI only shows **one** Connection badge, driven by the
+  `dns` result (§6.1's `getPrimaryTestableCapability()` — `registrar` is
+  still tested and persisted in the background per §3.9, but never
+  surfaced): (a) wrong credentials → red badge, HTTP 401, "Authentication
   failed — the API token or credentials were rejected."; (b) valid
-  credentials → green badge, "Connection successful."
+  credentials → green badge, "Connection successful." Confirm via a direct DB
+  read (`SELECT registrar_test_status, dns_test_status FROM
+  glpi_plugin_domainmanager_supplierconfigs WHERE id=<id>`) that
+  `registrar_test_status` is still being recorded as `unknown_error`
+  ("Not yet implemented for this driver") even though nothing in the UI shows
+  it.
 - [ ] Pass
 
 ### 3.5.4 Unsaved credentials are tested but never persisted (§3.5.3)
@@ -592,8 +596,10 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
   DB error) and run a connection test against an already-saved supplier
   config.
 - **Expected:** the toast and detail panel still show the real pass/fail
-  result for each capability (the JSON response is unaffected); a line
-  documenting the persistence failure appears in `domainmanager-errors.log`;
+  result (the JSON response still contains an entry per capability,
+  unaffected by the persistence failure — only the UI's single combined
+  badge changes, §6.1); a line documenting the persistence failure appears in
+  `domainmanager-errors.log`;
   the endpoint still returns HTTP 200 with `ok: true`.
 - [ ] Pass
 
@@ -660,14 +666,15 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
 - **Steps:** select driver *Dinahosting*; (a) fill in a deliberately wrong
   username/password, click Check Connection; (b) fill in real, valid
   Dinahosting credentials (if available), click Check Connection.
-- **Expected:** (a) both "Registrar connection" and "DNS connection" show a
-  red toast/badge "Authentication failed — the username or password was
-  rejected." (status `auth_failed`, no HTTP code shown), and
-  `domainmanager-errors.log` gets a line per capability with the real
-  Dinahosting `responseCode`/message (verified in this session directly
-  against the live API: `responseCode=2200 message="" errors=[code=2200
-  msg=Authentication error.]`) — no credential value in the log line. (b)
-  both show a green "Connection successful." toast/badge.
+- **Expected:** (a) the single Connection badge/toast shows red
+  "Authentication failed — the username or password was rejected." (status
+  `auth_failed`, no HTTP code shown), and `domainmanager-errors.log` still
+  gets a line per capability (registrar + dns, both recorded even though only
+  one is shown, §6.1) with the real Dinahosting `responseCode`/message
+  (verified in this session directly against the live API:
+  `responseCode=2200 message="" errors=[code=2200 msg=Authentication
+  error.]`) — no credential value in the log line. (b) shows a green
+  "Connection successful." toast/badge.
 - [ ] Pass
 
 ## Phase 3.7 — Audit trail via native History (§3.7)

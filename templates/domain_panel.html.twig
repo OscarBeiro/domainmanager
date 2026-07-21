@@ -181,7 +181,7 @@
         button.disabled = true;
         button.querySelector('i').classList.add('ti-spin');
 
-        fetch({{ path('@domainmanager:domainmanager_sync', {'domains_id': domains_id})|json_encode|raw }}, {
+        fetch({{ ('/plugins/domainmanager/sync/' ~ domains_id)|json_encode|raw }}, {
             method: 'POST',
             headers: {
                 'X-Glpi-Csrf-Token': csrf ? csrf.getAttribute('content') : '',

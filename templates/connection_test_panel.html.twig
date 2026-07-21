@@ -27,10 +27,6 @@
  # -------------------------------------------------------------------------
  #}
 
-{% set capability_labels = {
-    'registrar': __('Registrar', 'domainmanager'),
-    'dns': __('DNS', 'domainmanager'),
-} %}
 {% set status_labels = {
     'never': __('Not tested yet', 'domainmanager'),
     'success': __('Success', 'domainmanager'),
@@ -64,36 +60,34 @@
         </h3>
     </div>
     <div class="card-body">
-        {% for capability in ['registrar', 'dns'] %}
-            {% set entry = connection_test[capability]|default({'status': 'never', 'message': '', 'http_code': null, 'date': null}) %}
-            <div class="mb-3 domainmanager-test-capability" data-capability="{{ capability }}"
-                 {{ capability in testable_capabilities ? '' : 'hidden' }}>
-                <div class="d-flex align-items-center gap-2">
-                    <strong>{{ capability_labels[capability] }}</strong>
-                    <span class="badge {{ status_classes[entry.status]|default('text-bg-secondary') }}"
-                          id="domainmanager-test-badge-{{ capability }}">
-                        {{ status_labels[entry.status]|default(entry.status) }}
+        {% set entry = primary_capability is not null ? (connection_test[primary_capability]|default({'status': 'never', 'message': '', 'http_code': null, 'date': null})) : {'status': 'never', 'message': '', 'http_code': null, 'date': null} %}
+        <div class="mb-3 domainmanager-test-capability"
+             {{ primary_capability is not null ? '' : 'hidden' }}>
+            <div class="d-flex align-items-center gap-2">
+                <strong>{{ __('Connection', 'domainmanager') }}</strong>
+                <span class="badge {{ status_classes[entry.status]|default('text-bg-secondary') }}"
+                      id="domainmanager-test-badge">
+                    {{ status_labels[entry.status]|default(entry.status) }}
+                </span>
+                {% if entry.http_code %}
+                    <span class="text-muted small" id="domainmanager-test-httpcode">
+                        HTTP {{ entry.http_code }}
                     </span>
-                    {% if entry.http_code %}
-                        <span class="text-muted small" id="domainmanager-test-httpcode-{{ capability }}">
-                            HTTP {{ entry.http_code }}
-                        </span>
-                    {% else %}
-                        <span class="text-muted small d-none" id="domainmanager-test-httpcode-{{ capability }}"></span>
-                    {% endif %}
-                </div>
-                <div class="form-text" id="domainmanager-test-message-{{ capability }}">
-                    {{ entry.message }}
-                </div>
-                <div class="text-muted small">
-                    {{ __('Last checked', 'domainmanager') }}:
-                    <span id="domainmanager-test-date-{{ capability }}" title="{{ entry.date }}">
-                        {{ entry.date ?: __('Never', 'domainmanager') }}
-                    </span>
-                </div>
+                {% else %}
+                    <span class="text-muted small d-none" id="domainmanager-test-httpcode"></span>
+                {% endif %}
             </div>
-        {% endfor %}
-        <div class="text-muted small {{ testable_capabilities is empty ? '' : 'd-none' }}"
+            <div class="form-text" id="domainmanager-test-message">
+                {{ entry.message }}
+            </div>
+            <div class="text-muted small">
+                {{ __('Last checked', 'domainmanager') }}:
+                <span id="domainmanager-test-date" title="{{ entry.date }}">
+                    {{ entry.date ?: __('Never', 'domainmanager') }}
+                </span>
+            </div>
+        </div>
+        <div class="text-muted small {{ primary_capability is not null ? 'd-none' : '' }}"
              id="domainmanager-test-none">
             {{ __('This driver has nothing to test.', 'domainmanager') }}
         </div>
