@@ -39,4 +39,8 @@ enum LifecycleStatus: string
     case Ok        = 'ok';
     case Suspended = 'suspended';
     case Expired   = 'expired';
+    // IONOS-specific (addendum "Implement the Real IONOS Driver"): the
+    // domain is mid-registration/transfer, not yet live. No existing case
+    // fit without a lossy guess (it isn't Ok, Suspended, or Expired).
+    case Pending   = 'pending';
 }

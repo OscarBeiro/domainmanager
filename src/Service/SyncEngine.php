@@ -172,6 +172,16 @@ class SyncEngine
     private function syncRegistrarLeg(Domain $domain, int $registrar_id, array &$result): void
     {
         try {
+            if ($registrar_id > 0 && !SupplierConfig::isSupplierActive($registrar_id)) {
+                $result['registrar_status']  = DomainState::STATUS_SUPPLIER_INACTIVE;
+                $result['registrar_message'] = __('Registrar supplier is inactive; synchronization skipped', 'domainmanager');
+                $this->logger->skip(
+                    (int) $domain->getID(),
+                    'Registrar sync skipped: supplier #' . $registrar_id . ' is inactive'
+                );
+                return;
+            }
+
             $config = $registrar_id > 0 ? SupplierConfig::getForSupplier($registrar_id) : null;
 
             if (
@@ -232,6 +242,17 @@ class SyncEngine
     private function syncDnsLeg(Domain $domain, SupplierConfig $config, array &$result): void
     {
         try {
+            $dns_suppliers_id = (int) $config->fields['suppliers_id'];
+            if (!SupplierConfig::isSupplierActive($dns_suppliers_id)) {
+                $result['dns_status']  = DomainState::STATUS_SUPPLIER_INACTIVE;
+                $result['dns_message'] = __('DNS supplier is inactive; synchronization skipped', 'domainmanager');
+                $this->logger->skip(
+                    (int) $domain->getID(),
+                    'DNS sync skipped: supplier #' . $dns_suppliers_id . ' is inactive'
+                );
+                return;
+            }
+
             // §0.4: detect the native manageable-record-types gate up front
             // instead of half-importing under a restricted web session
             $unmanageable = $this->reconciler->getUnmanageableTypeNames();

@@ -146,6 +146,7 @@ class SupplierTab extends CommonGLPI
             'config_id'            => $config !== null ? (int) $config->getID() : 0,
             'form_url'             => SupplierConfig::getFormURL(),
             'can_edit'             => $supplier->can((int) $supplier->getID(), UPDATE),
+            'supplier_active'      => (bool) $supplier->fields['is_active'],
             'current_driver'       => $current_driver,
             'driver_labels'        => self::getDriverOptions((int) $supplier->getID(), $current_driver),
             'credential_fields'    => DriverRegistry::getAllCredentialFields(),

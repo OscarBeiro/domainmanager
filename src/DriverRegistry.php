@@ -127,8 +127,12 @@ class DriverRegistry
      * Cloudflare only reports 'dns' (its registrar API needs a specific
      * domain name, unknown at credential-test time); Dinahosting reports
      * both from a single account-wide auth check; IONOS reports both but
-     * only 'dns' is a real check — 'registrar' is still "not implemented"
-     * (no verifiable registrar API documentation was found, §3.9).
+     * only 'dns' is a real check — 'registrar' still reports "not
+     * implemented" in `IonosDriver::testConnection()` even though
+     * `fetchLifecycle()` (the actual sync pipeline) is a real
+     * implementation against the Domains API — adding a real registrar
+     * connection-test probe was out of scope for that change, not blocked
+     * by missing documentation (§3.9).
      *
      * @param  string $driver
      * @return string[] subset of ['registrar', 'dns']
@@ -149,8 +153,9 @@ class DriverRegistry
      * is preferred: it's the one capability that's a real, meaningful login
      * probe for every current driver (Cloudflare only has 'dns'; Dinahosting's
      * 'registrar'/'dns' come from the same single auth check anyway; IONOS's
-     * 'registrar' is a permanent "not implemented" stub that would otherwise
-     * always mask a real, successful 'dns' result).
+     * 'registrar' connection-test probe is still a "not implemented" stub
+     * — deliberately deferred, see getTestableCapabilities() — that would
+     * otherwise always mask a real, successful 'dns' result).
      *
      * @param  string $driver
      * @return string|null null when the driver has nothing testable at all

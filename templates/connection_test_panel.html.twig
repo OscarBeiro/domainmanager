@@ -62,37 +62,44 @@
         </h4>
     </div>
     <div class="card-body">
-        {% set entry = primary_capability is not null ? (connection_test[primary_capability]|default({'status': 'never', 'message': '', 'http_code': null, 'date': null})) : {'status': 'never', 'message': '', 'http_code': null, 'date': null} %}
-        <div class="mb-3 domainmanager-test-capability"
-             {{ primary_capability is not null ? '' : 'hidden' }}>
-            <div class="d-flex align-items-center gap-2">
-                <strong>{{ __('Connection', 'domainmanager') }}</strong>
-                <span class="badge {{ status_classes[entry.status]|default('text-bg-secondary') }}"
-                      id="domainmanager-test-badge">
-                    {{ status_labels[entry.status]|default(entry.status) }}
-                </span>
-                {% if entry.http_code %}
-                    <span class="text-muted small" id="domainmanager-test-httpcode">
-                        HTTP {{ entry.http_code }}
+        {% if not supplier_active|default(true) %}
+            <div class="alert alert-secondary mb-0">
+                <i class="ti ti-player-pause me-1"></i>
+                {{ __('This supplier is inactive. Activate it to test or use its Domain Manager credentials.', 'domainmanager') }}
+            </div>
+        {% else %}
+            {% set entry = primary_capability is not null ? (connection_test[primary_capability]|default({'status': 'never', 'message': '', 'http_code': null, 'date': null})) : {'status': 'never', 'message': '', 'http_code': null, 'date': null} %}
+            <div class="mb-3 domainmanager-test-capability"
+                 {{ primary_capability is not null ? '' : 'hidden' }}>
+                <div class="d-flex align-items-center gap-2">
+                    <strong>{{ __('Connection', 'domainmanager') }}</strong>
+                    <span class="badge {{ status_classes[entry.status]|default('text-bg-secondary') }}"
+                          id="domainmanager-test-badge">
+                        {{ status_labels[entry.status]|default(entry.status) }}
                     </span>
-                {% else %}
-                    <span class="text-muted small d-none" id="domainmanager-test-httpcode"></span>
-                {% endif %}
+                    {% if entry.http_code %}
+                        <span class="text-muted small" id="domainmanager-test-httpcode">
+                            HTTP {{ entry.http_code }}
+                        </span>
+                    {% else %}
+                        <span class="text-muted small d-none" id="domainmanager-test-httpcode"></span>
+                    {% endif %}
+                </div>
+                <div class="form-text" id="domainmanager-test-message">
+                    {{ entry.message }}
+                </div>
+                <div class="text-muted small">
+                    {{ __('Last checked', 'domainmanager') }}:
+                    <span id="domainmanager-test-date" title="{{ entry.date }}">
+                        {{ entry.date ?: __('Never', 'domainmanager') }}
+                    </span>
+                </div>
             </div>
-            <div class="form-text" id="domainmanager-test-message">
-                {{ entry.message }}
+            <div class="text-muted small {{ primary_capability is not null ? 'd-none' : '' }}"
+                 id="domainmanager-test-none">
+                {{ __('This driver has nothing to test.', 'domainmanager') }}
             </div>
-            <div class="text-muted small">
-                {{ __('Last checked', 'domainmanager') }}:
-                <span id="domainmanager-test-date" title="{{ entry.date }}">
-                    {{ entry.date ?: __('Never', 'domainmanager') }}
-                </span>
-            </div>
-        </div>
-        <div class="text-muted small {{ primary_capability is not null ? 'd-none' : '' }}"
-             id="domainmanager-test-none">
-            {{ __('This driver has nothing to test.', 'domainmanager') }}
-        </div>
+        {% endif %}
     </div>
 </div>
 

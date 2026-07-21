@@ -41,12 +41,18 @@ class DomainState extends CommonDBTM
 {
     public static $rightname = 'domain';
 
-    public const STATUS_NEVER        = 'never';
-    public const STATUS_OK           = 'ok';
-    public const STATUS_ERROR        = 'error';
-    public const STATUS_UNCONFIGURED = 'unconfigured';
-    public const STATUS_UNSUPPORTED  = 'unsupported';
-    public const STATUS_UNKNOWN      = 'unknown';
+    public const STATUS_NEVER             = 'never';
+    public const STATUS_OK                = 'ok';
+    public const STATUS_ERROR             = 'error';
+    public const STATUS_UNCONFIGURED      = 'unconfigured';
+    public const STATUS_UNSUPPORTED       = 'unsupported';
+    public const STATUS_UNKNOWN           = 'unknown';
+    // The resolved supplier for this role exists and is known, but its
+    // native "Active" field is off — deliberately distinct from
+    // STATUS_UNCONFIGURED (no supplier resolved at all) and STATUS_ERROR
+    // (an API call was attempted and failed): nothing was attempted here,
+    // on purpose (§addendum "Skip Inactive Suppliers").
+    public const STATUS_SUPPLIER_INACTIVE = 'supplier_inactive';
 
     /**
      * {@inheritDoc}

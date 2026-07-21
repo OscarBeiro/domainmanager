@@ -145,6 +145,26 @@ class SupplierConfig extends CommonDBTM
     }
 
     /**
+     * Whether $suppliers_id's native "Active" field is set — an inactive
+     * supplier is retired and its Domain Manager credentials must never be
+     * used for an outbound API call (connection test, sync, cron, massive
+     * action). A supplier that can't be loaded is treated as active: this
+     * check exists to gate active-but-retired suppliers, not dangling FKs.
+     *
+     * @param  int $suppliers_id
+     * @return bool
+     */
+    public static function isSupplierActive(int $suppliers_id): bool
+    {
+        $supplier = new Supplier();
+        if ($suppliers_id <= 0 || !$supplier->getFromDB($suppliers_id)) {
+            return true;
+        }
+
+        return (bool) $supplier->fields['is_active'];
+    }
+
+    /**
      * Get the configuration row of a supplier
      *
      * @param  int $suppliers_id

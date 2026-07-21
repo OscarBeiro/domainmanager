@@ -67,6 +67,15 @@ class ConnectionTestController extends AbstractController
             return new JsonResponse(['ok' => false, 'message' => __('You do not have permission to update this supplier', 'domainmanager')], 403);
         }
 
+        // An inactive supplier is retired — its credentials must never be
+        // used for an outbound call, not even a manual connection test
+        // (§addendum "Skip Inactive Suppliers"). Checked here server-side
+        // as well as by disabling the button client-side (SupplierTab),
+        // since a direct POST could still bypass the disabled button.
+        if (!(bool) $supplier->fields['is_active']) {
+            return new JsonResponse(['ok' => false, 'message' => __('This supplier is inactive; connection testing is disabled', 'domainmanager')], 409);
+        }
+
         $driver = (string) $request->request->get('api_driver', DriverRegistry::DRIVER_NONE);
         if (!DriverRegistry::isValidDriver($driver) || $driver === DriverRegistry::DRIVER_NONE) {
             return new JsonResponse(['ok' => false, 'message' => __('Invalid API driver', 'domainmanager')], 400);

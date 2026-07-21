@@ -118,9 +118,10 @@ class DomainForm
             DomainState::STATUS_NEVER        => __('Never synchronized', 'domainmanager'),
             DomainState::STATUS_OK           => __('OK', 'domainmanager'),
             DomainState::STATUS_ERROR        => __('Error', 'domainmanager'),
-            DomainState::STATUS_UNCONFIGURED => __('Not configured', 'domainmanager'),
-            DomainState::STATUS_UNSUPPORTED  => __('Provider not supported', 'domainmanager'),
-            DomainState::STATUS_UNKNOWN      => __('Provider unknown', 'domainmanager'),
+            DomainState::STATUS_UNCONFIGURED      => __('Not configured', 'domainmanager'),
+            DomainState::STATUS_UNSUPPORTED       => __('Provider not supported', 'domainmanager'),
+            DomainState::STATUS_UNKNOWN           => __('Provider unknown', 'domainmanager'),
+            DomainState::STATUS_SUPPLIER_INACTIVE => __('Supplier inactive', 'domainmanager'),
         ];
     }
 
@@ -135,9 +136,10 @@ class DomainForm
             DomainState::STATUS_NEVER        => 'text-bg-secondary',
             DomainState::STATUS_OK           => 'text-bg-success',
             DomainState::STATUS_ERROR        => 'text-bg-danger',
-            DomainState::STATUS_UNCONFIGURED => 'text-bg-secondary',
-            DomainState::STATUS_UNSUPPORTED  => 'text-bg-warning',
-            DomainState::STATUS_UNKNOWN      => 'text-bg-warning',
+            DomainState::STATUS_UNCONFIGURED      => 'text-bg-secondary',
+            DomainState::STATUS_UNSUPPORTED       => 'text-bg-warning',
+            DomainState::STATUS_UNKNOWN           => 'text-bg-warning',
+            DomainState::STATUS_SUPPLIER_INACTIVE => 'text-bg-secondary',
         ];
     }
 }

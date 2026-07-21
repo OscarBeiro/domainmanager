@@ -250,17 +250,20 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
 - **Expected:** its state row, record-ownership rows and lock rows are all deleted.
 - [ ] Pass
 
-### 3.9 IONOS registrar leg is unimplemented; DNS leg is real (§3.9)
+### 3.9 IONOS registrar and DNS legs are both real (§3.9, updated — registrar implemented per addendum "Implement the Real IONOS Driver")
 - **Steps:** configure a supplier with the IONOS driver (real key/secret if
   available) and run a sync using it.
-- **Expected:** the registrar leg ends with status `error` and the message
-  "IONOS registrar/domain lifecycle API is not implemented — no verifiable
-  public API documentation was found for it" (not the older generic "is not
-  implemented yet" text — this driver's registrar gap is now explained, not
-  just marked TODO); the DNS leg actually calls the live IONOS API and either
-  imports real A/AAAA/CNAME/MX/TXT records (MX prefixed with priority, TXT
-  unquoted — see §3.9) or reports a real per-error message if the zone/key is
-  wrong. Neither leg aborts the other.
+- **Expected:** the registrar leg calls the live IONOS Domains API
+  (`https://api.hosting.ionos.com/domains/v1`, a separate product/base URL
+  from the DNS API below) and either ends `ok` with `date_expiration`
+  populated (`date_domaincreation` stays null — IONOS's Domains API exposes
+  no registration/creation date at all) or reports a real, specific error
+  (e.g. "Domain is not managed by this IONOS account" for a 404, §3.18); the
+  DNS leg actually calls the live IONOS DNS API and either imports real
+  A/AAAA/CNAME/MX/TXT records (MX prefixed with priority, TXT unquoted —
+  see §3.9) or reports a real per-error message if the zone/key is wrong.
+  Neither leg aborts the other. See 3.17/3.18 for the detailed real-token
+  registrar pass.
 - [ ] Pass
 
 ### 3.10 Engine statuses and leg isolation (§5)
@@ -323,10 +326,8 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
   can read.
 - **Expected:** DNS leg imports A/AAAA/CNAME/MX/TXT records with correct data
   (MX prefixed with priority from the `prio` field; TXT content unquoted —
-  IONOS returns it double-quoted) and `dns_status = ok`; registrar leg always
-  ends in `error` with the "not implemented" message from §3.9 (expected,
-  documented gap, not a bug); the key/secret never appear in messages,
-  history, or `domainmanager.log`/`domainmanager-errors.log`.
+  IONOS returns it double-quoted) and `dns_status = ok`; the key/secret never
+  appear in messages, history, or `domainmanager.log`/`domainmanager-errors.log`.
 - [ ] Pass
 
 ### 3.16 IONOS zone-not-found error (§3.9)
@@ -334,6 +335,37 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
   name whose DNS zone is not managed under that account.
 - **Expected:** a clear `DriverException` message ("No IONOS DNS zone found
   for `<domain>` with this key"), not a generic/unhelpful error.
+- [ ] Pass
+
+### 3.17 Real IONOS registrar/lifecycle sync (manual, needs real IONOS Domains API credentials — addendum "Implement the Real IONOS Driver")
+- **Steps:** re-run the three IONOS-registrar domains from the original bug
+  report (`adegamoraima.com`, `beiro.net`, `desmarque.es`) with real IONOS
+  API key/secret saved on the resolved supplier; run
+  `SyncEngine::sync()`/"Update Now"/cron for each.
+- **Expected:** each domain now shows a real, **per-domain** registrar
+  result (`date_domaincreation` stays null — IONOS's Domains API exposes no
+  registration/creation date at all, confirmed absent from its spec —
+  `date_expiration` populated from `expirationDate`, `is_active` set
+  correctly), instead of an identical generic "Error" on all three as
+  before this change. A domain still mid-registration/transfer
+  (`provisioningStatus.type = REGISTRATION_IN_PROGRESS`) reports the new
+  `LifecycleStatus::Pending` (shows as `is_active = 0`, same as any other
+  non-Ok state — verify this doesn't crash/mis-render anywhere it's
+  displayed). The key/secret never appear in messages, history, or either
+  log file.
+- [ ] Pass
+
+### 3.18 IONOS domain-not-managed error (registrar API, addendum)
+- **Steps:** with valid IONOS Domains API credentials, run a sync/fetch
+  against a domain name that is valid but not registered under that
+  account (or is registered under a *different* IONOS account than the
+  one the credentials belong to).
+- **Expected:** a clear `DriverException` message ("Domain is not managed
+  by this IONOS account"), not a generic/unhelpful error or a leaked raw
+  API error body — confirms the Domains API's 404 response is mapped
+  correctly, and that its two-shaped error envelope (single `{message}`
+  object at the gateway layer vs. a `[{code, message}]` array at the
+  application layer) is both handled without crashing.
 - [ ] Pass
 
 ---
@@ -1175,3 +1207,58 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
 > must reuse `SupplierConfig::isDriverClaimedByOtherSupplier()` /
 > `getDriversClaimedByOtherSuppliers()` and skip colliding items with a
 > per-item reason rather than failing the whole batch.
+
+## Phase 5.7 — Skip inactive suppliers, surface it clearly (addendum)
+
+### 5.7.1 Check Connection is disabled with a notice on an inactive supplier
+- **Steps:** on a supplier with a saved driver + credentials, set
+  Active = No on the supplier's own native form. Reopen its Domain Manager
+  tab.
+- **Expected:** the Check Connection button is disabled (tooltip explains
+  why), and the connection diagnostics panel shows only the inline notice
+  "This supplier is inactive. Activate it to test or use its Domain
+  Manager credentials." — not the last stored badge/message/timestamp.
+  The credentials form itself (driver select + fields) remains editable.
+- [ ] Pass
+
+### 5.7.2 Server-side guard rejects a direct connection-test POST too
+- **Steps:** with the same inactive supplier, POST directly to
+  `/plugins/domainmanager/connectiontest/{suppliers_id}` (curl/devtools),
+  bypassing the disabled button.
+- **Expected:** rejected (409) with a clear "this supplier is inactive"
+  message; no credentials are decrypted and no request reaches the
+  driver's API (verify nothing new appears in `domainmanager.log` /
+  `domainmanager-errors.log` for this call other than the rejection, if
+  logged at all).
+- [ ] Pass
+
+### 5.7.3 Domain form shows "Supplier inactive," not "Not configured" or a red error
+- **Steps:** with a Domain whose Infocom registrar (or detected DNS
+  provider) resolves to the now-inactive supplier, open the Domain form
+  or run Update Now / cron / the "Sync now" massive action.
+- **Expected:** the Registrar sync and/or DNS sync badge reads "Supplier
+  inactive" (a calm/secondary badge, not red `text-bg-danger`) — distinct
+  from "Not configured" (which means no supplier is resolved at all).
+  Registrar/DNS Provider columns still link to the resolved supplier (it's
+  known, just inactive).
+- [ ] Pass
+
+### 5.7.4 Cron and the mass-sync massive action skip cleanly, no error
+- **Steps:** trigger the `DomainSync` cron task (or wait for its window)
+  and separately run the "Sync now (Domain Manager)" massive action over
+  a domain resolving to the inactive supplier.
+- **Expected:** cron's own error counter does NOT increment for this
+  domain (only `domainmanager.log` gets a normal "... is inactive"
+  activity line, never `domainmanager-errors.log`). The massive action's
+  result summary reports it as "Skipped <domain> — resolved supplier is
+  inactive", distinguishable from the generic "Sync reported an error"
+  message used for real failures.
+- [ ] Pass
+
+### 5.7.5 Reactivating the supplier resumes normal behavior with no other change
+- **Steps:** set the supplier back to Active = Yes. Reopen its Domain
+  Manager tab; re-run Check Connection; re-sync an affected domain.
+- **Expected:** Check Connection is enabled again and works normally; the
+  domain's badges return to their real ok/error/unconfigured outcome from
+  an actual API call — no leftover "inactive"/disabled state anywhere.
+- [ ] Pass

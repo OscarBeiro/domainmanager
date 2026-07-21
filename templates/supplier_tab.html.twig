@@ -90,7 +90,11 @@
                 <input type="hidden" name="_glpi_csrf_token" value="{{ csrf_token() }}" />
                 {% if current_driver != 'none' %}
                     <button type="button" id="domainmanager-check-connection"
-                            class="btn btn-outline-secondary me-2">
+                            class="btn btn-outline-secondary me-2"
+                            {{ supplier_active|default(true) ? '' : 'disabled' }}
+                            {% if not supplier_active|default(true) %}
+                                title="{{ __('This supplier is inactive. Activate it to test its Domain Manager credentials.', 'domainmanager') }}"
+                            {% endif %}>
                         <i class="ti ti-plug-connected"></i>
                         <span>{{ __('Check Connection', 'domainmanager') }}</span>
                     </button>

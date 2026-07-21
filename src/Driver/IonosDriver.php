@@ -31,14 +31,15 @@
 
 namespace GlpiPlugin\Domainmanager\Driver;
 
+use DateTimeImmutable;
 use GlpiPlugin\Domainmanager\Contract\ConnectionTestableInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsPipelineInterface;
 use GlpiPlugin\Domainmanager\Contract\RegistrarDriverInterface;
 use GlpiPlugin\Domainmanager\Dto\ConnectionTestResult;
 use GlpiPlugin\Domainmanager\Dto\DomainLifecycle;
+use GlpiPlugin\Domainmanager\Dto\LifecycleStatus;
 use GlpiPlugin\Domainmanager\Dto\ZoneRecord;
 use GlpiPlugin\Domainmanager\Exception\DriverException;
-use GlpiPlugin\Domainmanager\Exception\NotImplementedException;
 use GlpiPlugin\Domainmanager\Service\PluginLogger;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
@@ -47,14 +48,16 @@ use Throwable;
 use Toolbox;
 
 /**
- * IONOS driver: DNS zone records API is real; the registrar/lifecycle API
- * is NOT implemented (see fetchLifecycle()) — this is a documented gap, not
- * an oversight (§3.9).
+ * IONOS driver: DNS zone records API + Domains (registrar/lifecycle) API,
+ * both real implementations. These are two separate IONOS Hosting/Developer
+ * products (developer.hosting.ionos.com) — NOT to be confused with IONOS
+ * Cloud's unrelated IAM federation-domains API (iam.ionos.com), which only
+ * verifies SSO domain ownership and has nothing to do with this plugin.
  * Credentials: ['key' => <API key prefix>, 'secret' => <API secret>]
  *
  * DNS API docs: https://developer.hosting.ionos.com/docs/dns (a JS-rendered
  * SPA portal with no inline example bodies). Field names and error shapes
- * below were verified two ways:
+ * for the DNS pipeline were verified two ways:
  * - the maintained third-party client github.com/libdns/ionos (base URI,
  *   zone/record JSON field names, TXT-content quoting behavior)
  * - direct live probing of https://api.hosting.ionos.com/dns/v1 with no/bad
@@ -62,16 +65,65 @@ use Toolbox;
  *   and the `{"message": "..."}` error envelope with real HTTP status codes
  *   — 400 "Invalid API key format.", 401 "Missing or invalid API key."/
  *   "Missing or invalid credentials.")
+ *
+ * Domains API (registrar/lifecycle) — the docs portal is the same JS-only
+ * shell, but its actual OpenAPI 3.0.2 spec is a static asset the portal
+ * loads client-side and was fetched and read directly (not reconstructed
+ * from memory): `https://developer.hosting.ionos.com/assets/kms-swagger-specs/domains.yaml`,
+ * spec version **1.0.4**, confirmed live on 2026-07-21. Key facts from that
+ * spec, plus live probing of the base URL with no/bad credentials (same
+ * `X-API-Key`, same gateway, confirmed identical
+ * `{"message":"Missing or invalid credentials."}` /
+ * `{"message":"Missing or invalid API key."}` responses as the DNS API):
+ * - Base URL: `https://api.hosting.ionos.com/domains/v1` (`servers.url` +
+ *   the `/v1/domainitems...` paths in the spec).
+ * - Auth: the spec's formal `securitySchemes`/`security` section requires
+ *   only `X-Api-Key` (same header this driver already sends for DNS, case
+ *   differs cosmetically only — HTTP header names are case-insensitive).
+ *   The spec's *prose* intro also mentions "Every endpoint uses the
+ *   `X-Tenant-Id` header", but that header is **not** modeled anywhere in
+ *   the machine-readable `parameters`/`security` sections, and this
+ *   plugin's credential shape has no tenant-id field to source one from —
+ *   sent without it. Flagged as an unconfirmed detail rather than guessed:
+ *   if a real reseller/multi-tenant IONOS account gets an auth error this
+ *   driver can't otherwise explain, a `tenant_id` credential field may
+ *   need adding — see ARCHITECTURE.md §3.9.
+ * - No exact "look up by full domain name" filter exists on the list
+ *   endpoint (`GET /v1/domainitems`); its `name` parameter is a *substring*
+ *   match (documented minimum 3 characters), not equality — so
+ *   findDomainId() fetches candidates and matches `name` exactly,
+ *   case-insensitively, the same pattern findZoneId() already uses for the
+ *   DNS zone list.
+ * - The Domains API has no `registrationDate`/`creationDate`/equivalent
+ *   field anywhere in its schema (confirmed absent from the full spec, not
+ *   merely undocumented) — `fetchLifecycle()` always returns a null
+ *   `registrationDate` for this driver, which `DomainLifecycle` already
+ *   supports as a nullable field.
+ * - Error envelope is genuinely two-shaped depending on which layer
+ *   rejects the request: a gateway-level auth rejection (malformed/absent
+ *   key, shared with the DNS API) returns a single `{"message": "..."}"`
+ *   object; an application-level error from the Domains backend itself
+ *   (confirmed via the spec's own `error` schema and response examples)
+ *   returns a JSON **array** of `{"code": "...", "message": "..."}`
+ *   objects instead. describeDomainsApiError() handles both.
  */
 class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, ConnectionTestableInterface
 {
     private const BASE_URI = 'https://api.hosting.ionos.com/dns/v1/';
 
+    private const DOMAINS_BASE_URI = 'https://api.hosting.ionos.com/domains/v1/';
+
     private const REQUEST_TIMEOUT = 15;
 
     private const TEST_TIMEOUT = 9;
 
+    private const DOMAINS_PAGE_SIZE = 100;
+
+    private const DOMAINS_MAX_PAGES = 10;
+
     private ?Client $client = null;
+
+    private ?Client $domainsClient = null;
 
     /**
      * @param array<string, string> $credentials
@@ -81,11 +133,13 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Con
     }
 
     /**
-     * Only 'dns' is really tested — no verifiable registrar/domain-info API
-     * documentation was found (see fetchLifecycle()), so 'registrar' still
-     * reports "not implemented" rather than being silently dropped from the
-     * UI (an admin should be able to see that gap, not just fail to find a
-     * button for it).
+     * Only 'dns' is really tested. `fetchLifecycle()` (RegistrarDriverInterface)
+     * is now a real implementation against the Domains API (see class
+     * docblock), but adding a real 'registrar' connection-test probe here
+     * was out of scope for that change — deliberately deferred, not because
+     * no documentation exists. 'registrar' still reports "not implemented"
+     * rather than being silently dropped from the UI (an admin should be
+     * able to see that gap, not just fail to find a button for it).
      *
      * {@inheritDoc}
      */
@@ -143,25 +197,102 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Con
     }
 
     /**
-     * Not implemented: no verifiable public documentation exists for
-     * IONOS's registrar/domain-info API. `developer.hosting.ionos.com`'s
-     * "Domains" product is a JS-rendered Angular SPA with no accessible
-     * OpenAPI/Swagger spec found (unlike its DNS product, which has a
-     * maintained community client to cross-check against); no official or
-     * community SDK/client for it was found either; and its auth gateway
-     * returns a uniform 401 for any path under it, so even endpoint
-     * *existence* can't be confirmed by probing without real credentials.
-     * Flagged rather than guessed — see ARCHITECTURE.md §3.9. Revisit if
-     * IONOS ever publishes an accessible spec for this product, or if
-     * real credentials become available to explore it directly.
-     *
      * {@inheritDoc}
      */
     public function fetchLifecycle(string $domain): DomainLifecycle
     {
-        throw new NotImplementedException(
-            __('IONOS registrar/domain lifecycle API is not implemented — no verifiable public API documentation was found for it', 'domainmanager')
+        $domain   = self::normalizeDomain($domain);
+        $domainId = $this->findDomainId($domain);
+
+        $data = $this->requestDomainsApi(
+            'GET',
+            'domainitems/' . rawurlencode($domainId),
+            ['includeDomainStatus' => 'true']
         );
+
+        // No registration/creation date field exists anywhere in the
+        // Domains API schema (confirmed, see class docblock) — always null
+        // for this driver, which DomainLifecycle already supports.
+        $expiration = self::parseDate($data['expirationDate'] ?? null);
+
+        return new DomainLifecycle(null, $expiration, self::mapLifecycleStatus($data['status'] ?? []));
+    }
+
+    /**
+     * Resolve the IONOS-internal domainId of a domain by name. The list
+     * endpoint's `name` filter is a substring match (documented minimum 3
+     * characters, no exact-match-by-full-name filter exists — see class
+     * docblock), so this fetches candidate pages and matches the `name`
+     * field exactly, case-insensitively — the same pattern findZoneId()
+     * already uses for the DNS zone list.
+     *
+     * @param  string $domain
+     * @return string
+     * @throws DriverException
+     */
+    private function findDomainId(string $domain): string
+    {
+        for ($page = 0; $page < self::DOMAINS_MAX_PAGES; $page++) {
+            $offset = $page * self::DOMAINS_PAGE_SIZE;
+            $data   = $this->requestDomainsApi('GET', 'domainitems', [
+                'name'   => $domain,
+                'limit'  => self::DOMAINS_PAGE_SIZE,
+                'offset' => $offset,
+            ]);
+
+            foreach ($data['domains'] ?? [] as $row) {
+                if (is_array($row) && strcasecmp((string) ($row['name'] ?? ''), $domain) === 0) {
+                    return (string) ($row['id'] ?? '');
+                }
+            }
+
+            $count = (int) ($data['count'] ?? 0);
+            if ($offset + self::DOMAINS_PAGE_SIZE >= $count) {
+                break;
+            }
+        }
+
+        throw new DriverException(
+            sprintf(__('No IONOS domain item found for %s with this account', 'domainmanager'), $domain)
+        );
+    }
+
+    /**
+     * Maps the Domains API's `itemStatus` object (confirmed shape: live
+     * OpenAPI spec's `components.schemas.itemStatus`, see class docblock)
+     * to the plugin's `LifecycleStatus` enum:
+     * - `provisioningStatus.type = REGISTRATION_IN_PROGRESS` → `Pending`
+     *   (added to the enum for this driver — the domain is mid
+     *   registration/transfer, not yet live; no existing case fit without
+     *   a lossy guess)
+     * - any `complianceStatus` present (EMAIL_VERIFICATION_RUNNING,
+     *   DATA_QUALITY_RUNNING, NOMINET_LOCKED, EMAIL_VERIFICATION_LOCK) →
+     *   `Suspended` (a hold/compliance-block state), unless already Pending
+     * - `provisioningStatus.type = EXPIRING` → `Expired` (IONOS's own
+     *   terminal wind-down state before deletion)
+     * - otherwise (`ACTIVE`, no compliance hold) → `Ok`
+     *
+     * @param  array $status decoded `itemStatus`, or [] if
+     *                       `includeDomainStatus` wasn't honored
+     * @return LifecycleStatus
+     */
+    private static function mapLifecycleStatus(array $status): LifecycleStatus
+    {
+        $provisioningType = (string) ($status['provisioningStatus']['type'] ?? '');
+
+        if ($provisioningType === 'REGISTRATION_IN_PROGRESS') {
+            return LifecycleStatus::Pending;
+        }
+
+        if (isset($status['complianceStatus'])) {
+            return LifecycleStatus::Suspended;
+        }
+
+        if ($provisioningType === 'EXPIRING') {
+            return LifecycleStatus::Expired;
+        }
+
+        return LifecycleStatus::Ok;
     }
 
     /**
@@ -307,23 +438,112 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Con
     }
 
     /**
+     * Perform a Domains API call; technical detail goes to the plugin log
+     * file, thrown messages are safe to persist. Distinct from request()
+     * (DNS API): the Domains API's error envelope is a JSON array of
+     * {code, message} objects for application-level errors, not a single
+     * {message} object — see describeDomainsApiError() and the class
+     * docblock.
+     *
+     * @param  string $method
+     * @param  string $path
+     * @param  array  $query
+     * @return array  decoded body (the {count, domains} envelope for
+     *                `domainitems`, a map for `domainitems/{id}`)
+     * @throws DriverException
+     */
+    private function requestDomainsApi(string $method, string $path, array $query = []): array
+    {
+        try {
+            $response = $this->getDomainsClient()->request($method, $path, ['query' => $query]);
+        } catch (GuzzleException $e) {
+            PluginLogger::error("IONOS Domains API HTTP failure on $path", $e->getMessage());
+            throw new DriverException(__('IONOS Domains API is unreachable', 'domainmanager'));
+        }
+
+        $status = $response->getStatusCode();
+        $body   = (string) $response->getBody();
+
+        if (in_array($status, [401, 403], true)) {
+            throw new DriverException(__('IONOS authentication failed, check the API key', 'domainmanager'));
+        }
+
+        if ($status === 404) {
+            throw new DriverException(__('Domain is not managed by this IONOS account', 'domainmanager'));
+        }
+
+        if ($status >= 500) {
+            throw new DriverException(
+                sprintf(__('IONOS Domains API unavailable (HTTP %d)', 'domainmanager'), $status)
+            );
+        }
+
+        $decoded = json_decode($body, true);
+
+        if ($status < 200 || $status >= 300) {
+            $summary = self::describeDomainsApiError($decoded, $body);
+            PluginLogger::error("IONOS Domains API error on $path (HTTP $status): $summary");
+            throw new DriverException(
+                sprintf(
+                    __('IONOS Domains API error: %s', 'domainmanager'),
+                    $summary !== '' ? $summary : sprintf('HTTP %d', $status)
+                )
+            );
+        }
+
+        if (!is_array($decoded)) {
+            PluginLogger::error("IONOS Domains API non-JSON response on $path (HTTP $status)");
+            throw new DriverException(__('Unexpected response from the IONOS Domains API', 'domainmanager'));
+        }
+
+        return $decoded;
+    }
+
+    /**
      * @return Client
      * @throws DriverException
      */
     private function getClient(): Client
     {
-        if ($this->client !== null) {
-            return $this->client;
+        if ($this->client === null) {
+            $this->client = $this->buildClient(self::BASE_URI);
         }
 
+        return $this->client;
+    }
+
+    /**
+     * @return Client
+     * @throws DriverException
+     */
+    private function getDomainsClient(): Client
+    {
+        if ($this->domainsClient === null) {
+            $this->domainsClient = $this->buildClient(self::DOMAINS_BASE_URI);
+        }
+
+        return $this->domainsClient;
+    }
+
+    /**
+     * Shared client builder for both the DNS and Domains API roots — same
+     * credentials, same `X-API-Key: <prefix>.<secret>` header format
+     * confirmed for both (see class docblock), different base URI.
+     *
+     * @param  string $baseUri
+     * @return Client
+     * @throws DriverException
+     */
+    private function buildClient(string $baseUri): Client
+    {
         $key    = trim((string) ($this->credentials['key'] ?? ''));
         $secret = trim((string) ($this->credentials['secret'] ?? ''));
         if ($key === '' || $secret === '') {
             throw new DriverException(__('IONOS API key/secret are not configured', 'domainmanager'));
         }
 
-        $this->client = Toolbox::getGuzzleClient([
-            'base_uri'    => self::BASE_URI,
+        return Toolbox::getGuzzleClient([
+            'base_uri'    => $baseUri,
             'timeout'     => self::REQUEST_TIMEOUT,
             'http_errors' => false,
             'headers'     => [
@@ -331,8 +551,6 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Con
                 'Accept'    => 'application/json',
             ],
         ]);
-
-        return $this->client;
     }
 
     /**
@@ -342,6 +560,30 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Con
     private static function describeError(string $body): string
     {
         $decoded = json_decode($body, true);
+        if (is_array($decoded) && isset($decoded['message'])) {
+            return self::sanitizeMessage((string) $decoded['message']);
+        }
+
+        return self::sanitizeMessage($body);
+    }
+
+    /**
+     * Handles both of the Domains API's error shapes (see class docblock):
+     * a documented application-level JSON array of {code, message}
+     * objects, or a gateway-level single {message} object shared with the
+     * DNS API (returned when the request never reaches the Domains
+     * backend at all, e.g. a missing/malformed API key).
+     *
+     * @param  mixed  $decoded json_decode() result, may be non-array/null
+     * @param  string $body    raw body, used when $decoded isn't usable
+     * @return string
+     */
+    private static function describeDomainsApiError(mixed $decoded, string $body): string
+    {
+        if (is_array($decoded) && isset($decoded[0]['message'])) {
+            return self::sanitizeMessage((string) $decoded[0]['message']);
+        }
+
         if (is_array($decoded) && isset($decoded['message'])) {
             return self::sanitizeMessage((string) $decoded['message']);
         }
@@ -373,5 +615,22 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Con
         $message = preg_replace('/\s+/', ' ', $message) ?? '';
 
         return mb_substr(trim($message), 0, 250);
+    }
+
+    /**
+     * @param  mixed $value
+     * @return DateTimeImmutable|null
+     */
+    private static function parseDate(mixed $value): ?DateTimeImmutable
+    {
+        if (!is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        try {
+            return new DateTimeImmutable($value);
+        } catch (Throwable) {
+            return null;
+        }
     }
 }

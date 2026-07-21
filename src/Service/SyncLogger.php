@@ -64,4 +64,21 @@ class SyncLogger
     {
         PluginLogger::error($message);
     }
+
+    /**
+     * A deliberate skip (nothing was attempted, e.g. the resolved supplier
+     * is inactive) — activity log only. Never the Historical tab: unlike
+     * milestone(), a skip changes nothing, so logging it there on every
+     * cron run would just clutter the domain's history with no new
+     * information after the first occurrence. Never
+     * domainmanager-errors.log either — this isn't a failure.
+     *
+     * @param  int    $domains_id
+     * @param  string $message
+     * @return void
+     */
+    public function skip(int $domains_id, string $message): void
+    {
+        PluginLogger::activity('Domain #' . $domains_id . ': ' . $message);
+    }
 }

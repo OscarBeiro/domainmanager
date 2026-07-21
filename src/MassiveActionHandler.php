@@ -110,13 +110,25 @@ class MassiveActionHandler
 
             try {
                 $result = $engine->sync($domain);
-                if (
-                    $result['registrar_status'] === DomainState::STATUS_ERROR
-                    || $result['dns_status'] === DomainState::STATUS_ERROR
-                ) {
+
+                $has_error = $result['registrar_status'] === DomainState::STATUS_ERROR
+                    || $result['dns_status'] === DomainState::STATUS_ERROR;
+                $has_inactive_supplier = $result['registrar_status'] === DomainState::STATUS_SUPPLIER_INACTIVE
+                    || $result['dns_status'] === DomainState::STATUS_SUPPLIER_INACTIVE;
+
+                if ($has_error) {
                     $ma->itemDone(Domain::class, $id, MassiveAction::ACTION_KO);
                     $ma->addMessage(sprintf(
                         __('Sync reported an error for %s — see the plugin error log', 'domainmanager'),
+                        $domain->getName()
+                    ));
+                } elseif ($has_inactive_supplier) {
+                    // Not a failure — a deliberate skip (§addendum "Skip
+                    // Inactive Suppliers"), reported with its own reason
+                    // rather than folded into the generic error message.
+                    $ma->itemDone(Domain::class, $id, MassiveAction::ACTION_KO);
+                    $ma->addMessage(sprintf(
+                        __('Skipped %s — resolved supplier is inactive', 'domainmanager'),
                         $domain->getName()
                     ));
                 } else {
