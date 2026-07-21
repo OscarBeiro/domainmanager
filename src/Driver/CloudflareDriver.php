@@ -287,13 +287,23 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
                     $content = (int) $row['priority'] . ' ' . $content;
                 }
 
+                // `proxiable` is Cloudflare's own live per-record answer to
+                // "can this specific record be proxied" (confirmed in its
+                // current API docs — present on every record type, not just
+                // A/AAAA/CNAME) — trusted over a hardcoded type list, same
+                // "the API's own answer wins" principle used elsewhere in
+                // this plugin. `proxied` (the actual orange/grey cloud
+                // state) is only meaningful when `proxiable` is true.
+                $isProxied = ($row['proxiable'] ?? false) ? (bool) ($row['proxied'] ?? false) : null;
+
                 try {
                     $records[] = new ZoneRecord(
                         $type,
                         (string) ($row['name'] ?? ''),
                         $content,
                         (int) ($row['ttl'] ?? 0),
-                        (string) ($row['id'] ?? '')
+                        (string) ($row['id'] ?? ''),
+                        $isProxied
                     );
                 } catch (InvalidArgumentException $e) {
                     PluginLogger::activity("Cloudflare record skipped for $domain: " . $e->getMessage());

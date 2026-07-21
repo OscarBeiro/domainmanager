@@ -205,12 +205,17 @@ class RecordReconciler
                 $stats['unchanged']++;
             }
 
+            // is_proxied is refreshed on every sync regardless of which
+            // branch above ran: unlike type/name/data/ttl, a proxy toggle
+            // can change without the record's own content changing at all,
+            // so it must never be gated behind the hash-changed branch.
             $imported = new ImportedRecord();
             $imported->update([
                 'id'          => $oid,
                 'remote_id'   => $record->remoteId,
                 'record_hash' => $hash,
                 'last_seen'   => $now,
+                'is_proxied'  => self::toNullableInt($record->isProxied),
             ]);
         }
 
@@ -281,9 +286,24 @@ class RecordReconciler
             // (HookHandler::domainRecordPurged(), ITEM_PURGE only, never
             // fires for the soft-delete this reconciler itself performs).
             'is_managed'       => 1,
+            'is_proxied'       => self::toNullableInt($record->isProxied),
         ]);
 
         return true;
+    }
+
+    /**
+     * Never pass a native PHP bool into a CommonDBTM input array for a
+     * tinyint/bool column — it silently persists as NULL instead of 1/0
+     * (§0.10, caught during Phase 7a). `null` stays `null` (genuinely "not
+     * applicable"), true/false become 1/0.
+     *
+     * @param  bool|null $value
+     * @return int|null
+     */
+    private static function toNullableInt(?bool $value): ?int
+    {
+        return $value === null ? null : (int) $value;
     }
 
     /**

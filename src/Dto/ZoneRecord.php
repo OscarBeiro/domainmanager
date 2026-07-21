@@ -49,8 +49,18 @@ final class ZoneRecord
     public readonly string $data;
     public readonly int $ttl;
     public readonly string $remoteId;
+    public readonly ?bool $isProxied;
 
-    public function __construct(string $type, string $name, string $data, int $ttl, string $remoteId = '')
+    /**
+     * $isProxied is a genuine tri-state (§9 Phase 7 addendum "Searchable
+     * 'Proxy Status' Field for CDN-Proxied Records"): true/false only when
+     * the provider's own API says this specific record is CDN-proxyable
+     * (Cloudflare's `proxiable` flag, checked per-record rather than a
+     * hardcoded type list — see CloudflareDriver::fetchZoneRecords()),
+     * `null` for every non-Cloudflare driver and any record Cloudflare
+     * itself reports as not proxyable.
+     */
+    public function __construct(string $type, string $name, string $data, int $ttl, string $remoteId = '', ?bool $isProxied = null)
     {
         $type = strtoupper(trim($type));
         if (!in_array($type, self::TYPES, true)) {
@@ -69,11 +79,12 @@ final class ZoneRecord
             throw new InvalidArgumentException("TTL $ttl out of range");
         }
 
-        $this->type     = $type;
-        $this->name     = $name;
-        $this->data     = $data;
-        $this->ttl      = $ttl;
-        $this->remoteId = $remoteId;
+        $this->type      = $type;
+        $this->name      = $name;
+        $this->data      = $data;
+        $this->ttl       = $ttl;
+        $this->remoteId  = $remoteId;
+        $this->isProxied = $isProxied;
     }
 
     /**

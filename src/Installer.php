@@ -63,6 +63,7 @@ class Installer
         self::addConnectionTestColumns($migration);
         self::migrateRecordManagedColumn($migration);
         self::addRegistrarMetadataColumns($migration);
+        self::addRecordProxiedColumn($migration);
         self::seedDomainType();
         self::seedRecordTypes();
         self::registerRights($migration);
@@ -170,6 +171,7 @@ class Installer
                     `record_hash` varchar(64) NOT NULL DEFAULT '',
                     `last_seen` timestamp NULL DEFAULT NULL,
                     `is_managed` tinyint NOT NULL DEFAULT '0',
+                    `is_proxied` tinyint NULL DEFAULT NULL,
                     `date_mod` timestamp NULL DEFAULT NULL,
                     `date_creation` timestamp NULL DEFAULT NULL,
                     PRIMARY KEY (`id`),
@@ -177,7 +179,8 @@ class Installer
                     KEY `domains_id` (`domains_id`),
                     KEY `remote_id` (`remote_id`),
                     KEY `record_hash` (`record_hash`),
-                    KEY `is_managed` (`is_managed`)
+                    KEY `is_managed` (`is_managed`),
+                    KEY `is_proxied` (`is_proxied`)
                 ) ENGINE=InnoDB DEFAULT CHARSET={$charset} COLLATE={$collation} ROW_FORMAT=DYNAMIC
                 SQL,
             'glpi_plugin_domainmanager_locks' => <<<SQL
@@ -284,6 +287,29 @@ class Installer
         $migration->addField($table, 'registrar_auto_renew', 'tinyint NULL DEFAULT NULL');
         $migration->addField($table, 'registrar_domain_type', 'varchar(50) NULL DEFAULT NULL');
         $migration->addField($table, 'registrar_dnssec_enabled', 'tinyint NULL DEFAULT NULL');
+    }
+
+    /**
+     * Add `is_proxied` to the records table (§9 Phase 7 addendum "Searchable
+     * 'Proxy Status' Field for CDN-Proxied Records") — same table
+     * `is_managed` already lives on (§5.7), not a new one. Idempotent via
+     * `Migration::addField()` for upgrades; already present in
+     * `createTables()`'s raw CREATE TABLE for fresh installs, matching the
+     * existing `is_managed` precedent. A genuine tri-state, nullable
+     * tinyint: `NULL` on every pre-existing row (an upgrade must never
+     * backfill `0` — that would falsely claim "confirmed not proxied" for
+     * records nothing has re-synced under proxy-awareness yet), populated
+     * for real only the next time each record's domain is synced.
+     *
+     * @param  Migration $migration
+     * @return void
+     */
+    private static function addRecordProxiedColumn(Migration $migration): void
+    {
+        $table = 'glpi_plugin_domainmanager_records';
+
+        $migration->addField($table, 'is_proxied', 'tinyint NULL DEFAULT NULL');
+        $migration->addKey($table, 'is_proxied');
     }
 
     /**

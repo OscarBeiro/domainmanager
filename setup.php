@@ -57,6 +57,10 @@ define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR', 9403);
 // Real, filterable search option on DomainRecord (§addendum "Searchable
 // 'Managed' Field on Domain Records") — see its own registration below.
 define('PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_MANAGED', 9404);
+// Real, filterable search option on DomainRecord (§9 Phase 7 addendum
+// "Searchable 'Proxy Status' Field for CDN-Proxied Records") — see its own
+// registration below.
+define('PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_PROXY', 9405);
 
 /**
  * Plugin_Version_Domainmanager
@@ -190,6 +194,32 @@ function plugin_domainmanager_getAddSearchOptionsNew($itemtype): array
             'field'         => 'is_managed',
             'linkfield'     => 'domainrecords_id',
             'name'          => __('Managed', 'domainmanager'),
+            'datatype'      => 'bool',
+            'massiveaction' => false,
+            'joinparams'    => [
+                'jointype' => 'child',
+            ],
+        ];
+
+        // Same join shape as PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_MANAGED
+        // just above (single-hop 'child' join to the plugin's own ownership
+        // table). 'equals'/'notequals' (Yes/No) on a plain nullable 'bool'
+        // datatype are exact — confirmed live, real SQL captured — but
+        // 'empty' ("is empty") is NOT clean NULL-only isolation: GLPI core's
+        // 'bool' WHERE-builder deliberately falls through into the same
+        // "0 OR NULL" handling as integer/decimal/count (SQLProvider.php's
+        // `case "bool":`, `// no break here : use number comparaison case`),
+        // and there is no per-search-option override reachable here since
+        // DomainRecord is a core itemtype, not one this plugin owns. A
+        // real, minor, accepted limitation — see ARCHITECTURE.md §9 Phase 7
+        // addendum for the full verification and reasoning (corrects that
+        // section's earlier "promising lead, not yet verified" note).
+        $options[] = [
+            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_PROXY,
+            'table'         => ImportedRecord::getTable(),
+            'field'         => 'is_proxied',
+            'linkfield'     => 'domainrecords_id',
+            'name'          => __('Proxy status', 'domainmanager'),
             'datatype'      => 'bool',
             'massiveaction' => false,
             'joinparams'    => [
