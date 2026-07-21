@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - "Check Connection" now shows **one** combined status badge/toast instead of separate Registrar/DNS ones — testing real IONOS credentials for the first time made clear that a per-capability breakdown read as confusing/ambiguous (a permanent "not implemented" `registrar` stub sitting next to a real, successful `dns` result) rather than answering the one question a user actually has: "does this login work?" Both capabilities a driver supports are still tested and persisted exactly as before (§3.5); only the UI collapses to one, via new `DriverRegistry::getPrimaryTestableCapability()` (prefers `dns`, since it's the one real/meaningful login probe for every current driver) — see ARCHITECTURE.md §6.1.
+- The **Registrar** field on the Domain Manager panel is no longer an independently-editable plugin dropdown — it's now a read-only mirror of Infocom's native "Supplier" field for that Domain (`HookHandler::infocomSaved()`, `src/DomainForm.php`), rendered with GLPI's own `fields.readOnlyField()` macro for visual parity with the rest of the native form, with a link to the Infocom tab where it's actually set. Dropped because it duplicated a field GLPI already has, risking the two silently disagreeing about who the registrar actually is — see ARCHITECTURE.md §0.1.
 
 ## [0.2.0] - 2026-07-20
 ### Fixed

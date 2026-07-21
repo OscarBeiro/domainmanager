@@ -27,7 +27,17 @@
  # -------------------------------------------------------------------------
  #}
 
+{% import 'components/form/fields_macros.html.twig' as fields %}
+
 {% set detected = state ? state.detected_provider : '' %}
+
+{% set registrar_value %}
+    {% if registrar_supplier %}
+        <a href="{{ registrar_supplier.getLinkURL() }}">{{ registrar_supplier.getName() }}</a>
+    {% else %}
+        {{ __('No registrar supplier set', 'domainmanager') }}
+    {% endif %}
+{% endset %}
 
 <div id="domainmanager-panel" class="card mt-3">
     <div class="card-header">
@@ -38,21 +48,12 @@
     </div>
     <div class="card-body">
         <div class="row">
-            <div class="col-12 col-md-6 mb-2">
-                <label class="form-label">{{ __('Registrar', 'domainmanager') }}</label>
-                {% if can_update %}
-                    {{ registrar_dropdown|raw }}
-                    <div class="form-text">
-                        {{ __('Supplier whose API credentials feed the lifecycle synchronization', 'domainmanager') }}
-                    </div>
-                {% elseif registrar_supplier %}
-                    <div><a href="{{ registrar_supplier.getLinkURL() }}">{{ registrar_supplier.getName() }}</a></div>
-                {% else %}
-                    <div class="text-muted">{{ __('Not set', 'domainmanager') }}</div>
-                {% endif %}
-            </div>
-
             {% if not is_new %}
+                {{ fields.readOnlyField('_domainmanager_registrar_display', registrar_value, __('Registrar', 'domainmanager'), {
+                    'field_class': 'col-12 col-md-6 mb-2',
+                    'add_field_html': '<div class="form-text">' ~ (infocom_tab_url != '' ? ('<a href="' ~ infocom_tab_url ~ '">' ~ __('Set via the Financial and administrative information tab', 'domainmanager') ~ '</a>') : __('Set via the Financial and administrative information tab', 'domainmanager')) ~ '</div>',
+                }) }}
+
                 <div class="col-12 col-md-6 mb-2">
                     <label class="form-label">{{ __('DNS Provider (detected)', 'domainmanager') }}</label>
                     <div id="domainmanager-provider">
@@ -64,6 +65,12 @@
                         {% else %}
                             {{ detected }}
                         {% endif %}
+                    </div>
+                </div>
+            {% else %}
+                <div class="col-12">
+                    <div class="text-muted small">
+                        {{ __('Registrar and DNS provider information is available after the domain is created.', 'domainmanager') }}
                     </div>
                 </div>
             {% endif %}

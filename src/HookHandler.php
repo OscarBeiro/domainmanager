@@ -34,8 +34,8 @@ namespace GlpiPlugin\Domainmanager;
 use Domain;
 use DomainRecord;
 use Dropdown;
+use Infocom;
 use Log;
-use Session;
 use Supplier;
 
 /**
@@ -67,21 +67,8 @@ class HookHandler
     }
 
     /**
-     * item_add on Domain: persist the injected Registrar field
-     *
-     * @param  Domain $domain
-     * @return void
-     */
-    public static function domainAdded(Domain $domain): void
-    {
-        self::persistRegistrar($domain);
-    }
-
-    /**
-     * pre_item_update on Domain: lock enforcement, then Registrar
-     * persistence. The registrar must be handled pre-update because the
-     * item_update hook only fires when a glpi_domains column actually
-     * changed — a dropdown-only save would otherwise be lost.
+     * pre_item_update on Domain: lock enforcement only. Registrar assignment
+     * is no longer a plugin-owned field — see infocomSaved() below.
      *
      * @param  Domain $domain
      * @return void
@@ -89,28 +76,32 @@ class HookHandler
     public static function domainPreUpdate(Domain $domain): void
     {
         LockEnforcer::domainPreUpdate($domain);
-        self::persistRegistrar($domain);
     }
 
     /**
-     * Store _domainmanager_registrar from the form input into the state row
-     * (§0.1: glpi_domains has no supplier column, the Registrar is plugin-owned)
+     * item_add/item_update on Infocom: mirror its `suppliers_id` into the
+     * state row's `registrar_suppliers_id` whenever the Infocom row belongs
+     * to a Domain. The Registrar is no longer a plugin-owned, independently
+     * editable field (was §0.1's "glpi_domains has no supplier column"
+     * adjustment) — it now directly follows the native "Supplier" field on
+     * the Domain's own Infocom ("Financial and administrative information")
+     * tab, read-only in the Domain Manager panel, so there is exactly one
+     * place to set it.
      *
-     * @param  Domain $domain
+     * @param  Infocom $infocom
      * @return void
      */
-    private static function persistRegistrar(Domain $domain): void
+    public static function infocomSaved(Infocom $infocom): void
     {
-        if (!is_array($domain->input) || !isset($domain->input['_domainmanager_registrar'])) {
+        if ($infocom->getField('itemtype') !== Domain::class) {
             return;
         }
 
-        if (!Session::isCron() && !Session::haveRight('domain', UPDATE) && !Domain::canCreate()) {
+        $domains_id   = (int) $infocom->getField('items_id');
+        $suppliers_id = max(0, (int) $infocom->getField('suppliers_id'));
+        if ($domains_id <= 0) {
             return;
         }
-
-        $suppliers_id = max(0, (int) $domain->input['_domainmanager_registrar']);
-        $domains_id   = (int) $domain->getID();
 
         $state = DomainState::getForDomain($domains_id);
         if ($state !== null) {
@@ -122,14 +113,12 @@ class HookHandler
                 ]);
                 self::logRegistrarChange($domains_id, $old_suppliers_id, $suppliers_id);
             }
-        } else {
+        } elseif ($suppliers_id > 0) {
             (new DomainState())->add([
                 'domains_id'             => $domains_id,
                 'registrar_suppliers_id' => $suppliers_id,
             ]);
-            if ($suppliers_id > 0) {
-                self::logRegistrarChange($domains_id, 0, $suppliers_id);
-            }
+            self::logRegistrarChange($domains_id, 0, $suppliers_id);
         }
     }
 

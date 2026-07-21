@@ -37,8 +37,9 @@ use Session;
 use Supplier;
 
 /**
- * post_item_form panel inside the Domain generic form (§6.2): Registrar
- * dropdown, detected DNS provider, status card, Update Now, lock JS
+ * post_item_form panel inside the Domain generic form (§6.2): read-only
+ * Registrar (mirrors Infocom's Supplier field), detected DNS provider,
+ * status card, Update Now, lock JS
  */
 class DomainForm
 {
@@ -72,19 +73,12 @@ class DomainForm
             $locked_fields = ImportLock::getLockedFieldNames(Domain::class, $domains_id);
         }
 
-        $registrar_dropdown = '';
-        if ($can_update) {
-            $registrar_dropdown = Supplier::dropdown([
-                'name'    => '_domainmanager_registrar',
-                'value'   => $state !== null ? (int) $state->fields['registrar_suppliers_id'] : 0,
-                'entity'  => $is_new ? ($_SESSION['glpiactive_entity'] ?? 0) : $item->fields['entities_id'],
-                'display' => false,
-                'width'   => '100%',
-            ]);
-        }
-
+        // Registrar is read-only here: it directly mirrors Infocom's own
+        // "Supplier" field for this Domain (§0.1/§6.2) — there is exactly
+        // one place to set it, HookHandler::infocomSaved() keeps this in
+        // sync whenever that Infocom field changes.
         $registrar_supplier = null;
-        if (!$can_update && $state !== null && (int) $state->fields['registrar_suppliers_id'] > 0) {
+        if ($state !== null && (int) $state->fields['registrar_suppliers_id'] > 0) {
             $supplier = new Supplier();
             if ($supplier->getFromDB((int) $state->fields['registrar_suppliers_id'])) {
                 $registrar_supplier = $supplier;
@@ -103,12 +97,12 @@ class DomainForm
             'is_new'             => $is_new,
             'can_update'         => $can_update,
             'state'              => $state?->fields,
-            'registrar_dropdown' => $registrar_dropdown,
             'registrar_supplier' => $registrar_supplier,
             'dns_supplier'       => $dns_supplier,
             'status_labels'      => self::getStatusLabels(),
             'status_classes'     => self::getStatusClasses(),
             'domains_id'         => $domains_id,
+            'infocom_tab_url'    => $is_new ? '' : (Domain::getFormURLWithID($domains_id) . '&forcetab=Infocom$1'),
             'repository_url'     => PLUGIN_DOMAINMANAGER_REPOSITORY_URL,
             'locked_fields'      => $locked_fields,
             'provider_unknown'   => NsProviderRegistry::PROVIDER_UNKNOWN,

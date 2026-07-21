@@ -340,15 +340,30 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
 
 ## Phase 4 — Domain panel, Update Now, cron batching
 
-### 4.1 Registrar field on the domain form (§0.1, §6.2)
-- **Steps:** open a domain with *domain* UPDATE; the Domain Manager panel shows a
-  **Registrar** supplier dropdown. Select a supplier, save; reopen. Then change it
-  to another supplier (or empty) and save again. Also save the form without
-  touching the dropdown.
-- **Expected:** the selection persists across saves (stored in
-  `glpi_plugin_domainmanager_states.registrar_suppliers_id`, never in
-  `glpi_domains`); changing it updates the state row; saving other fields leaves
-  it untouched. Users with only *domain* READ see the value read-only.
+### 4.1 Registrar field on the domain form mirrors Infocom, read-only (§0.1, §6.2, §9 Phase 5.5)
+- **Steps:** open a domain; the Domain Manager panel shows a **Registrar**
+  value (never an editable dropdown, regardless of rights) with a "Set via
+  the Financial and administrative information tab" link. Open that Infocom
+  tab, change its **Supplier** field, save; reopen the domain's main tab.
+  Then clear Infocom's Supplier field (save) and reopen again.
+- **Expected:** the Domain Manager panel's Registrar value always matches
+  Infocom's Supplier field exactly, both directions (never diverges); it is
+  never itself editable/clickable-into-an-input from the Domain Manager
+  panel; clearing Infocom's Supplier makes the panel show "No registrar
+  supplier set". Confirm the mirror lands in
+  `glpi_plugin_domainmanager_states.registrar_suppliers_id` (`SELECT
+  registrar_suppliers_id FROM glpi_plugin_domainmanager_states WHERE
+  domains_id=<id>` should equal `glpi_infocoms.suppliers_id` for that
+  domain's Infocom row) — `glpi_domains` itself is never touched (§0.1).
+- [ ] Pass
+
+### 4.1.1 Registrar change logs to both native History and the plugin's own entry (§3.7, §9 Phase 5.5)
+- **Steps:** as 4.1, change Infocom's Supplier field and save, then open the
+  Domain's own **Historical** tab.
+- **Expected:** two entries appear for that change — GLPI's own native
+  Infocom-field-change entry (field "Supplier") **and** the plugin's own
+  "Registrar supplier set to X"/"...changed from X to Y"/"...cleared" entry
+  (field "Domain Manager", §3.7) — both landing at the same timestamp.
 - [ ] Pass
 
 ### 4.2 Status card and DNS provider display (§6.2)
@@ -726,9 +741,10 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
   removed (was <driver label>)"`.
 - [ ] Pass
 
-### 3.7.6 Registrar supplier assignment logs to the Domain's Historical tab
-- **Steps:** on a Domain, set the Registrar dropdown to a supplier, Save;
-  then change it to a different supplier, Save; then clear it, Save. Check
+### 3.7.6 Registrar supplier assignment (via Infocom) logs to the Domain's Historical tab
+- **Steps:** on a Domain's **Infocom** tab, set its **Supplier** field, Save;
+  then change it to a different supplier, Save; then clear it, Save (§9
+  Phase 5.5 — this is no longer a plugin-owned dropdown, see 4.1). Check
   the Domain's own **Historical** tab after each save.
 - **Expected:** three distinct rows, field "Domain Manager" on each —
   `"Change to Registrar supplier set to X"`, `"...changed from X to Y"`,
@@ -831,7 +847,7 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
 
 ---
 
-## Phase 5.5 — Supplier-scoped "Domains" list (§9)
+## Phase 5.5 — Supplier-scoped "Domains" list + Registrar mirrors Infocom (§9)
 
 ### 5.5.1 Domains list shows every domain where this supplier is registrar and/or DNS
 - **Steps:** on a Supplier's Domain Manager tab, with at least one Domain
@@ -876,16 +892,27 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
   either shows no rows or is suppressed — never a DB error.
 - [ ] Pass
 
+### 5.5.5 Registrar field on the Domain form is never editable, always matches Infocom (§0.1, 4.1)
+- See **4.1** above (moved/rewritten in Phase 4's own section) — repeated
+  here as a cross-reference since this is the other half of the same change.
+- [ ] Pass
+
 > Implemented and smoke-tested 2026-07-21 on `glpi-claude` (Óscar's request:
 > "the list will be easy to build I want it before v1" — pulled forward from
 > the original Phase 6 sketch since it needed no schema change and no
-> discovery/entity-assignment design work). Verified live against a real
-> Domain (`beiro.net`) already linked to a real Supplier as its Registrar.
-> Caught and fixed a real classification bug during this testing: `dns_status
-> = 'unconfigured'` (a driver exists for the detected provider but no
-> Supplier has valid credentials) was initially falling into the generic
-> "Never synced" bucket instead of "known, unmanaged (yet)" —
-> `detected_provider` was already populated and a sync had genuinely run, so
-> "never synced" was actively misleading; fixed in
-> `SupplierTab::describeDnsProvider()` before committing. `php -l` clean on
-> all touched files.
+> discovery/entity-assignment design work; the Registrar-mirrors-Infocom
+> change followed the same session, requested separately once he saw the
+> old dropdown's "No registrar supplier with API access configured" message
+> next to an already-selected value and asked for it to just directly follow
+> Infocom's own Supplier field instead). Verified live: created a real Domain
+> (`beiro.net`) with a real Infocom Supplier assignment; confirmed the
+> `HookHandler::infocomSaved()` mirror fires correctly both ways (set and
+> clear, via a real `front/infocom.form.php` POST) and that both GLPI's own
+> native History entry and the plugin's own entry appear together. Caught and
+> fixed a real classification bug during this testing: `dns_status =
+> 'unconfigured'` (a driver exists for the detected provider but no Supplier
+> has valid credentials) was initially falling into the generic "Never
+> synced" bucket instead of "known, unmanaged (yet)" — `detected_provider`
+> was already populated and a sync had genuinely run, so "never synced" was
+> actively misleading; fixed in `SupplierTab::describeDnsProvider()` before
+> committing. `php -l` clean on all touched files.

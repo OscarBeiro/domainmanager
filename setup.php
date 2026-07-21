@@ -138,8 +138,14 @@ function plugin_init_domainmanager(): void
 
         $PLUGIN_HOOKS[Hooks::POST_ITEM_FORM]['domainmanager'] = [DomainForm::class, 'inject'];
 
+        // Registrar assignment mirrors Infocom's own "Supplier" field
+        // (read-only in the Domain Manager panel, §6.2) rather than being a
+        // plugin-owned editable field — see HookHandler::infocomSaved().
         $PLUGIN_HOOKS[Hooks::ITEM_ADD]['domainmanager'] = [
-            Domain::class => [HookHandler::class, 'domainAdded'],
+            Infocom::class => [HookHandler::class, 'infocomSaved'],
+        ];
+        $PLUGIN_HOOKS[Hooks::ITEM_UPDATE]['domainmanager'] = [
+            Infocom::class => [HookHandler::class, 'infocomSaved'],
         ];
 
         $PLUGIN_HOOKS[Hooks::PRE_ITEM_UPDATE]['domainmanager'] = [
