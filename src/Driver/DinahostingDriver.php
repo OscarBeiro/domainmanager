@@ -388,8 +388,22 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
         if (!self::envelopeSucceeded($decoded)) {
             $responseCode = (int) ($decoded['responseCode'] ?? 0);
 
-            if ($responseCode === self::CODE_AUTH_ERROR_USER || $responseCode === self::CODE_AUTH_ERROR_OBJECT) {
+            if ($responseCode === self::CODE_AUTH_ERROR_USER) {
                 throw new DriverException(__('Dinahosting authentication failed, check the username/password', 'domainmanager'));
+            }
+
+            // Distinct from CODE_AUTH_ERROR_USER (§addendum "Debug: Dinahosting
+            // Registrar Auth Failure"): the account-wide credentials are
+            // valid (proven by other domains/Check Connection succeeding
+            // under the same supplier) but THIS domain isn't authorized for
+            // them — e.g. registered under a different Dinahosting account.
+            // Collapsing this into "authentication failed, check the
+            // username/password" wrongly implied the credentials themselves
+            // were wrong, when they demonstrably weren't.
+            if ($responseCode === self::CODE_AUTH_ERROR_OBJECT) {
+                throw new DriverException(
+                    __('Dinahosting authentication succeeded, but this account is not authorized to manage this domain', 'domainmanager')
+                );
             }
 
             if ($responseCode === self::CODE_OBJECT_NOT_EXISTS) {

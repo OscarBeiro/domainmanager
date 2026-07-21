@@ -195,6 +195,10 @@ class SyncEngine
             }
 
             $lifecycle = DriverFactory::forRegistrar($config)->fetchLifecycle((string) $domain->fields['name']);
+            $this->logger->activity(
+                (int) $domain->getID(),
+                'Registrar fetch succeeded, lifecycle status: ' . $lifecycle->status->value
+            );
 
             $updates = ['is_active' => $lifecycle->status === LifecycleStatus::Ok ? 1 : 0];
             if ($lifecycle->registrationDate !== null) {
@@ -266,7 +270,11 @@ class SyncEngine
             }
 
             $records = DriverFactory::forDns($config)->fetchZoneRecords((string) $domain->fields['name']);
-            $stats   = $this->reconciler->reconcile($domain, $records);
+            $this->logger->activity(
+                (int) $domain->getID(),
+                'DNS fetch succeeded, returned ' . count($records) . ' record(s) from the provider'
+            );
+            $stats = $this->reconciler->reconcile($domain, $records);
 
             $result['dns_status']  = DomainState::STATUS_OK;
             $result['dns_message'] = sprintf(

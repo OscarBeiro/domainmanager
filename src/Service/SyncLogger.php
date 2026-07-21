@@ -66,19 +66,37 @@ class SyncLogger
     }
 
     /**
-     * A deliberate skip (nothing was attempted, e.g. the resolved supplier
-     * is inactive) — activity log only. Never the Historical tab: unlike
-     * milestone(), a skip changes nothing, so logging it there on every
-     * cron run would just clutter the domain's history with no new
-     * information after the first occurrence. Never
-     * domainmanager-errors.log either — this isn't a failure.
+     * A plain informational activity-log line — not a state-changing
+     * milestone (never the Historical tab, to avoid cluttering it on every
+     * cron run with no new information) and not a failure (never
+     * domainmanager-errors.log). Used both for deliberate skips (nothing
+     * attempted, e.g. an inactive resolved supplier) and for recording a
+     * fact about what an attempt actually did (e.g. how many records a DNS
+     * fetch returned) — so a reader of domainmanager.log can independently
+     * confirm "the API call really happened and returned N records" rather
+     * than only ever seeing the reconciler's post-hoc diff stats
+     * (§addendum "Debug: ... Possible Silent IONOS DNS Failure": the
+     * architecture already aborts to an error status before reconciliation
+     * on any real fetch failure, so this can't currently mask one — but
+     * making that provable from the log itself, not just from reading the
+     * code, is worth the one extra line).
      *
+     * @param  int    $domains_id
+     * @param  string $message
+     * @return void
+     */
+    public function activity(int $domains_id, string $message): void
+    {
+        PluginLogger::activity('Domain #' . $domains_id . ': ' . $message);
+    }
+
+    /**
      * @param  int    $domains_id
      * @param  string $message
      * @return void
      */
     public function skip(int $domains_id, string $message): void
     {
-        PluginLogger::activity('Domain #' . $domains_id . ': ' . $message);
+        $this->activity($domains_id, $message);
     }
 }

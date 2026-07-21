@@ -387,6 +387,48 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
   transferred-in domain happens to be available.
 - [ ] Pass
 
+### 3.20 Dinahosting per-domain authorization vs. account-level auth failure (§3.8, addendum "Debug: Dinahosting Registrar Auth Failure")
+- **Steps:** with a Dinahosting supplier whose credentials are confirmed
+  valid (Check Connection succeeds, and at least one other domain under
+  the same supplier syncs `ok`), run a sync/fetch against a domain that
+  is *not* authorized under that Dinahosting account (e.g.
+  `pontecm.com` from the original report, or any domain registered under
+  a different account/registrar).
+- **Expected:** the registrar leg reports a clear, distinct message —
+  "Dinahosting authentication succeeded, but this account is not
+  authorized to manage this domain" — not "authentication failed, check
+  the username/password" (which would wrongly imply the credentials
+  themselves are the problem). The other, correctly-authorized domain
+  under the same supplier continues to report `ok`, unaffected.
+- [ ] Pass
+
+### 3.21 IONOS DNS: a genuine fetch failure reports as an error, never a false "unchanged" (§5.6, addendum)
+- **Steps:** with a supplier configured with a real IONOS driver and a
+  domain that previously synced successfully, temporarily break the
+  credentials (e.g. change the saved API secret to an invalid value) and
+  run a sync against that domain. Then restore the correct credentials
+  and re-run the sync.
+- **Expected:** the broken-credentials run reports `dns_status = error`
+  with a clear auth-failure message — never "ok"/"0 added, 0 updated,
+  N unchanged". The restored-credentials re-run reports `ok` with the
+  correct "unchanged" count again (confirming the fix doesn't turn a
+  real no-change sync into a false error either way).
+- [ ] Pass
+
+### 3.22 Fetch-succeeded audit line appears in domainmanager.log (§5.6, addendum)
+- **Steps:** run a normal successful sync (registrar and/or DNS leg) for
+  any supplier/domain, then check `domainmanager.log`.
+- **Expected:** a line reading "Domain #<id>: Registrar fetch succeeded,
+  lifecycle status: <status>" and/or "Domain #<id>: DNS fetch succeeded,
+  returned <N> record(s) from the provider" appears for that sync, logged
+  *before* the final "Registrar sync OK"/"DNS sync OK: ..." milestone
+  line for the same run — giving independent, log-only proof that a real
+  API call happened and returned real data, separate from the
+  reconciler's own diff-stats message. Confirm it never appears in
+  `domainmanager-errors.log` and never as a `Log::history()` entry on the
+  domain's Historical tab (informational only, not a milestone).
+- [ ] Pass
+
 ---
 
 ## Phase 4 — Domain panel, Update Now, cron batching
