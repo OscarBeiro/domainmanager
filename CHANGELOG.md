@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.3.1] - 2026-07-21
 ### Changed
 - **Unified all four Domain Manager panels on GLPI's native ribbon-banner convention** (the same folded-ribbon-icon + colored-title-strip pattern core itself uses for panels like "Inventory information", confirmed directly in `templates/components/form/inventory_info.html.twig`/`header_content.html.twig` — pure Tabler CSS, no custom styling) — `supplier_domains_list.html.twig`, the credentials-form card and `connection_test_panel.html.twig` in `supplier_tab.html.twig`, and `domain_panel.html.twig` all previously had visibly different header/card treatments; now identical. See ARCHITECTURE.md §6.5 ("UI Design Conventions"), a new standing section documenting this so it doesn't drift again.
 - The Domain form's "Domain Manager" panel is now a one-row native `<table>` (Registrar, DNS/NS Provider, Registrar sync, DNS sync, Last sync columns) instead of a bespoke dashboard layout — conceptually a one-row view of the same table the Supplier tab's "Domains" list already uses, per the same §6.5 convention. "Update Now" moved into the ribbon header itself. Registrar and DNS Provider both render as real hyperlinks to the resolved Supplier's own Domain Manager tab when one exists (`Supplier::getLinkURL()` + a verified `forcetab` deep link), plain non-clickable text otherwise.
