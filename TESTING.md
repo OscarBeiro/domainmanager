@@ -368,6 +368,25 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
   application layer) is both handled without crashing.
 - [ ] Pass
 
+### 3.19 Dinahosting `Domain_GetRegistrationDate` semantics (§3.8, opportunistic — needs a transferred-in domain)
+- **Steps:** find a domain in a real Dinahosting account that is known to
+  have been **transferred in** from a different registrar (not one
+  originally registered through Dinahosting). Run `SyncEngine::sync()`
+  (or "Update Now") against it and note the resulting
+  `date_domaincreation`. Separately look up that same domain's real
+  WHOIS/RDAP "Creation Date".
+- **Expected:** the two dates match, confirming `Domain_GetRegistrationDate`
+  returns the domain's real/original registry creation date (as currently
+  assumed/documented in §3.8) rather than the date it was added to this
+  Dinahosting account. If they *don't* match, this is a real bug: update
+  §3.8's note and treat `DomainLifecycle::$registrationDate` as unreliable
+  for this driver until fixed.
+- **Caveat:** genuinely opportunistic — transferring a domain into an
+  account isn't a routine, frequent event, so this may stay unchecked for
+  a long time. Not a blocker for anything; run it whenever a
+  transferred-in domain happens to be available.
+- [ ] Pass
+
 ---
 
 ## Phase 4 — Domain panel, Update Now, cron batching
