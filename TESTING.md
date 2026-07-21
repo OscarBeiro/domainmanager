@@ -250,10 +250,17 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
 - **Expected:** its state row, record-ownership rows and lock rows are all deleted.
 - [ ] Pass
 
-### 3.9 Stub driver (IONOS) surfaces as pipeline errors (§3)
-- **Steps:** configure a supplier with the IONOS driver and run a sync using it.
-- **Expected:** the affected pipeline ends with status `error` and the message
-  "The IONOS driver is not implemented yet"; the other leg is not aborted.
+### 3.9 IONOS registrar leg is unimplemented; DNS leg is real (§3.9)
+- **Steps:** configure a supplier with the IONOS driver (real key/secret if
+  available) and run a sync using it.
+- **Expected:** the registrar leg ends with status `error` and the message
+  "IONOS registrar/domain lifecycle API is not implemented — no verifiable
+  public API documentation was found for it" (not the older generic "is not
+  implemented yet" text — this driver's registrar gap is now explained, not
+  just marked TODO); the DNS leg actually calls the live IONOS API and either
+  imports real A/AAAA/CNAME/MX/TXT records (MX prefixed with priority, TXT
+  unquoted — see §3.9) or reports a real per-error message if the zone/key is
+  wrong. Neither leg aborts the other.
 - [ ] Pass
 
 ### 3.10 Engine statuses and leg isolation (§5)
@@ -308,6 +315,25 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
 - **Expected:** a clear `DriverException` message ("Domain is not managed by
   this Dinahosting account"), not a generic/unhelpful error — confirms the
   `2303` (`OBJECT_NOT_EXISTS`) response code is mapped correctly.
+- [ ] Pass
+
+### 3.15 Real IONOS DNS sync (§3.9, needs real IONOS key/secret)
+- **Steps:** save a real IONOS API key/secret on a supplier; run
+  `SyncEngine::sync()` (or "Update Now") against a domain whose zone the key
+  can read.
+- **Expected:** DNS leg imports A/AAAA/CNAME/MX/TXT records with correct data
+  (MX prefixed with priority from the `prio` field; TXT content unquoted —
+  IONOS returns it double-quoted) and `dns_status = ok`; registrar leg always
+  ends in `error` with the "not implemented" message from §3.9 (expected,
+  documented gap, not a bug); the key/secret never appear in messages,
+  history, or `domainmanager.log`/`domainmanager-errors.log`.
+- [ ] Pass
+
+### 3.16 IONOS zone-not-found error (§3.9)
+- **Steps:** with a valid IONOS key/secret, run a sync/fetch against a domain
+  name whose DNS zone is not managed under that account.
+- **Expected:** a clear `DriverException` message ("No IONOS DNS zone found
+  for `<domain>` with this key"), not a generic/unhelpful error.
 - [ ] Pass
 
 ---
@@ -490,13 +516,16 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
   without re-testing.
 - [ ] Pass
 
-### 3.5.3 Stub driver (IONOS) reports both capabilities as not-implemented (§3.5.1)
-- **Steps:** select driver *IONOS*, fill in any credential values, click
-  **Check Connection**.
-- **Expected:** two red toasts/badges ("Registrar connection" and "DNS
-  connection"), both showing "Not yet implemented for this driver" — status
-  `unknown_error`, no HTTP code, badge color `text-bg-danger` (a
-  not-implemented driver is a real error state, not "never tested").
+### 3.5.3 IONOS: registrar not-implemented, DNS is a real check (§3.5.1, §3.9)
+- **Steps:** select driver *IONOS*, fill in (a) deliberately wrong key/secret,
+  or (b) real IONOS key/secret if available, click **Check Connection**.
+- **Expected:** "Registrar connection" **always** shows a red toast/badge
+  "Not yet implemented for this driver" (status `unknown_error`, no HTTP
+  code) regardless of the credentials entered — this is the documented gap
+  in §3.9, not a bug. "DNS connection" is a **real** check against
+  `GET /zones`: (a) wrong credentials → red badge, HTTP 401, "Authentication
+  failed — the API token or credentials were rejected."; (b) valid
+  credentials → green badge, "Connection successful."
 - [ ] Pass
 
 ### 3.5.4 Unsaved credentials are tested but never persisted (§3.5.3)

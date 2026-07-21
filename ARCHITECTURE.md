@@ -112,7 +112,7 @@ domainmanager/
 │   │   └── ConnectionTestStatus.php     NEW  backed enum (§3.5)
 │   ├── Driver/
 │   │   ├── CloudflareDriver.php         NEW  full implementation (both interfaces)
-│   │   ├── IonosDriver.php              NEW  stub, clearly-marked TODO (both interfaces)
+│   │   ├── IonosDriver.php              NEW  DNS real, registrar not implemented (§3.9)
 │   │   └── DinahostingDriver.php        NEW  full implementation (both interfaces, §3.8)
 │   ├── Service/
 │   │   ├── SyncEngine.php               NEW  orchestrates the split pipeline for one domain (§5)
@@ -215,10 +215,10 @@ Indexes: PK, `UNIQUE unicity(itemtype, items_id, field)`, `KEY items_id`.
 └──────────────△──────────────┘        └───────────────△────────────────┘
                │  implements                            │  implements
      ┌─────────┴──────────────┬──────────────────┬─────┴────────┐
-     │ CloudflareDriver (full)│ IonosDriver(TODO)│ Dinahosting  │
-     │  - token               │  - key + secret  │ Driver(full) │
-     │  - Toolbox::getGuzzle… │                  │  - user+pass │
-     │                        │                  │  - Basic Auth│
+     │ CloudflareDriver (full)│ IonosDriver      │ Dinahosting  │
+     │  - token               │ (dns full,       │ Driver(full) │
+     │  - Toolbox::getGuzzle… │  registrar TODO) │  - user+pass │
+     │                        │  - key + secret  │  - Basic Auth│
      └────────────────────────┴──────────────────┴──────────────┘
                △ constructed by
 ┌──────────────┴───────────────┐     ┌──────────────────────────────┐
@@ -234,7 +234,7 @@ Drivers throw DriverException (message safe to persist; payload detail → logIn
 DomainLifecycle / ZoneRecord are immutable DTOs; all API values validated/sanitised at construction.
 ```
 
-`CloudflareDriver` and `DinahostingDriver` (§3.8) implement **both** interfaces for real (Registrar API + DNS records API). The `IonosDriver` stub still declares both and throws a typed `NotImplementedException` with an i18n message ("driver not yet implemented"). Credential validation (the old, now-removed flat `testConnection(): void` on each pipeline interface) is superseded by `ConnectionTestableInterface` (§3.5) — a separate, on-demand diagnostic concern, not part of the sync pipeline contracts.
+`CloudflareDriver` and `DinahostingDriver` (§3.8) implement **both** interfaces for real (Registrar API + DNS records API). `IonosDriver` (§3.9) implements `DnsPipelineInterface` for real too, but its `fetchLifecycle()` (`RegistrarDriverInterface`) still throws a typed `NotImplementedException` — not a leftover TODO, but a documented gap: no verifiable registrar/domain-info API documentation exists for IONOS anywhere searched. Credential validation (the old, now-removed flat `testConnection(): void` on each pipeline interface) is superseded by `ConnectionTestableInterface` (§3.5) — a separate, on-demand diagnostic concern, not part of the sync pipeline contracts.
 
 ---
 
@@ -253,7 +253,7 @@ interface ConnectionTestableInterface {
 
 **Per-driver reported capabilities** (`DriverRegistry::getTestableCapabilities()`):
 - **`CloudflareDriver` → `['dns']` only.** Cloudflare's registrar API needs a specific domain name (`accounts/{id}/registrar/domains/{domain}`), which isn't known at credential-test time — there is no domain-independent registrar endpoint to probe. The DNS/zone capability, however, is verifiable independently via `user/tokens/verify` (the same call previously used by the old flat test), so only `'dns'` is reported even though the class also implements `RegistrarDriverInterface` for the real sync pipeline.
-- **`IonosDriver` → `['registrar', 'dns']`**, each returning a `ConnectionTestResult` with status `unknown_error` and the message "Not yet implemented for this driver" (mirrors its `NotImplementedException` stub).
+- **`IonosDriver` → `['registrar', 'dns']`**: `'dns'` is a real check against `GET /zones` (§3.9); `'registrar'` still returns `unknown_error`/"Not yet implemented for this driver" (mirrors its `NotImplementedException`, kept visible in the UI rather than hidden, so an admin can see the gap instead of just not finding a button for it).
 - **`DinahostingDriver` → `['registrar', 'dns']`**, both built from a single real, account-wide auth probe (§3.8) — Dinahosting's auth isn't capability-scoped, so one lightweight API call classifies both.
 - **`none` → `[]`** (nothing to test; the Check Connection button isn't rendered).
 
@@ -319,6 +319,25 @@ Every `Log::history()` call in the plugin passes the matching constant as `$chan
 - **`fetchZoneRecords()`**: `Domain_Zone_GetAll`. Field names for **A/AAAA (`ip`), CNAME (`destinationHostname`), TXT (`text`)** are confirmed against the reference client. **Known gap**: that client only ever *writes* A/AAAA/TXT/CNAME, so it never modeled MX/NS fields specifically — `extractContent()` falls back to the same generic field set the reference client uses for record types it doesn't recognize either. MX priority ordering in particular is unconfirmed; verify against a real account with real MX/NS records before relying on it.
 - Both pipeline methods route API errors through a shared `request()` helper mirroring `CloudflareDriver::request()`'s shape (`DriverException` with a safe message, technical detail to `PluginLogger::error()` — including the object-not-found code `2303` mapped to a clear "domain not managed by this account" message).
 - `PluginLogger::redact()` (§3.6) was widened to also catch Dinahosting's non-standard `AUTH_PWD`/`pwd=` credential naming (the existing pattern only matched the literal word "password") — defense in depth, since this driver's own code never logs a raw request URI in the first place.
+
+---
+
+## 3.9 IONOS driver: DNS real, registrar/lifecycle honestly unimplemented
+
+Requested as the same treatment as §3.8. The result is asymmetric, and that asymmetry is deliberate rather than an oversight — the two IONOS product APIs are in very different states of public documentability.
+
+**DNS (`fetchZoneRecords()`, `testConnection()`'s `'dns'` capability) — fully real**, base `https://api.hosting.ionos.com/dns/v1/`. IONOS's own docs portal (`developer.hosting.ionos.com/docs/dns`) is a JS-rendered Angular SPA with no inline example bodies and no scrapable spec, but the wire format was cross-verified against the maintained community client `github.com/libdns/ionos` (`GET /zones` → a plain JSON array of `{name, id, type}`; `GET /zones/{id}` → `{id, name, type, records: [{id, name, rootName, type, content, changeDate, ttl, prio, disabled}]}`; TXT `content` is returned double-quoted and must be unquoted; MX priority is `prio`), **and** by directly probing the live API with no/bad credentials, which confirmed:
+- Auth header: `X-API-Key: <key_prefix>.<key_secret>` (matches `DriverRegistry`'s existing `key`/`secret` credential fields).
+- Error shape is a simple `{"message": "..."}` with real, varying HTTP status codes (400 "Invalid API key format.", 401 "Missing or invalid API key."/"Missing or invalid credentials.") — unlike Dinahosting, IONOS behaves like a normal REST API here, so `ConnectionTestResult::fromHttpResponse()` is reused directly (same as `CloudflareDriver`), no custom envelope classification needed.
+- The API has no filter-by-name query parameter for zones (confirmed: the reference client also fetches the full zone list and matches client-side), so `findZoneId()` does the same, case-insensitively.
+
+**Registrar/lifecycle (`fetchLifecycle()`) — still throws `NotImplementedException`, deliberately, not from lack of trying.** `developer.hosting.ionos.com` also lists a separate "Domains" product (`developer.hosting.ionos.com/docs/domains`), but unlike DNS:
+- No accessible OpenAPI/Swagger spec or example request bodies were found (same SPA-shell problem as the DNS docs page, but with no fallback source).
+- No official IONOS SDK (`github.com/ionos-cloud/*`) or community client (`github.com/libdns/*` or otherwise) implements it — every search turned up only DNS-related clients.
+- The Wayback Machine is unreachable from this environment, ruling out a cached historical snapshot.
+- Probing the live API confirms the base path likely exists (`GET https://api.hosting.ionos.com/domains/v1` returns the *same* `{"message":"Missing or invalid API key."}` shape as the confirmed-real DNS base path, not a generic 404) — **but** its auth check runs before routing, so every path under it returns that same 401 regardless of whether the specific endpoint is real, meaning endpoint existence and field names can't be determined without a valid key.
+
+Rather than invent endpoint paths or field names against a registrar API with zero verifiable documentation, `fetchLifecycle()` throws `NotImplementedException` with a message naming the actual reason ("no verifiable public API documentation was found for it"), and `testConnection()` still reports `'registrar'` as `unknown_error`/"Not yet implemented for this driver" so an admin sees the gap in the UI rather than a missing capability. Revisit if IONOS ever publishes an accessible spec, or if real IONOS credentials become available to explore the live API directly and reverse-engineer it the way Dinahosting's stub was resolved.
 
 ---
 
@@ -492,6 +511,7 @@ Right registered per-profile via `Migration::addRight` at install and manageable
 3. **Phase 3** — contracts, DTOs, `DriverFactory`, `CloudflareDriver` (full), IONOS/Dinahosting stubs, `SyncEngine`, `RecordReconciler`, `LockEnforcer`, history/logging.
 3.5. **Phase 3.5** — on-demand connection diagnostics: `ConnectionTestableInterface`/`ConnectionTestResult`, `ConnectionTestController` ("Check Connection" against live form values), supplier-tab detail panel + native toasts, two-file consolidated logging (`domainmanager.log`/`domainmanager-errors.log`, §3.6).
 3.8. **Phase 3.8** — real `DinahostingDriver` implementation (registrar lifecycle + DNS zone records + account-wide connection test against the live API), replacing the Phase 3 stub; see §3.8.
+3.9. **Phase 3.9** — real `IonosDriver` DNS implementation (zone records + connection test against the live API); registrar/lifecycle deliberately left unimplemented — no verifiable public API documentation exists for it; see §3.9.
 4. **Phase 4** — `DomainForm` injections, status card, `SyncController` + Update Now JS, cron batching loop.
 5. **Phase 5** — registry sweep of popular DNS providers (researched patterns + sources documented in the JSON).
 
