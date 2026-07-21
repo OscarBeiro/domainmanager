@@ -32,11 +32,12 @@
 use Glpi\Plugin\Hooks;
 use GlpiPlugin\Domainmanager\DomainForm;
 use GlpiPlugin\Domainmanager\HookHandler;
+use GlpiPlugin\Domainmanager\ImportedRecord;
 use GlpiPlugin\Domainmanager\LockEnforcer;
 use GlpiPlugin\Domainmanager\Profile as DomainmanagerProfile;
 use GlpiPlugin\Domainmanager\SupplierTab;
 
-define('PLUGIN_DOMAINMANAGER_VERSION', '0.3.2');
+define('PLUGIN_DOMAINMANAGER_VERSION', '0.4.0');
 define('PLUGIN_DOMAINMANAGER_MIN_GLPI', '11.0.0');
 define('PLUGIN_DOMAINMANAGER_MAX_GLPI', '11.0.99');
 define('PLUGIN_DOMAINMANAGER_REPOSITORY_URL', 'https://github.com/TICGAL-GLPI-Plugins/domainmanager');
@@ -53,6 +54,9 @@ define('PLUGIN_DOMAINMANAGER_SO_DOMAIN', 9402);
 // Real, filterable search option (unlike the two above) — see its own
 // registration below and ARCHITECTURE.md §9 Phase 5.5 for why it exists.
 define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR', 9403);
+// Real, filterable search option on DomainRecord (§addendum "Searchable
+// 'Managed' Field on Domain Records") — see its own registration below.
+define('PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_MANAGED', 9404);
 
 /**
  * Plugin_Version_Domainmanager
@@ -153,6 +157,43 @@ function plugin_domainmanager_getAddSearchOptionsNew($itemtype): array
                         ],
                     ],
                 ],
+            ],
+        ];
+    }
+
+    if ($itemtype === DomainRecord::class) {
+        // A single-hop join to the plugin's own ownership-map table
+        // (glpi_plugin_domainmanager_records, ImportedRecord), which has a
+        // direct, non-polymorphic domainrecords_id FK column back to this
+        // itemtype's own id — the simplest search-option join shape,
+        // 'jointype' => 'child' (confirmed against
+        // Glpi\Search\Provider\SQLProvider::getLeftJoinCriteria() on
+        // 11.0/bugfixes, not assumed: this jointype builds exactly
+        // `LEFT JOIN <table> ON <domainrecord table>.id =
+        // <table>.<linkfield>`, where <linkfield> defaults to
+        // getForeignKeyFieldForTable() of this itemtype's own table —
+        // `domainrecords_id`, already matching our schema even without the
+        // explicit 'linkfield' below). No `beforejoin` hop needed, unlike
+        // PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR above.
+        //
+        // A row only exists here once RecordReconciler has actually
+        // created/updated the native record at least once — a manually
+        // created, never-synced record has no row at all, which this
+        // LEFT JOIN naturally reads as NULL/"No" for the 'bool' datatype
+        // (no separate default-value handling needed).
+        //
+        // 'massiveaction' => false: this value is plugin-derived, never
+        // meant to be set directly by a user via bulk edit.
+        $options[] = [
+            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_MANAGED,
+            'table'         => ImportedRecord::getTable(),
+            'field'         => 'is_managed',
+            'linkfield'     => 'domainrecords_id',
+            'name'          => __('Managed', 'domainmanager'),
+            'datatype'      => 'bool',
+            'massiveaction' => false,
+            'joinparams'    => [
+                'jointype' => 'child',
             ],
         ];
     }

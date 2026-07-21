@@ -49,7 +49,33 @@ use Toolbox;
 
 /**
  * Cloudflare driver: Registrar API (lifecycle) + DNS records API (zone records)
- * Credentials: ['token' => <API token>]
+ * Credentials: ['account_id' => <Cloudflare Account ID>, 'token' => <API token>]
+ *
+ * **Only account-scoped API Tokens are supported** (created under Manage
+ * Account → API Tokens, `cfat_...`) — a personal/user token (My Profile →
+ * API Tokens) is NOT supported and will fail: it's tied to whatever zones
+ * the creating human happens to have access to, breaks if that user loses
+ * access, and — confirmed live — cannot even authenticate against
+ * probeTokenVerify()'s account-scoped verify endpoint below, so it fails
+ * Check Connection with a plain auth-failed/401 regardless of how valid
+ * or well-scoped it otherwise is. An account token belongs to the
+ * Cloudflare Account itself (§addendum "Switch Cloudflare Driver to
+ * Account-Scoped API Tokens"). Both token *types* authenticate identically
+ * (`Authorization: Bearer <token>`) — the incompatibility is entirely
+ * about which *endpoints* accept which token type, not the auth
+ * mechanism itself.
+ *
+ * The stored Account ID is used two ways, confirmed against Cloudflare's
+ * current, live OpenAPI spec (`github.com/cloudflare/api-schemas`,
+ * `GET /zones` operation) rather than assumed from memory:
+ * - `findZone()` passes it as the literal `account.id` query parameter
+ *   (confirmed exact name/shape in the spec — not `account_id`, not a
+ *   nested `account[id]`/deepObject form) to scope the zone lookup to
+ *   this account, rather than trusting whichever zone a broader-scoped
+ *   token might otherwise resolve to.
+ * - `fetchLifecycle()` uses it directly as the `accounts/{id}/...` path
+ *   segment for the Registrar API, instead of the previous approach of
+ *   reading `account.id` back out of the zone lookup's own response.
  */
 class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface, ConnectionTestableInterface
 {
@@ -78,9 +104,9 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
      * (accounts/{id}/registrar/domains/{domain}), which isn't known at
      * credential-test time — there's no domain-independent registrar
      * endpoint to probe. The DNS/zone capability can be verified
-     * independently via user/tokens/verify, so only 'dns' is reported even
-     * though this class also implements RegistrarDriverInterface for the
-     * real sync pipeline (§3.5).
+     * independently via accounts/{id}/tokens/verify, so only 'dns' is
+     * reported even though this class also implements
+     * RegistrarDriverInterface for the real sync pipeline (§3.5).
      *
      * {@inheritDoc}
      */
@@ -91,7 +117,10 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
         $this->client       = null;
 
         try {
-            $result = $this->probeTokenVerify();
+            $missing = self::missingConfigMessage($credentials);
+            $result  = $missing !== null
+                ? ConnectionTestResult::notConfigured('dns', $missing)
+                : $this->probeTokenVerify();
         } catch (Throwable $e) {
             $result = ConnectionTestResult::fromException('dns', $e);
         } finally {
@@ -103,20 +132,58 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
     }
 
     /**
+     * Checked explicitly before attempting any network call, rather than
+     * left to throw and fall into fromException()'s generic classifier —
+     * a missing Account ID is a distinct, actionable "you haven't finished
+     * configuring this" state, not the same thing as an invalid/rejected
+     * token (§addendum "Switch Cloudflare Driver to Account-Scoped API
+     * Tokens").
+     *
+     * @param  array<string, string> $credentials
+     * @return string|null null when both required fields are present
+     */
+    private static function missingConfigMessage(array $credentials): ?string
+    {
+        if (trim((string) ($credentials['account_id'] ?? '')) === '') {
+            return __('Cloudflare Account ID is not configured', 'domainmanager');
+        }
+
+        if (trim((string) ($credentials['token'] ?? '')) === '') {
+            return __('Cloudflare API token is not configured', 'domainmanager');
+        }
+
+        return null;
+    }
+
+    /**
      * Direct HTTP probe used only by testConnection(): unlike request(), it
      * inspects the raw status code itself so the result can be classified
      * precisely (401 -> AuthFailed, etc.) instead of collapsing into the
      * generic DriverException messages used by the sync pipelines.
      *
+     * Uses `accounts/{account_id}/tokens/verify`, **not** `user/tokens/verify`
+     * — confirmed live (real account token, real 401) and against Cloudflare's
+     * current OpenAPI spec that these are two distinct endpoints and an
+     * account-owned token (`cfat_...`) only verifies against the former.
+     * `user/tokens/verify` is scoped to a *user* identity, which an
+     * account-owned token has none of — it rejects an otherwise perfectly
+     * valid account token with a plain 401, which read as "authentication
+     * failed" even though nothing was actually wrong with the token
+     * (§addendum "Switch Cloudflare Driver to Account-Scoped API Tokens" —
+     * this was a real, initially-missed bug in that change, not a
+     * credentials mistake on the reporter's part).
+     *
      * @return ConnectionTestResult
-     * @throws DriverException when the token is empty or the API is unreachable
+     * @throws DriverException when the token/account id is empty or the API is unreachable
      */
     private function probeTokenVerify(): ConnectionTestResult
     {
-        $client = $this->getClient();
+        $accountId = $this->requireAccountId();
+        $client    = $this->getClient();
+        $path      = 'accounts/' . rawurlencode($accountId) . '/tokens/verify';
 
         try {
-            $response = $client->request('GET', 'user/tokens/verify', ['timeout' => self::TEST_TIMEOUT]);
+            $response = $client->request('GET', $path, ['timeout' => self::TEST_TIMEOUT]);
         } catch (GuzzleException $e) {
             PluginLogger::error('Cloudflare connection test HTTP failure: ' . $e->getMessage());
             throw $e;
@@ -127,7 +194,7 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
         $data   = json_decode($body, true);
         $success = is_array($data) && ($data['success'] ?? false) === true;
 
-        $raw_detail = $success ? '' : ('Cloudflare user/tokens/verify (HTTP ' . $status . '): ' . self::sanitizeMessage($body));
+        $raw_detail = $success ? '' : ('Cloudflare ' . $path . ' (HTTP ' . $status . '): ' . self::sanitizeMessage($body));
 
         return ConnectionTestResult::fromHttpResponse('dns', $status, $success, $raw_detail);
     }
@@ -137,16 +204,20 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
      */
     public function fetchLifecycle(string $domain): DomainLifecycle
     {
-        $domain = self::normalizeDomain($domain);
-        $zone   = $this->findZone($domain);
+        $domain    = self::normalizeDomain($domain);
+        $accountId = $this->requireAccountId();
 
-        if ($zone['account_id'] === '') {
-            throw new DriverException(__('Cloudflare zone has no readable account', 'domainmanager'));
-        }
-
+        // No zone lookup needed here anymore: the account id now comes
+        // directly from stored config (was previously only reachable by
+        // reading it back out of a zone lookup's response) — and
+        // Registrar/DNS are independent Cloudflare products, so requiring
+        // a DNS zone to exist before a registrar lookup was an incidental
+        // coupling, not a real requirement. request() below already
+        // reports a clear "not managed" error if this account has no such
+        // registrar domain.
         $data = $this->request(
             'GET',
-            'accounts/' . rawurlencode($zone['account_id']) . '/registrar/domains/' . rawurlencode($domain)
+            'accounts/' . rawurlencode($accountId) . '/registrar/domains/' . rawurlencode($domain)
         );
 
         $result = $data['result'] ?? null;
@@ -171,14 +242,15 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
      */
     public function fetchZoneRecords(string $domain): array
     {
-        $domain = self::normalizeDomain($domain);
-        $zone   = $this->findZone($domain);
+        $domain    = self::normalizeDomain($domain);
+        $accountId = $this->requireAccountId();
+        $zoneId    = $this->findZone($domain, $accountId);
 
         $records = [];
         $page    = 1;
 
         do {
-            $data = $this->request('GET', 'zones/' . rawurlencode($zone['id']) . '/dns_records', [
+            $data = $this->request('GET', 'zones/' . rawurlencode($zoneId) . '/dns_records', [
                 'per_page' => self::PER_PAGE,
                 'page'     => $page,
             ]);
@@ -219,27 +291,36 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
     }
 
     /**
-     * Resolve the zone (and owning account) of a domain
+     * Resolve the zone id of a domain, scoped to the configured account.
+     * `account.id` is the literal, confirmed query parameter name (live
+     * Cloudflare OpenAPI spec, `GET /zones` — not `account_id`, not a
+     * nested/deepObject form) — filtering by it, rather than trusting the
+     * first name match across whatever the token can see, is the real fix
+     * here: previously a broader-scoped token could silently resolve to a
+     * zone under a *different* account than intended (§addendum "Switch
+     * Cloudflare Driver to Account-Scoped API Tokens").
      *
      * @param  string $domain
-     * @return array{id: string, account_id: string}
+     * @param  string $accountId
+     * @return string zone id
      * @throws DriverException
      */
-    private function findZone(string $domain): array
+    private function findZone(string $domain, string $accountId): string
     {
-        $data = $this->request('GET', 'zones', ['name' => $domain, 'per_page' => 1]);
+        $data = $this->request('GET', 'zones', [
+            'name'       => $domain,
+            'account.id' => $accountId,
+            'per_page'   => 1,
+        ]);
 
         $zone = $data['result'][0] ?? null;
         if (!is_array($zone) || empty($zone['id'])) {
             throw new DriverException(
-                sprintf(__('No Cloudflare zone found for %s with this token', 'domainmanager'), $domain)
+                sprintf(__('No Cloudflare zone found for %s under this account', 'domainmanager'), $domain)
             );
         }
 
-        return [
-            'id'         => (string) $zone['id'],
-            'account_id' => (string) ($zone['account']['id'] ?? ''),
-        ];
+        return (string) $zone['id'];
     }
 
     /**
@@ -326,6 +407,20 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
         ]);
 
         return $this->client;
+    }
+
+    /**
+     * @return string
+     * @throws DriverException
+     */
+    private function requireAccountId(): string
+    {
+        $accountId = trim((string) ($this->credentials['account_id'] ?? ''));
+        if ($accountId === '') {
+            throw new DriverException(__('Cloudflare Account ID is not configured', 'domainmanager'));
+        }
+
+        return $accountId;
     }
 
     /**

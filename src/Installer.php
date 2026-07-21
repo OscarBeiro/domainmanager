@@ -61,6 +61,7 @@ class Installer
     {
         self::createTables($migration);
         self::addConnectionTestColumns($migration);
+        self::migrateRecordManagedColumn($migration);
         self::seedDomainType();
         self::seedRecordTypes();
         self::registerRights($migration);
@@ -167,7 +168,7 @@ class Installer
                     `remote_id` varchar(255) NOT NULL DEFAULT '',
                     `record_hash` varchar(64) NOT NULL DEFAULT '',
                     `last_seen` timestamp NULL DEFAULT NULL,
-                    `is_stale` tinyint NOT NULL DEFAULT '0',
+                    `is_managed` tinyint NOT NULL DEFAULT '0',
                     `date_mod` timestamp NULL DEFAULT NULL,
                     `date_creation` timestamp NULL DEFAULT NULL,
                     PRIMARY KEY (`id`),
@@ -175,7 +176,7 @@ class Installer
                     KEY `domains_id` (`domains_id`),
                     KEY `remote_id` (`remote_id`),
                     KEY `record_hash` (`record_hash`),
-                    KEY `is_stale` (`is_stale`)
+                    KEY `is_managed` (`is_managed`)
                 ) ENGINE=InnoDB DEFAULT CHARSET={$charset} COLLATE={$collation} ROW_FORMAT=DYNAMIC
                 SQL,
             'glpi_plugin_domainmanager_locks' => <<<SQL
@@ -221,6 +222,33 @@ class Installer
             $migration->addField($table, "{$prefix}_test_http_code", 'INT NULL DEFAULT NULL');
             $migration->addField($table, "{$prefix}_test_date", 'datetime', ['value' => null]);
         }
+    }
+
+    /**
+     * Replaces `is_stale` (a plugin-invented "flagged removed" marker,
+     * superseded by native trash-bin soft-delete on DomainRecord itself —
+     * see RecordReconciler) with `is_managed`, the field backing the new
+     * "Managed" search option on DomainRecord (§addendum "Searchable
+     * 'Managed' Field on Domain Records"). Idempotent via
+     * `Migration::addField()`/`dropField()` (not the raw-CREATE-TABLE path
+     * used for initial creation, §0.6 does not apply to post-creation
+     * schema changes).
+     *
+     * Every pre-existing row in this table already represents a record the
+     * plugin has imported/tracked — `value => 1` sets the new column's
+     * `DEFAULT '1'`, which MySQL's `ADD COLUMN ... NOT NULL` also uses to
+     * backfill every existing row (no separate `update` UPDATE needed).
+     *
+     * @param  Migration $migration
+     * @return void
+     */
+    private static function migrateRecordManagedColumn(Migration $migration): void
+    {
+        $table = 'glpi_plugin_domainmanager_records';
+
+        $migration->addField($table, 'is_managed', 'bool', ['value' => 1]);
+        $migration->addKey($table, 'is_managed');
+        $migration->dropField($table, 'is_stale');
     }
 
     /**

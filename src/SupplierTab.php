@@ -129,6 +129,17 @@ class SupplierTab extends CommonGLPI
             }
         }
 
+        // A Cloudflare config saved before the Account ID field existed has
+        // a token but nothing under 'account_id' in its stored JSON — no
+        // schema migration needed for this (the field lives in the same
+        // encrypted blob as every other credential field), just a clear
+        // notice so the gap doesn't silently break sync or get mistaken for
+        // an unrelated failure later (§addendum "Switch Cloudflare Driver
+        // to Account-Scoped API Tokens").
+        $cloudflare_missing_account_id = $current_driver === DriverRegistry::DRIVER_CLOUDFLARE
+            && ($saved['token'] ?? false)
+            && !($saved['account_id'] ?? false);
+
         $connection_test = $config !== null
             ? $config->getConnectionTestSummary()
             : [
@@ -147,6 +158,7 @@ class SupplierTab extends CommonGLPI
             'form_url'             => SupplierConfig::getFormURL(),
             'can_edit'             => $supplier->can((int) $supplier->getID(), UPDATE),
             'supplier_active'      => (bool) $supplier->fields['is_active'],
+            'cloudflare_missing_account_id' => $cloudflare_missing_account_id,
             'current_driver'       => $current_driver,
             'driver_labels'        => self::getDriverOptions((int) $supplier->getID(), $current_driver),
             'credential_fields'    => DriverRegistry::getAllCredentialFields(),

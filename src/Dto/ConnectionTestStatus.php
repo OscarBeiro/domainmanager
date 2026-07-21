@@ -45,4 +45,9 @@ enum ConnectionTestStatus: string
     case NetworkError  = 'network_error';
     case Timeout       = 'timeout';
     case UnknownError  = 'unknown_error';
+    // Required driver configuration is missing (e.g. Cloudflare's Account
+    // ID) — no call was attempted at all, so this must never look like an
+    // auth/API failure (§addendum "Switch Cloudflare Driver to
+    // Account-Scoped API Tokens").
+    case NotConfigured = 'not_configured';
 }

@@ -42,12 +42,14 @@ use Session;
 /**
  * Idempotent reconciliation of provider zone records into glpi_domainrecords.
  * Only plugin-owned rows (tracked in the ownership map) are ever touched;
- * upstream-vanished records are flagged stale, never deleted (§5.4)
+ * upstream-vanished records are moved to GLPI's native trash bin
+ * (`DomainRecord::delete()`, soft-delete) rather than a plugin-invented
+ * comment-marker convention, and restored (`DomainRecord::restore()`) if
+ * they reappear (§5.4, revised — supersedes the earlier comment-marker
+ * design, §addendum "Vanished Records Go to the Native Trash Bin")
  */
 class RecordReconciler
 {
-    private const STALE_MARKER = '[Domain Manager] Not present upstream since ';
-
     public function __construct(private SyncLogger $logger = new SyncLogger())
     {
     }
@@ -105,7 +107,7 @@ class RecordReconciler
     /**
      * @param  Domain       $domain
      * @param  ZoneRecord[] $records
-     * @return array{added: int, updated: int, restored: int, stale: int, unchanged: int}
+     * @return array{added: int, updated: int, restored: int, trashed: int, unchanged: int}
      */
     private function doReconcile(Domain $domain, array $records): array
     {
@@ -114,7 +116,7 @@ class RecordReconciler
 
         $domains_id = (int) $domain->getID();
         $type_ids   = $this->resolveTypeIds();
-        $stats      = ['added' => 0, 'updated' => 0, 'restored' => 0, 'stale' => 0, 'unchanged' => 0];
+        $stats      = ['added' => 0, 'updated' => 0, 'restored' => 0, 'trashed' => 0, 'unchanged' => 0];
 
         // Load the ownership map: remote_id and hash indexes over unclaimed rows
         $ownership = [];
@@ -174,24 +176,30 @@ class RecordReconciler
                 continue;
             }
 
-            $was_stale = (int) $own_row['is_stale'] === 1;
+            // Native is_deleted (trash bin), not a plugin-tracked flag, is
+            // the sole source of truth for "was this stale" — read before
+            // any restore()/update() call below changes it.
+            $was_trashed = (bool) $native->fields['is_deleted'];
 
             if ($own_row['record_hash'] !== $hash) {
-                // Changed upstream (identified by remote id)
+                // Changed upstream (identified by remote id) — always apply
+                // the new data; also restore from the trash bin first if it
+                // had gone stale, since a record can reappear with
+                // different content too (bucketed as 'updated', matching
+                // this branch's pre-existing priority over 'restored').
+                if ($was_trashed) {
+                    $native->restore(['id' => $native->getID()]);
+                }
                 $native->update([
                     'id'                   => $native->getID(),
                     'name'                 => $record->name,
                     'data'                 => $record->data,
                     'ttl'                  => $record->ttl,
                     'domainrecordtypes_id' => $type_ids[$record->type],
-                    'comment'              => $this->withoutStaleMarker((string) $native->fields['comment']),
                 ]);
                 $stats['updated']++;
-            } elseif ($was_stale) {
-                $native->update([
-                    'id'      => $native->getID(),
-                    'comment' => $this->withoutStaleMarker((string) $native->fields['comment']),
-                ]);
+            } elseif ($was_trashed) {
+                $native->restore(['id' => $native->getID()]);
                 $stats['restored']++;
             } else {
                 $stats['unchanged']++;
@@ -203,30 +211,30 @@ class RecordReconciler
                 'remote_id'   => $record->remoteId,
                 'record_hash' => $hash,
                 'last_seen'   => $now,
-                'is_stale'    => 0,
             ]);
         }
 
-        // Ownership rows not seen upstream anymore: flag stale (§5.4)
+        // Ownership rows not seen upstream anymore: move to the native
+        // trash bin, never hard-delete (§5.4). Still "Managed" throughout —
+        // is_managed on the ImportedRecord row is untouched here.
         foreach ($ownership as $oid => $own_row) {
-            if (isset($claimed[$oid]) || (int) $own_row['is_stale'] === 1) {
+            if (isset($claimed[$oid])) {
                 continue;
             }
 
             $native = new DomainRecord();
-            if ($native->getFromDB((int) $own_row['domainrecords_id'])) {
-                $native->update([
-                    'id'      => $native->getID(),
-                    'comment' => trim(
-                        $this->withoutStaleMarker((string) $native->fields['comment'])
-                        . "\n" . self::STALE_MARKER . date('Y-m-d')
-                    ),
-                ]);
+            if (!$native->getFromDB((int) $own_row['domainrecords_id'])) {
+                continue;
             }
 
-            $imported = new ImportedRecord();
-            $imported->update(['id' => $oid, 'is_stale' => 1]);
-            $stats['stale']++;
+            if ((bool) $native->fields['is_deleted']) {
+                // Already trashed from a previous sync — nothing new to do,
+                // and re-calling delete() would just add repeat noise.
+                continue;
+            }
+
+            $native->delete(['id' => $native->getID()]);
+            $stats['trashed']++;
         }
 
         return $stats;
@@ -266,7 +274,13 @@ class RecordReconciler
             'remote_id'        => $record->remoteId,
             'record_hash'      => $record->getHash(),
             'last_seen'        => $now,
-            'is_stale'         => 0,
+            // Set once at creation and never changed afterward — stays 1
+            // through updated/trashed/restored, the whole time this
+            // ownership row exists (§addendum "Searchable 'Managed' Field
+            // on Domain Records"); only a real purge removes the row
+            // (HookHandler::domainRecordPurged(), ITEM_PURGE only, never
+            // fires for the soft-delete this reconciler itself performs).
+            'is_managed'       => 1,
         ]);
 
         return true;
@@ -294,19 +308,5 @@ class RecordReconciler
         }
 
         return $ids;
-    }
-
-    /**
-     * @param  string $comment
-     * @return string
-     */
-    private function withoutStaleMarker(string $comment): string
-    {
-        $lines = array_filter(
-            explode("\n", $comment),
-            static fn(string $line): bool => !str_starts_with(trim($line), self::STALE_MARKER)
-        );
-
-        return trim(implode("\n", $lines));
     }
 }

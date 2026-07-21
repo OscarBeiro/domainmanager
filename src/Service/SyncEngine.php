@@ -278,11 +278,11 @@ class SyncEngine
 
             $result['dns_status']  = DomainState::STATUS_OK;
             $result['dns_message'] = sprintf(
-                __('%1$d added, %2$d updated, %3$d restored, %4$d flagged removed, %5$d unchanged', 'domainmanager'),
+                __('%1$d added, %2$d updated, %3$d restored, %4$d trashed, %5$d unchanged', 'domainmanager'),
                 $stats['added'],
                 $stats['updated'],
                 $stats['restored'],
-                $stats['stale'],
+                $stats['trashed'],
                 $stats['unchanged']
             );
             $this->logger->milestone((int) $domain->getID(), 'DNS sync OK: ' . $result['dns_message']);

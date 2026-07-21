@@ -180,6 +180,29 @@ final class ConnectionTestResult
     }
 
     /**
+     * Build a "required configuration is missing" result — no call was
+     * attempted, so this must render distinctly from a real auth/API
+     * failure (§addendum "Switch Cloudflare Driver to Account-Scoped API
+     * Tokens": a missing Account ID is not the same thing as an invalid
+     * token).
+     *
+     * @param  string $capability 'registrar' | 'dns'
+     * @param  string $message
+     * @return self
+     */
+    public static function notConfigured(string $capability, string $message): self
+    {
+        return new self(
+            ConnectionTestStatus::NotConfigured,
+            $capability,
+            null,
+            $message,
+            $message,
+            new DateTimeImmutable()
+        );
+    }
+
+    /**
      * Browser-safe representation — never includes rawDetail
      *
      * @return array{status: string, capability: string, http_status_code: ?int,

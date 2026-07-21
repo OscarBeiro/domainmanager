@@ -102,12 +102,13 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
 - [ ] Pass
 
 ### 2.2 Credentials stored encrypted (§6.1, GLPIKey)
-- **Steps:** on a supplier's Domain Manager tab select driver *Cloudflare*, enter API
-  Token `secret-token-123`, save. Then:
+- **Steps:** on a supplier's Domain Manager tab select driver *Cloudflare*, enter
+  Account ID `abc123accountid` and API Token `secret-token-123`, save. Then:
   `SELECT api_driver, api_credentials FROM glpi_plugin_domainmanager_supplierconfigs;`
 - **Expected:** save redirects back to the supplier tab; `api_driver='cloudflare'`;
   `api_credentials` is a non-empty encrypted blob that does **not** contain
-  `secret-token-123`.
+  `secret-token-123` or `abc123accountid` in plaintext (both live inside the same
+  encrypted JSON, §3.10 — no separate plaintext column exists for the Account ID).
 - [ ] Pass
 
 ### 2.3 Secrets never echoed back (§6.1)
@@ -132,15 +133,43 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
 - **Steps:** switch the driver to *Dinahosting*, fill username `testuser` +
   password, save; reload tab.
 - **Expected:** username is prefilled (non-secret), password shows the "saved"
-  placeholder; the previously stored Cloudflare token is gone from the stored JSON
-  (only `user`/`password` keys remain).
+  placeholder; the previously stored Cloudflare Account ID and token are both gone
+  from the stored JSON (only `user`/`password` keys remain).
 - [ ] Pass
 
 ### 2.7 Per-driver fields toggle without reload (§6.1)
 - **Steps:** on the tab, cycle the driver select through all four options.
 - **Expected:** only the selected driver's fields are visible/enabled — Cloudflare:
-  API Token; IONOS: API Key + API Secret; Dinahosting: Username + Password; None:
-  no fields.
+  Account ID + API Token; IONOS: API Key + API Secret; Dinahosting: Username +
+  Password; None: no fields.
+- [ ] Pass
+
+### 2.7.1 Cloudflare Account ID is a required field (§3.10, addendum "Switch Cloudflare Driver to Account-Scoped API Tokens")
+- **Steps:** select driver *Cloudflare* on a supplier with no prior config, fill in
+  only the API Token, leave Account ID empty, attempt to Save.
+- **Expected:** the browser's native `required`-field validation blocks the submit
+  (client-side UX only — see 2.7.2 for the server-side path, since no server-side
+  save-time rejection exists for this or any other credential field today; a
+  missing field is only surfaced when actually *used*, not enforced at save).
+- [ ] Pass
+
+### 2.7.2 Direct POST with a blank Cloudflare Account ID still saves (documents current behavior, §3.10)
+- **Steps:** bypass the form (curl/devtools) and POST to `SupplierConfig::getFormURL()`
+  with `api_driver=cloudflare`, a valid `_credentials[token]`, and no
+  `_credentials[account_id]` (or blank).
+- **Expected:** the save succeeds (no server-side required-field rejection exists
+  for any driver's credential fields, by design — see §6.1). Reopening the tab
+  should then show the 2.7.3 "missing Account ID" notice.
+- [ ] Pass
+
+### 2.7.3 Existing Cloudflare config missing Account ID shows a clear notice (§3.10)
+- **Steps:** using a Cloudflare config saved before this change (or via 2.7.2), open
+  the Supplier's Domain Manager tab.
+- **Expected:** a warning alert appears in the credentials card ("This Cloudflare
+  configuration is missing an Account ID. Add it below and reissue this token as
+  an Account API Token to continue using Cloudflare sync.") — not a silent break,
+  not silent continuation with the old unscoped behavior. Saving a valid Account
+  ID makes the notice disappear on the next reload.
 - [ ] Pass
 
 ### 2.8 Form POST is rights- and CSRF-protected (§6.1, §0.5)
@@ -201,13 +230,16 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
   type/name/data/ttl regardless of remote id.
 - [ ] Pass
 
-### 3.2 Idempotent record import (§5.4)
+### 3.2 Idempotent record import (§5.4, §5.7)
 - **Steps:** call `RecordReconciler::reconcile()` on a domain with a fixed
   upstream snapshot (A + MX + TXT); run it twice.
 - **Expected:** first run adds 3 native records with ownership rows
-  (`glpi_plugin_domainmanager_records`); second run reports 3 unchanged, 0
-  added — never duplicates.
-- [ ] Pass
+  (`glpi_plugin_domainmanager_records`, each `is_managed = 1`); second run
+  reports 3 unchanged, 0 added — never duplicates.
+- [x] Pass — verified live 2026-07-21 against a real GLPI 11.0.8 instance
+  via a throwaway console-command harness (see §5.4/§5.7 in
+  ARCHITECTURE.md): created a domain, ran `reconcile()` with one A record
+  twice; first run `{"added":1,...}`, `is_managed=1` on the ownership row.
 
 ### 3.3 Upstream change updates in place (§5.4)
 - **Steps:** change the content of a record that has a `remote_id` and re-reconcile.
@@ -215,16 +247,50 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
   hash is refreshed.
 - [ ] Pass
 
-### 3.4 Upstream removal flags stale, never deletes (§5.4)
+### 3.4 Upstream removal moves the record to the native trash bin, never deletes (§5.4, revised — supersedes the old comment-marker design)
 - **Steps:** drop one record from the upstream snapshot and re-reconcile.
-- **Expected:** native record still exists; its comment gains the
-  "[Domain Manager] Not present upstream since <date>" marker; ownership row has
-  `is_stale = 1`.
-- [ ] Pass
+- **Expected:** native `DomainRecord` still exists (fetchable via
+  `getFromDB()`) but is soft-deleted (`is_deleted = 1`) — visible in GLPI's
+  native "deleted items" trash view, **not** annotated with a comment
+  marker (that convention is gone). Its ownership row is untouched:
+  `is_managed` stays `1`.
+- [x] Pass — verified live 2026-07-21: ran `reconcile()` with an empty
+  upstream snapshot for a previously-synced record; result
+  `{"trashed":1,...}`; re-fetched the native record and confirmed
+  `is_deleted=1`; confirmed the ownership row still existed with
+  `is_managed=1` unchanged.
 
-### 3.5 Reappearance restores (§5.4)
+### 3.5 Reappearance restores from the trash bin (§5.4, revised)
 - **Steps:** re-add the dropped record and re-reconcile.
-- **Expected:** counted as restored; stale marker removed; `is_stale = 0`.
+- **Expected:** counted as `restored`; native `DomainRecord::restore()`
+  called (`is_deleted` back to `0`) — same native record id, no duplicate
+  created. `is_managed` still `1` throughout.
+- [x] Pass — verified live 2026-07-21, same harness as 3.4: re-ran
+  `reconcile()` with the record present again; result
+  `{"restored":1,...}`; re-fetched the native record and confirmed
+  `is_deleted=0`, same id as before trashing.
+
+### 3.23 Trashing/restoring is not blocked by the plugin's own field locks (§0.3, §5.4)
+- **Steps:** confirm (by code review or a live run with a real lock in
+  place) that `RecordReconciler::reconcile()`'s `delete()`/`restore()`
+  calls succeed even though the record is plugin-locked.
+- **Expected:** `LockEnforcer::domainRecordPreDelete()`'s existing
+  `$sync_in_progress` bypass (already set around the whole
+  `reconcile()` call) covers this for free — no new lock-bypass code was
+  needed or added. `restore()` was never blocked in the first place (no
+  `PRE_ITEM_RESTORE` hook is registered by this plugin).
+- [x] Pass — confirmed by direct source review of `LockEnforcer.php`
+  (`canBypass()` checks `self::$sync_in_progress` first) and by the fact
+  that the 3.4/3.5 live test above succeeded at all — a genuine block
+  would have left `is_deleted`/`is_deleted` unchanged.
+
+### 3.24 Changed-and-previously-trashed record is both restored and updated (§5.4)
+- **Steps:** trash a record (3.4), then have it reappear upstream with
+  *different* content (not just present again).
+- **Expected:** restored (`is_deleted` back to `0`) **and** updated with
+  the new content in the same reconciliation pass; bucketed as `updated`
+  in the stats (matching this branch's existing priority over
+  `restored` — content-changed always wins the bucket assignment).
 - [ ] Pass
 
 ### 3.6 Locked domain fields enforced server-side (§0.3, §8)
@@ -276,15 +342,64 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
   the other from running.
 - [ ] Pass
 
-### 3.11 Real Cloudflare sync (manual, needs a real API token)
-- **Steps:** save a Cloudflare API token (Zone.DNS read + optionally Registrar
-  read) on a supplier; run `SyncEngine::sync()` (or, from Phase 4, "Update Now")
-  against a domain whose zone the token can read.
+### 3.11 Real Cloudflare sync (manual, needs a real **account-scoped** API token, updated §3.10)
+- **Steps:** save a real Cloudflare **Account ID** plus an **Account API Token**
+  (Manage Account → API Tokens — not a personal/My Profile token; Zone:DNS:Read +
+  Zone:Zone:Read, optionally Registrar read) on a supplier; run
+  `SyncEngine::sync()` (or, from Phase 4, "Update Now") against a domain whose
+  zone this account can read.
 - **Expected:** DNS leg imports only A/AAAA/CNAME/MX/NS/TXT records with correct
-  data (MX prefixed with priority) and `dns_status = ok`; registrar leg fills
+  data (MX prefixed with priority) and `dns_status = ok` — confirm the zone
+  lookup is actually scoped to the configured account (e.g. temporarily point
+  Account ID at a *different* real account you also have zones under, confirm
+  the domain is no longer found rather than silently resolving a same-named zone
+  under the wrong account); registrar leg fills
   `date_domaincreation`/`date_expiration`/`is_active` and locks them when the
-  domain is on Cloudflare Registrar, or reports a clear per-leg error otherwise;
-  the token never appears in messages, history or logs.
+  domain is on Cloudflare Registrar (now looked up directly via the configured
+  Account ID, no DNS zone lookup involved), or reports a clear per-leg error
+  otherwise; neither the token nor the Account ID appear in messages, history or
+  logs.
+- [ ] Pass
+
+### 3.11.1 Cloudflare Check Connection: missing Account ID vs. invalid token are distinct (§3.10, addendum)
+- **Steps:** on a Cloudflare supplier, (a) fill in a valid token but leave Account
+  ID empty and click Check Connection; (b) separately, fill in a valid Account ID
+  but a deliberately wrong/revoked token and click Check Connection.
+- **Expected:** (a) reports a distinct "Not configured" amber badge/toast with
+  message "Cloudflare Account ID is not configured" — no network call attempted.
+  (b) reports the existing red "Authentication failed" outcome from
+  `accounts/{account_id}/tokens/verify`. The two must never look the same.
+- [ ] Pass
+
+### 3.11.2 A real, valid Account API Token passes Check Connection (regression test for a real live bug, §3.10)
+- **Steps:** save a genuinely valid, freshly created **Account API Token**
+  (Manage Account → API Tokens, `cfat_...`) plus its correct Account ID on a
+  supplier, click Check Connection.
+- **Expected:** green "Success" — HTTP 200 from
+  `accounts/{account_id}/tokens/verify`. **This exact scenario previously
+  failed** with a red "Authentication failed"/HTTP 401, even with fully valid
+  credentials — root cause was `probeTokenVerify()` still calling
+  `user/tokens/verify`, an endpoint that structurally rejects account-owned
+  tokens regardless of validity (a confirmed, documented Cloudflare API
+  quirk, not a credentials mistake). Fixed by switching to the
+  account-scoped verify endpoint. If this regresses, check that endpoint
+  first before suspecting the token/account ID are wrong.
+- [ ] Pass
+- **Cross-check (optional):** the same token against `user/tokens/verify`
+  directly (curl) should itself return a 401/`code 1000` "Invalid API
+  Token" — confirming the failure is endpoint-specific to token type, not a
+  problem with the token.
+
+### 3.11.3 A personal/user token is correctly rejected, not silently accepted (§3.10)
+- **Steps:** save a personal/user API Token (My Profile → API Tokens,
+  starts with a different prefix than `cfat_`) plus any Account ID value,
+  click Check Connection.
+- **Expected:** "Authentication failed"/HTTP 401 — personal tokens are not
+  supported by this driver (documented, not a bug); the help text and class
+  docblock both say so explicitly. Confirms the driver doesn't accidentally
+  half-work with the wrong token type in a way that could mask real issues
+  later (e.g. DNS zone reads succeeding via a personal token's own zone
+  access while the registrar/verify calls silently fail).
 - [ ] Pass
 
 ### 3.12 managed_domainrecordtypes gate detection (§0.4)
@@ -681,8 +796,9 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
 ## Phase 3.5 — Connection diagnostics (§3.5, §3.6)
 
 ### 3.5.1 Happy path — Cloudflare DNS capability (§3.5.1, §6.1)
-- **Steps:** on a supplier with driver *Cloudflare* and a **valid** API token
-  saved, click **Check Connection** on the Domain Manager tab.
+- **Steps:** on a supplier with driver *Cloudflare* and a **valid** Account ID +
+  API token saved (§3.10 — both now required), click **Check Connection** on the
+  Domain Manager tab.
 - **Expected:** a green `glpi_toast_success` toast captioned "Connection"
   appears; the detail panel's single Connection badge turns green ("Success"),
   shows HTTP 200 and an updated "Last checked" timestamp (Cloudflare only ever
@@ -1323,3 +1439,65 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
   domain's badges return to their real ok/error/unconfigured outcome from
   an actual API call — no leftover "inactive"/disabled state anywhere.
 - [ ] Pass
+
+## Phase 5.8 — "Managed" search option + native trash bin (addenda "Searchable 'Managed' Field on Domain Records" + "Vanished Records Go to the Native Trash Bin")
+
+Functional reconciler behavior (trash/restore/`is_managed` persistence) is
+covered in Phase 3 (3.2, 3.4, 3.5, 3.23, 3.24) and was verified live
+2026-07-21 against a real GLPI 11.0.8 instance. This section covers the
+search-option registration itself and the migration.
+
+### 5.8.1 Migration replaces `is_stale` with `is_managed` cleanly (§5.7)
+- **Steps:** on an instance already running the plugin (pre-existing
+  `glpi_plugin_domainmanager_records` rows with `is_stale`), upgrade/run
+  `php bin/console glpi:plugin:install -f domainmanager`.
+- **Expected:** `is_managed` column present (tinyint, default `1`,
+  indexed), `is_stale` column gone; every pre-existing row backfilled to
+  `is_managed = 1` (every row in this table already represented a
+  plugin-tracked record before this change). Re-running install again is
+  a clean no-op (idempotent).
+- [x] Pass — verified live 2026-07-21 against the real `glpi-claude`
+  instance: `DESCRIBE glpi_plugin_domainmanager_records` confirmed
+  `is_managed` present (`tinyint(4) NOT NULL MUL DEFAULT 1`) and
+  `is_stale` absent after running the install/upgrade command.
+
+### 5.8.2 "Managed" search option registers correctly (§5.7)
+- **Steps:** call `plugin_domainmanager_getAddSearchOptionsNew('DomainRecord')`
+  (directly, or via `Search::getOptions('DomainRecord')` from a real page
+  load / full plugin boot — not a bare console script, see the caveat
+  below).
+- **Expected:** option id `9404` present: `table =
+  glpi_plugin_domainmanager_records`, `field = is_managed`, `linkfield =
+  domainrecords_id`, `datatype = bool`, `massiveaction = false`,
+  `joinparams.jointype = child`, `name = "Managed"`.
+- [x] Pass — verified live 2026-07-21 by directly invoking the registered
+  function inside the real container; returned exactly the expected
+  array. Could not get `Search::getCleanedOptions()`/`Search::getDatas()`
+  to pick it up inside a bare throwaway `bin/console` test harness —
+  traced to `Plugin::isPluginActive()`/`getPlugins()` returning empty in
+  that specific synthetic bootstrap (confirmed even
+  `(new Plugin())->bootPlugins()` didn't reproduce a real request's
+  plugin-activation state) — a limitation of that harness, not evidence
+  against the option itself. **Still needs a real end-to-end pass**: from
+  an actual logged-in browser session, confirm a `Search::getOptions()`
+  consumer (e.g. Reports, or a future dedicated list page — see 5.8.3)
+  can filter by it.
+- [ ] Pass (real browser/full-request confirmation)
+
+### 5.8.3 No native list/search page currently exists for DomainRecord — known, documented gap (§5.7)
+- **Steps:** look for a native GLPI page to browse/filter Domain Records
+  directly (not via a specific Domain's own "Records" tab).
+- **Expected finding, not a bug to fix here:** none exists.
+  `front/domainrecord.form.php` (single-item form) exists;
+  `front/domainrecord.php` (list/search page) does not, and
+  `DomainRecord::showForDomain()` (the only existing multi-record view,
+  embedded in each Domain's "Records" tab) builds its own raw query and
+  renders via `components/datatable.html.twig` — it does not consult
+  `Search::getOptions()` at all. The "Managed" option is correctly
+  registered per GLPI's supported mechanism regardless (available to any
+  consumer that does call the generic search engine for this itemtype),
+  but there is no dedicated top-level place in the native UI to use it
+  from today. Building one is out of scope for this addendum — flagged in
+  ARCHITECTURE.md §5.7 as a real, known gap rather than glossed over.
+- [x] Pass (confirmed as a documented, known limitation — not something
+  to mark failing, since building a new list page was never requested)

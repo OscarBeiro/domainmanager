@@ -83,14 +83,22 @@ class DriverRegistry
      * Credential fields expected by a driver
      *
      * @param  string $driver
-     * @return array<string, array{label: string, secret: bool}>
+     * @return array<string, array{label: string, secret: bool, required?: bool}>
      */
     public static function getCredentialFields(string $driver): array
     {
         switch ($driver) {
             case self::DRIVER_CLOUDFLARE:
                 return [
-                    'token' => ['label' => __('API Token', 'domainmanager'), 'secret' => true],
+                    // Required so the token is unambiguously scoped to one
+                    // Cloudflare Account rather than "whatever zones the
+                    // creating user happens to have access to" (§addendum
+                    // "Switch Cloudflare Driver to Account-Scoped API
+                    // Tokens") — used both to filter the zone lookup
+                    // (`account.id=` query param) and directly as the
+                    // registrar API's account path segment.
+                    'account_id' => ['label' => __('Account ID', 'domainmanager'), 'secret' => false, 'required' => true],
+                    'token'      => ['label' => __('API Token', 'domainmanager'), 'secret' => true],
                 ];
             case self::DRIVER_IONOS:
                 return [
@@ -110,7 +118,7 @@ class DriverRegistry
     /**
      * Credential fields for every driver (for the supplier tab JS toggle)
      *
-     * @return array<string, array<string, array{label: string, secret: bool}>>
+     * @return array<string, array<string, array{label: string, secret: bool, required?: bool}>>
      */
     public static function getAllCredentialFields(): array
     {
