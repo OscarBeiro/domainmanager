@@ -451,7 +451,7 @@ The tab is laid out in two columns: the credentials form (left) and an always-re
 ### 6.2 Domain form injection
 | Hook | Itemtype | Handler | Purpose |
 |---|---|---|---|
-| `Hooks::POST_ITEM_FORM` | `Domain` | `DomainForm::inject()` | Renders `domain_panel.html.twig` inside the form as a two-column layout: **Registrar** column (read-only value, hyperlinked to the resolved Supplier's own Domain Manager tab when set, else muted "No registrar supplier set" + a link to the Infocom tab, §0.1) and **DNS Provider** column (detected name, hyperlinked the same way when backed by a configured Supplier, else plain text), each with its own sync badge + detail message directly beneath it. A shared footer row below both columns holds "Last synchronization" and **Update Now**. Plus the unsupported/unknown warning (inside the DNS column) and the lock-disabling JS. Rendered only with `domain` READ. |
+| `Hooks::POST_ITEM_FORM` | `Domain` | `DomainForm::inject()` | Renders `domain_panel.html.twig` inside the form: a ribbon-banner header (§6.5) with **Update Now** in it, then a one-row native `<table>` — columns Registrar, DNS/NS Provider, Registrar sync, DNS sync, Last sync (a one-row view of the same table shape as the Supplier tab's "Domains" list, §6.5). Registrar/DNS Provider are hyperlinked to the resolved Supplier's own Domain Manager tab when one exists (else plain text/muted fallback, with a link to the Infocom tab for Registrar, §0.1). Below the table: per-leg detail messages and the unsupported/unknown warning, plus the lock-disabling JS. Rendered only with `domain` READ. |
 | `Hooks::ITEM_ADD` / `ITEM_UPDATE` | `Infocom` | `HookHandler::infocomSaved()` | Mirror `suppliers_id` into `states.registrar_suppliers_id` whenever the Infocom row belongs to a `Domain` (§0.1) — the single source of truth is Infocom's own native field. |
 | `Hooks::PRE_ITEM_UPDATE` | `Domain` | `LockEnforcer` | Strip locked fields w/o unlock right (§0.3). |
 | `Hooks::PRE_ITEM_UPDATE`, `PRE_ITEM_DELETE`, `PRE_ITEM_PURGE` | `DomainRecord` | `LockEnforcer` | Block edits/removal of plugin-owned records w/o unlock right. |
@@ -467,6 +467,50 @@ The tab is laid out in two columns: the credentials form (left) and an always-re
 
 ### 6.4 Cron
 `Installer` registers: `CronTask::register(GlpiPlugin\Domainmanager\Cron::class, 'DomainSync', DAY_TIMESTAMP, ['state' => CronTask::STATE_WAITING, 'hourmin' => 23, 'hourmax' => 24, 'param' => 20, 'logs_lifetime' => 30, 'comment' => …])` — visible/tunable in *Setup → Automatic actions* (frequency, window, batch size all admin-changeable). Dispatch: `Cron::cronDomainSync(CronTask $task)` + `Cron::cronInfo()`. Uninstall: `CronTask::unregister('domainmanager')`.
+
+---
+
+## 6.5 UI Design Conventions
+
+Every plugin-injected UI surface (both Supplier tab panels, the Domain form panel) follows a pattern found by grepping GLPI core directly — not approximated from a screenshot — so this plugin inherits any future core styling change automatically instead of maintaining a parallel hand-copied style. This section is the single source of truth for "how a Domain Manager panel should look"; before this section existed, each panel drifted independently (a boxed/disabled-input look here, a plain card there) because there was nowhere this was written down.
+
+### Ribbon-banner panel header — mandatory container for every injected panel
+Confirmed directly in GLPI core's own `templates/components/form/inventory_info.html.twig` and `templates/components/form/header_content.html.twig` (grepped for the literal `ribbon` class, not guessed from a rendered screenshot):
+```html
+<div class="card m-n2 border-0 shadow-none">
+    <div class="card-header">
+        <div class="ribbon ribbon-bookmark ribbon-top ribbon-start bg-blue s-1">
+            <i class="ti <icon> fa-2x"></i>
+        </div>
+        <h4 class="card-title ps-5">{{ __('Panel title') }}</h4>
+        {# an optional header-level action button goes here, e.g. class="btn btn-sm btn-primary ms-auto" #}
+    </div>
+    <div class="card-body ...">...</div>
+</div>
+```
+`ribbon`/`ribbon-bookmark`/`ribbon-top`/`ribbon-start`/`bg-blue`/`s-1` are **Tabler** CSS classes (GLPI 11's UI framework, `public/lib/tabler.css`, already loaded on every page) — zero custom CSS needed, and this is why reusing them means the plugin inherits any future Tabler/GLPI theme update automatically. Every panel this plugin injects uses this exact header, unmodified: `supplier_domains_list.html.twig`, the credentials-form card and `connection_test_panel.html.twig` (both in `supplier_tab.html.twig`), and `domain_panel.html.twig`.
+
+### Body content: native table vs. native field/value grid vs. a real form
+Core has no single template combining ribbon header + table — pick the body shape based on what the content actually is:
+- **Multi-row data** (this plugin's "Domains" list, §9 Phase 5.5): a real `<table class="table table-sm mb-0">` inside `<div class="card-body p-0">`, one `<th>` per column — the same convention GLPI uses for any itemtype listing.
+- **Single-record read-only summary**: core's own field/value grid, from `inventory_info.html.twig`'s body — `<div class="card-body row"><div class="mb-3 col-12 col-sm-4"><label class="form-label">Label</label><span>Value</span></div>...</div>`. The Domain form's "Domain Manager" panel deliberately does **not** use this grid — it's rendered as a one-row **table** instead, matching the "Domains" list's exact column shape (Registrar, DNS/NS Provider, Registrar sync, DNS sync, Last sync) rather than the generic single-record grid, because conceptually it *is* a one-row view of that same table. A deliberate, explicit exception — not a contradiction of the rule above.
+- **A real, editable `<form>`** (the Supplier tab's credentials form: driver select + credential inputs + Save/Check Connection): keeps its own field-row markup (`<div class="mb-3 row"><label class="col-4 col-form-label">...</label><div class="col-8">...</div></div>`). GLPI's ribbon convention only prescribes the *header*; it doesn't mandate a body layout for editable forms, and no core ribbon-panel example was found wrapping an editable form — only the header changed here.
+- **A single combined status indicator** ("Connection diagnostics", §3.5): stays exactly that — one badge/message, not a table or grid. Deliberately asymmetric with the Domain form panel: a Supplier's own connection test is fundamentally one login probe (one thing to report), while a Domain's Registrar and DNS provider are independently-varying, genuinely-different things (different suppliers, different status vocabularies) — collapsing those would lose real information, collapsing the connection test wouldn't.
+
+### Shared badge/pill component
+One status-badge rendering convention, reused by every panel rather than redefined per panel — a `status_classes`/`status_labels` map of `{status_key: 'text-bg-<color>'}` / `{status_key: 'Human label'}`, rendered as:
+```twig
+<span class="badge {{ status_classes[status]|default('text-bg-secondary') }}">{{ status_labels[status]|default(status) }}</span>
+```
+Every panel that shows a status — Connection diagnostics' combined indicator, the Domains list's Registrar/DNS columns, the Domain form panel's Registrar sync/DNS sync columns — builds its badge this exact way. Two independent status *vocabularies* exist underneath (`ConnectionTestStatus`, §3.5.2, for live API probes; `DomainState`'s status strings, §2, for sync outcomes) — each panel picks whichever one it actually reflects — but the *rendering* convention above is shared by both; never invent a third color/label scheme for a new status indicator.
+
+### Twig/rendering rules (consolidated here from scattered mentions elsewhere in this doc/session)
+- Templates live under `templates/`, rendered via `Glpi\Application\View\TemplateRenderer::getInstance()->display('@domainmanager/name.html.twig', [...])` — never `echo`'d raw HTML from a hook callback.
+- **`{{ path('@domainmanager:route_name') }}` cannot resolve route names inside a Twig template** — confirmed directly against `Glpi\Application\View\Extension\RoutingExtension::path()` on `11.0/bugfixes`: it only takes its router-first branch when a router was injected, and every Twig environment reachable from a plugin template (`TemplateRenderer::getInstance()`, and `Glpi\Controller\AbstractController::render()` which delegates to the same extension) constructs it with none. The fix is `{{ path('/plugins/domainmanager/literal/path') }}` — a **literal absolute path** — which still correctly gets `$CFG_GLPI['root_doc']` prepended via `Html::getPrefixedUrl()` (so it works on subdirectory installs too); it just never resolves a route *name*. This is exactly the bug behind the "Check Connection"/"Update Now" 404 (CHANGELOG, 2026-07-21) — the original fix used a raw string concatenation with no `path()` call at all, which happened to produce the right URL only because this dev environment is installed at the site root; `supplier_tab.html.twig` and `domain_panel.html.twig` now both correctly wrap the literal path in `path()`.
+- Twig auto-escapes by default; only reach for `htmlescape()`/`jsescape()` when emitting HTML/JS outside Twig entirely. Wrap every user-facing string in `__('...', 'domainmanager')`.
+- Deep-linking to a specific tab on another item (e.g. a Supplier's own Domain Manager tab, linked from the Domain form) uses GLPI's `forcetab=<Itemtype>$<tab_index>` query convention appended to `getLinkURL()`/`getFormURLWithID()` — verified empirically against this plugin's actual tab identifiers (`Infocom$1`, `GlpiPlugin\Domainmanager\SupplierTab$1`) by inspecting real rendered tab-list HTML, not assumed from a naming pattern.
+
+**Rule for future work:** any new Domain Manager UI surface reuses the ribbon header, the shared badge component, and the table-vs-grid-vs-form choice above — don't introduce a new card/box style. If GLPI core's own convention for a given shape isn't yet confirmed, grep core first (`templates/components/form/`, `css/includes/components/`) before approximating from a screenshot.
 
 ---
 

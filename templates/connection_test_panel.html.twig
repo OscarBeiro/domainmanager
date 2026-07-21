@@ -52,12 +52,14 @@
     'timeout': 'text-bg-warning',
 } %}
 
-<div class="card m-2" id="domainmanager-test-panel">
+<div class="card m-2 border-0 shadow-none" id="domainmanager-test-panel">
     <div class="card-header">
-        <h3 class="card-title">
-            <i class="ti ti-plug-connected me-1"></i>
+        <div class="ribbon ribbon-bookmark ribbon-top ribbon-start bg-blue s-1">
+            <i class="ti ti-plug-connected fa-2x"></i>
+        </div>
+        <h4 class="card-title ps-5">
             {{ __('Connection diagnostics', 'domainmanager') }}
-        </h3>
+        </h4>
     </div>
     <div class="card-body">
         {% set entry = primary_capability is not null ? (connection_test[primary_capability]|default({'status': 'never', 'message': '', 'http_code': null, 'date': null})) : {'status': 'never', 'message': '', 'http_code': null, 'date': null} %}

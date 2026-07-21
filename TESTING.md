@@ -366,14 +366,17 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
   (field "Domain Manager", §3.7) — both landing at the same timestamp.
 - [ ] Pass
 
-### 4.2 Status card and DNS provider display (§6.2)
+### 4.2 Status table and DNS provider display (§6.2, §6.5)
 - **Steps:** open a synced domain with *domain* READ.
-- **Expected:** panel shows the detected DNS provider (hyperlinked to that
-  supplier's own Domain Manager tab when resolved, plain text otherwise),
-  Registrar/DNS badges colored by status (green ok, red error, grey
-  never/unconfigured, yellow unsupported/unknown) directly beneath their own
-  value, last sync date, and the per-pipeline messages directly beneath
-  their own badge. A domain never synced shows "Never synchronized".
+- **Expected:** panel shows a ribbon-banner header ("Domain Manager", same
+  treatment as every other Domain Manager panel, §6.5) with **Update Now**
+  inside it, then a one-row table with columns Registrar, DNS/NS Provider
+  (hyperlinked to that supplier's own Domain Manager tab when resolved,
+  plain text otherwise), Registrar sync, DNS sync (badges colored by status
+  — green ok, red error, grey never/unconfigured, yellow
+  unsupported/unknown), and Last sync. Per-leg detail messages sit below
+  the table. A domain never synced shows "Never synchronized" in the DNS
+  Provider column.
 - [ ] Pass
 
 ### 4.2.1 Registrar and DNS Provider render identically and hyperlink correctly (§6.2)
@@ -381,20 +384,21 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
   unknown detected provider. (b) open a domain with both a registrar
   supplier set (via Infocom) and a DNS-driver-matched, configured supplier.
 - **Expected:** (a) both values render as plain text, same font
-  weight/size/label style, no box/select styling, no link cursor/underline.
+  weight/size/style, no box/select styling, no link cursor/underline.
   (b) both values render as real, working hyperlinks (`Supplier::getLinkURL()`
   + `forcetab`) landing on the correct Supplier's Domain Manager tab.
 - [ ] Pass
 
-### 4.2.2 Two-column layout: badges/messages stay with their own column (§6.2)
+### 4.2.2 One-row table layout matches the Domains list's column shape (§6.2, §6.5)
 - **Steps:** open a domain where registrar and DNS have different statuses
-  (e.g. registrar `error`, DNS `ok`).
-- **Expected:** Registrar's value, badge and detail message all sit in the
-  left column; DNS Provider's value, badge and detail message all sit in
-  the right column — neither leaks into the other's column. "Last
-  synchronization" and **Update Now** sit in a single footer row below both
-  columns, visually separated by a divider. On a narrow viewport the two
-  columns stack vertically (Registrar, then DNS, then the footer row).
+  (e.g. registrar `error`, DNS `ok`); compare the panel's table against the
+  Supplier tab's "Domains" list table for the same domain.
+- **Expected:** same table styling (`table table-sm`, same header-row
+  treatment); Registrar's value/badge and DNS's value/badge sit in their
+  own columns, never mixed into one cell. On a narrow viewport the table
+  degrades the same way any native GLPI table does (column compression,
+  not a custom breakpoint unique to this plugin) — verified in this
+  session down to a 420px-wide viewport, no overlap/breakage.
 - [ ] Pass
 
 ### 4.2.3 "Not configured" reflects staleness, not a lookup bug (§6.2, investigated 2026-07-21)
@@ -411,6 +415,40 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
   real API call (a genuine auth error, not "unconfigured"). After
   **Update Now**, the badge must change to a real `ok`/`error` status — if
   it doesn't, that would be a real regression worth re-opening.
+- [ ] Pass
+
+### 4.2.4 All four Domain Manager panels share one visual design (§6.5)
+- **Steps:** side by side, open the Supplier tab (showing "Domain Manager
+  API access", "Connection diagnostics", and "Domains") and a Domain form
+  (showing "Domain Manager").
+- **Expected:** all four panels have the identical ribbon-banner header
+  (same blue folded-ribbon icon badge, same title typography/position, same
+  `card m-n2 border-0 shadow-none` flat-card treatment) — confirmed via
+  real browser screenshots in this session (not just markup diffing).
+  "Connection diagnostics" shows **one** combined status indicator (a
+  Supplier's connection test is one login probe — confirmed intentional,
+  not reverted back to separate Registrar/DNS rows); the Domain form panel
+  and the "Domains" list both show Registrar and DNS as genuinely separate
+  columns (they can differ per domain, unlike a single connection test).
+  Every badge across all four panels renders from the same
+  `status_classes`/`status_labels` pattern — no panel has a differently-
+  colored or differently-shaped pill for a status of the same kind.
+- [ ] Pass
+
+### 4.2.5 `path()`-based fetch URLs still work correctly (§6.5)
+- **Steps:** on both "Check Connection" (Supplier tab) and "Update Now"
+  (Domain form), inspect the actual `fetch()` URL sent (browser dev tools
+  or `podman logs`) after the `path()` fix.
+- **Expected:** identical URL as before the fix on this root-installed dev
+  environment (`/plugins/domainmanager/connectiontest/<id>` /
+  `/plugins/domainmanager/sync/<id>`) — verified live in this session,
+  including one real end-to-end "Update Now" POST that returned a correct
+  200 with real sync results. Not independently verifiable in this
+  environment: a subdirectory-installed GLPI (`$CFG_GLPI['root_doc']` !=
+  `''`) should now get that prefix correctly prepended, which the earlier
+  raw-string-concatenation fix would have silently omitted — reasoned from
+  reading `Glpi\Application\View\Extension\RoutingExtension::path()` and
+  `Html::getPrefixedUrl()` directly (§6.5), not assumed.
 - [ ] Pass
 
 ### 4.3 Update Now (§6.3)
