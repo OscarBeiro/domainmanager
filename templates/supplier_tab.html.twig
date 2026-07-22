@@ -111,6 +111,18 @@
                         <span>{{ __('Check Connection', 'domainmanager') }}</span>
                     </button>
                 {% endif %}
+                {% if discovery_supported|default(false) %}
+                    <button type="button" id="domainmanager-import-domains"
+                            class="btn btn-outline-secondary me-2"
+                            onclick="domainmanager_import_modal.show();"
+                            {{ supplier_active|default(true) ? '' : 'disabled' }}
+                            {% if not supplier_active|default(true) %}
+                                title="{{ __('This supplier is inactive. Activate it to import its domains.', 'domainmanager') }}"
+                            {% endif %}>
+                        <i class="ti ti-cloud-download"></i>
+                        <span>{{ __('Import Domains', 'domainmanager') }}</span>
+                    </button>
+                {% endif %}
                 {% if config_id > 0 %}
                     <input type="hidden" name="id" value="{{ config_id }}" />
                     <button type="submit" name="update" class="btn btn-primary">
@@ -279,3 +291,5 @@
     {% include '@domainmanager/supplier_domains_list.html.twig' %}
 </div>
 </div>
+
+{{ import_modal_script|raw }}

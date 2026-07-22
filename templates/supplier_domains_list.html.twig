@@ -84,6 +84,7 @@
                         <th>{{ __('Domain', 'domainmanager') }}</th>
                         <th>{{ __('Registrar', 'domainmanager') }}</th>
                         <th>{{ __('DNS / NS provider', 'domainmanager') }}</th>
+                        <th>{{ _n('Entity', 'Entities', 1) }}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -111,6 +112,9 @@
                                 <span class="badge {{ (domain.dns.kind == 'managed' and domain.dns_status == 'error') ? 'text-bg-danger' : dns_kind_classes[domain.dns.kind]|default('text-bg-secondary') }} ms-1">
                                     {{ dns_kind_labels[domain.dns.kind]|default(domain.dns.kind) }}
                                 </span>
+                            </td>
+                            <td>
+                                {{ domain.entity_html|raw }}
                             </td>
                         </tr>
                     {% endfor %}

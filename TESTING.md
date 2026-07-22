@@ -1501,3 +1501,252 @@ search-option registration itself and the migration.
   ARCHITECTURE.md §5.7 as a real, known gap rather than glossed over.
 - [x] Pass (confirmed as a documented, known limitation — not something
   to mark failing, since building a new list page was never requested)
+
+## Phase 8 — Bulk-import undiscovered registrar domains (IONOS slice, §9)
+
+### 8.1 "Import Domains" button visibility is gated correctly
+- **Steps:** compare the Supplier tab across four suppliers: one
+  configured with IONOS, one with Cloudflare, one with Dinahosting, and
+  one with no driver ("None").
+- **Expected:** the "Import Domains" button appears only for the IONOS
+  supplier — Cloudflare/Dinahosting/None show no button at all (no
+  `DomainDiscoveryInterface` implementation exists for them yet). Confirm
+  this is a real `instanceof` check (`DriverFactory::forDiscovery()`), not
+  a hardcoded driver-name allowlist, by reading `SupplierTab.php`.
+- [ ] Pass
+
+### 8.2 Button disabled on an inactive IONOS supplier
+- **Steps:** set the IONOS test supplier's native Active field to No;
+  reopen its Domain Manager tab.
+- **Expected:** the Import Domains button is present but disabled, with a
+  tooltip explaining the supplier must be active first — same convention
+  as Check Connection. Reactivate afterward before continuing.
+- [ ] Pass
+
+### 8.3 Modal lists real domains from the IONOS account
+- **Steps:** on the active, configured IONOS test supplier, click
+  "Import Domains".
+- **Expected:** a modal opens showing a brief loading spinner, then a
+  table of every domain actually present in that IONOS account (paginated
+  internally via `GET /v1/domainitems`, transparent to the user). An
+  entity dropdown is shown above the table, defaulted to the current
+  active entity.
+- [ ] Pass
+
+### 8.4 Existence/mismatch classification against real GLPI data
+- **Steps:** ensure at least one `Domain` item already exists in GLPI
+  that also exists in the IONOS test account — one with its Infocom
+  Supplier already correctly set to this same supplier, and (if
+  possible) one with it set to a *different* supplier or unset.
+- **Expected:** the domain matching this supplier already: checkbox
+  disabled/grayed, "Already exists" with a working link, no mismatch
+  badge. The domain with a different/no supplier assigned: checkbox
+  disabled/grayed, "Registrar mismatch" badge (or "Set registrar to X"
+  wording when previously unset) plus a visible reassign button. Every
+  domain not yet in GLPI at all: checkbox checked by default and enabled.
+- [ ] Pass
+
+### 8.5 Import creates Domain + Infocom and triggers an initial sync
+- **Steps:** uncheck everything except one genuinely-new-to-GLPI domain,
+  pick an entity, submit.
+- **Expected:** redirected back to the supplier's Domain Manager tab with
+  a summary message ("1 domain imported..."). The new `Domain` item
+  exists in the chosen entity; its Infocom "Supplier" field is already
+  set to this supplier (no manual step); its Domain Manager panel shows a
+  real post-sync registrar/DNS result, not "Not yet checked" — confirming
+  `SyncEngine::sync()` actually ran. Its Historical tab shows the
+  registrar-assignment entry from `HookHandler::infocomSaved()`.
+- [ ] Pass
+
+### 8.6 Already-existing selections are skipped, not treated as failures
+- **Steps:** re-open the modal, select a mix of one new domain and one
+  already-imported domain (bypass its disabled checkbox via devtools, or
+  submit a raw POST including its name), submit.
+- **Expected:** the new domain is created; the already-existing one is
+  silently skipped and counted in the summary message ("...M already
+  existed...") — no error, no duplicate `Domain` created.
+- [ ] Pass
+
+### 8.7 Reassign flow updates Infocom, state mirror, and Domain history
+- **Steps:** from a mismatch row (8.4), click "Reassign registrar to X" /
+  "Set registrar to X".
+- **Expected:** the button is replaced with a "Reassigned" success
+  indicator in place, a native success toast appears, and — without
+  reloading — that row's checkbox becomes disabled. Confirm server-side:
+  the Domain's Infocom "Supplier" field now shows this supplier; the
+  plugin's state row's `registrar_suppliers_id` mirror matches (via
+  `HookHandler::infocomSaved()`); the Domain's Historical tab has a new
+  "Registrar supplier changed/set..." entry.
+- [ ] Pass
+
+### 8.8 Rights are enforced server-side, not just via a hidden button
+- **Steps:** as a user who can edit the supplier but has no `domain`
+  CREATE right, POST directly to
+  `/plugins/domainmanager/domainimport/{suppliers_id}` bypassing the UI.
+- **Expected:** rejected (403) with a clear "you do not have permission to
+  create domains" message — the import must fail plainly, not silently
+  no-op or partially succeed.
+- [ ] Pass
+
+### 8.9 Install/uninstall stays residue-free
+- **Steps:** `php bin/console glpi:plugin:install -f domainmanager` then
+  uninstall.
+- **Expected:** no-op schema-wise both ways — this phase added no tables,
+  columns, or rights (`DiscoveredDomain` is never persisted). Confirm
+  `SHOW TABLES LIKE 'glpi_plugin_domainmanager%'` is unchanged from before
+  this phase.
+- [ ] Pass
+
+### 8.10 Modal matches native GLPI chrome and the entity dropdown works fully
+- **Steps:** open the Import Domains modal (built with core's
+  `Ajax::createModalWindow()`, not a hand-rolled `fetch()`+`innerHTML`
+  modal — see ARCHITECTURE.md §9 Phase 8 for the live-caught bug this
+  replaced). Inspect the header/dialog chrome; interact with the entity
+  dropdown (search, scroll, any "+"-style widget affordance); trigger a
+  "Registrar mismatch" reassign action.
+- **Expected:** the modal header/close button/dialog styling matches
+  every other native GLPI modal (e.g. a massive-action dialog) exactly —
+  no custom ribbon banner. The entity dropdown behaves like any other
+  native GLPI entity selector: full searchable list (not just a handful
+  of preloaded options), any "+"/tree-navigation affordance functional.
+  The reassign button's click handler actually fires (confirms embedded
+  `<script>` tags in the AJAX-loaded fragment are executing, not just
+  inert HTML).
+- [ ] Pass
+
+## Phase 9 addendum — Design/UX polish (§9)
+
+Cosmetic-only: "Update Now" relocated into the Domain form's own button
+row, and a new Entity column on the Supplier tab's "Domains" list. No
+schema/rights/logic changes. Verified live against `glpi-claude`
+(GLPI 11.0.8, port 65008) with a scripted Playwright session, after
+running `bin/console cache:clear` inside the container (its Twig/Symfony
+template cache does not appear to auto-invalidate on file mtime changes
+the way a dev-mode cache would — see ARCHITECTURE.md §9 Phase 9
+addendum).
+
+### 9.1 "Update Now" renders inside the native button row, correctly ordered
+- **Steps:** open a Domain form for a domain with `domain` UPDATE rights.
+  Inspect the DOM: find `.form-button-separator` and confirm which
+  buttons it contains and in what order.
+- **Expected:** `#domainmanager-updatenow` is a child of
+  `.form-button-separator`, in DOM order `[update (Save), 
+  domainmanager-updatenow, delete (Put in trashbin)]` — which, because
+  that row uses `flex-row-reverse`, renders visually as **Put in
+  trashbin / Update Now / Save**, left to right.
+- [x] Pass — confirmed via Playwright: DOM order
+  `["update", "domainmanager-updatenow", "delete"]`.
+
+### 9.2 "Update Now" has the same button styling as its row neighbours
+- **Steps:** inspect the button's classes and rendered size/padding in
+  the browser.
+- **Expected:** `btn btn-outline-secondary me-2` — same Bootstrap `.btn`
+  sizing/padding/border as "Save" (`btn btn-primary`) and "Put in
+  trashbin" (`btn btn-outline-warning`), differing only in color.
+- [x] Pass — confirmed via Playwright + screenshot
+  (`domain-buttons.png`): all three buttons render as same-sized peers
+  in one row.
+
+### 9.3 Ribbon-banner header no longer has a button
+- **Steps:** inspect `#domainmanager-panel .card-header` for any
+  `<button>` element.
+- **Expected:** none — the header shows only the icon ribbon and
+  "Domain Manager" title, no corner action button.
+- [x] Pass — confirmed via Playwright: `header.querySelector('button')`
+  returns `null`.
+
+### 9.4 "Update Now"'s function is unchanged (placement/style-only change)
+- **Steps:** click the relocated button; observe the network request it
+  fires.
+- **Expected:** still `POST /plugins/domainmanager/sync/{id}` (same
+  route as before), same badge-refresh behavior on success.
+- [x] Pass — confirmed via Playwright: click triggered
+  `fetch('/plugins/domainmanager/sync/2')`.
+
+### 9.5 Fallback when `.form-button-separator` isn't present
+- **Steps:** (not exercised live — would require a rendering context
+  without the standard generic-form button row, e.g. a future modal
+  embedding of this panel.) Code path: `relocateUpdateNowButton()` in
+  `domain_panel.html.twig` falls back to just un-hiding the button in
+  its original DOM position if `.form-button-separator` isn't found,
+  rather than leaving it permanently `d-none`.
+- **Expected:** button remains reachable (never silently invisible)
+  even outside the normal Domain-form context.
+- [ ] Pass — not verified live; only reasoned about from the code.
+
+### 9.6 Entity column appears on the Supplier tab's "Domains" list
+- **Steps:** open a Supplier's "Domain Manager" tab that has domains
+  linked as registrar and/or DNS provider. Inspect the "Domains" table.
+- **Expected:** a 4th column, "Entity", after "DNS / NS provider".
+- [x] Pass — confirmed via Playwright: table headers
+  `["Domain", "Registrar", "DNS / NS provider", "Entity"]`.
+
+### 9.7 Entity value renders in GLPI's native tree/breadcrumb badge style
+- **Steps:** with at least one listed domain in the root entity and at
+  least one in a child entity, inspect the Entity column's rendered
+  markup for each.
+- **Expected:** matches core's own entity badge exactly (same
+  `glpi-badge` + caret-separated breadcrumb used elsewhere in GLPI, via
+  `Entity::badgeCompletenameLinkById()`) — a child-entity domain shows
+  its full path (e.g. "TICGAL-Dev-01 › Client1"), a root-entity domain
+  shows just its own name, not a bespoke plain-text rendering.
+- [x] Pass — confirmed live: a domain moved into a child entity
+  ("Client1" under "TICGAL-Dev-01") rendered the correct two-segment
+  breadcrumb; root-entity domains rendered the single-segment form
+  (screenshot: `supplier-domains-list.png`).
+
+### 9.8 Entity column doesn't cause horizontal overflow at a normal viewport
+- **Steps:** load the Supplier tab's Domains list at a 1280px-wide
+  viewport; compare `document.body.scrollWidth` to `window.innerWidth`.
+- **Expected:** no horizontal overflow — the table fits within the page
+  width alongside the existing three columns.
+- [x] Pass — confirmed via Playwright at 1280×900:
+  `bodyScrollWidth === windowInnerWidth` (1280), `horizontalOverflow:
+  false`.
+
+### 9.9 Entity value for a viewer without `Entity` READ
+- **Steps:** (not exercised live — would require a second, more
+  restricted test profile.) Code path:
+  `SupplierTab::describeEntity()` calls
+  `Entity::badgeCompletenameById()` (no link) instead of
+  `badgeCompletenameLinkById()` when `Session::haveRight('entity',
+  READ)` is false, matching core's own `fields_panel.html.twig` logic.
+- **Expected:** the same breadcrumb text still renders, just without a
+  clickable link on the last segment.
+- [ ] Pass — not verified live; only reasoned about from the code
+  (mirrors a core pattern verified by direct source read).
+
+## Phase 10 (planned) — IDN / Punycode handling (§9)
+
+Not yet implemented — this section documents the intended regression
+coverage ahead of time so it's ready to run once Phase 10 lands, and so
+`viñamoraima.com` (the real domain that surfaced this gap while manually
+testing Phase 8, 2026-07-22) isn't forgotten as a one-off anecdote.
+
+### 10.1 IDN domain gets a correct Punycode field and functions end-to-end
+- **Steps:** add `viñamoraima.com` (or an equivalent real IDN domain) as
+  a `Domain`. Open its Domain Manager panel. Run NS detection, a
+  registrar sync, and a DNS sync (Update Now / Check Connection / cron).
+- **Expected:** a new read-only "Punycode / ASCII form" field shows the
+  correct ACE form (`xn--...`). NS detection, registrar sync, and DNS
+  sync all complete with a real result (not silently failing/erroring
+  just because the name contains non-ASCII characters) — this is the
+  actual regression test for the originally reported bug.
+- [ ] Pass
+
+### 10.2 Plain ASCII domains are unaffected
+- **Steps:** open the Domain Manager panel for an ordinary ASCII-only
+  domain (e.g. `tic.gal`).
+- **Expected:** no behavior change from before Phase 10; the new
+  Punycode field displays sensibly per whichever "identical form"
+  decision Phase 10 documents (either omitted, or shown identical to
+  `name`) — not a confusing duplicate value with no explanation.
+- [ ] Pass
+
+### 10.3 `intl` extension is confirmed present before relying on it
+- **Steps:** check the target PHP 8.4 environment(s) for the `intl`
+  extension (`php -m | grep intl`).
+- **Expected:** documented as confirmed present (or, if absent anywhere
+  Phase 10 needs to run, flagged explicitly as a hard dependency gap —
+  never silently routed around with a hand-rolled encoder).
+- [ ] Pass

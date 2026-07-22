@@ -31,9 +31,11 @@
 
 namespace GlpiPlugin\Domainmanager;
 
+use Ajax;
 use CommonGLPI;
 use Domain;
 use Dropdown;
+use Entity;
 use Glpi\Application\View\TemplateRenderer;
 use Session;
 use Supplier;
@@ -147,6 +149,34 @@ class SupplierTab extends CommonGLPI
                 'dns'       => ['status' => 'never', 'message' => '', 'http_code' => null, 'date' => null],
             ];
 
+        // "Import Domains" button (§9 Phase 8): shown purely via a real
+        // instanceof DomainDiscoveryInterface check on the actually
+        // configured driver, never a per-driver allowlist — appears
+        // automatically for whichever driver supports it (only IonosDriver
+        // today).
+        $discovery_supported = $config !== null && DriverFactory::forDiscovery($config) !== null;
+
+        // Built with core's own Ajax::createModalWindow() (matches every
+        // other AJAX-loaded modal in GLPI, e.g. massive actions) rather than
+        // a hand-rolled fetch()+innerHTML modal: it renders the real
+        // components/modal.html.twig chrome (so this actually looks like a
+        // GLPI modal) and, critically, loads the URL via jQuery's .load(),
+        // which — unlike innerHTML assignment — actually executes the
+        // <script> tags in the response. Without that, neither the entity
+        // dropdown's own select2/AJAX-search init script nor this modal's
+        // own reassign-button script would ever run.
+        $import_modal_script = $discovery_supported
+            ? Ajax::createModalWindow(
+                'domainmanager_import_modal',
+                '/plugins/domainmanager/domaindiscovery/' . (int) $supplier->getID(),
+                [
+                    'title'       => sprintf(__('Import Domains — %s', 'domainmanager'), $supplier->getName()),
+                    'modal_class' => 'modal-lg modal-dialog-scrollable',
+                    'display'     => false,
+                ]
+            )
+            : '';
+
         $domains_raw        = Session::haveRight('domain', READ)
             ? DomainState::getDomainsForSupplier((int) $supplier->getID())
             : [];
@@ -178,6 +208,8 @@ class SupplierTab extends CommonGLPI
             'domains'            => self::buildDomainsListRows($domains_raw),
             'never_synced_count' => $never_synced_count,
             'domains_search_url' => self::getDomainsSearchUrl((int) $supplier->getID()),
+            'discovery_supported'  => $discovery_supported,
+            'import_modal_script'  => $import_modal_script,
         ]);
 
         return true;
@@ -229,7 +261,7 @@ class SupplierTab extends CommonGLPI
      *                detected_provider:string, registrar_status:string,
      *                dns_status:string, registrar_verified:bool}> $domains
      * @return array<int, array{domains_id:int, name:string, url:string,
-     *                registrar:?array{name:string, url:string},
+     *                entity_html:string, registrar:?array{name:string, url:string},
      *                registrar_status:string, dns:array{kind:string,
      *                name:string, url:?string}, dns_status:string}>
      */
@@ -240,12 +272,33 @@ class SupplierTab extends CommonGLPI
                 'domains_id'       => $domain['domains_id'],
                 'name'             => $domain['name'],
                 'url'              => Domain::getFormURLWithID($domain['domains_id']),
+                'entity_html'      => self::describeEntity($domain['entities_id']),
                 'registrar'        => self::describeSupplierRole($domain['registrar_suppliers_id']),
                 'registrar_status' => $domain['registrar_status'],
                 'dns'              => self::describeDnsProvider($domain),
                 'dns_status'       => $domain['dns_status'],
             ];
         }, $domains);
+    }
+
+    /**
+     * Entity display for the Domains list, in GLPI's own tree/breadcrumb
+     * badge convention (`Entity::badgeCompletenameLinkById()`/
+     * `badgeCompletenameById()`, the same pair core itself uses for a
+     * read-only Entity field, e.g.
+     * `templates/components/itilobject/fields_panel.html.twig`), rather
+     * than a bespoke plain-name display.
+     *
+     * @param  int $entities_id
+     * @return string
+     */
+    private static function describeEntity(int $entities_id): string
+    {
+        $html = Session::haveRight(Entity::$rightname, READ)
+            ? Entity::badgeCompletenameLinkById($entities_id)
+            : Entity::badgeCompletenameById($entities_id);
+
+        return $html ?? '';
     }
 
     /**

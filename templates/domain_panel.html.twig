@@ -43,12 +43,6 @@
         <h4 class="card-title ps-5">
             {{ __('Domain Manager', 'domainmanager') }}
         </h4>
-        {% if not is_new and can_update %}
-            <button type="button" class="btn btn-sm btn-primary ms-auto" id="domainmanager-updatenow">
-                <i class="ti ti-refresh me-1"></i>
-                {{ __('Update Now', 'domainmanager') }}
-            </button>
-        {% endif %}
     </div>
 
     {% if not is_new %}
@@ -197,8 +191,45 @@
     {% endif %}
 </div>
 
+{% if not is_new and can_update %}
+    {# Rendered here (hidden) and relocated by JS into the form's own
+       Save / Put in trashbin button row (`.form-button-separator`,
+       core's `templates/components/form/buttons.html.twig`) once that
+       row exists in the DOM — this hook fires *before* that row is
+       rendered, so the button can't be placed there directly. Styled
+       with the same `btn ... me-2` classes core itself uses for
+       plugin-contributed buttons in that row (see that template's
+       `addbuttons` handling), for consistent size/padding/border with
+       its "Save"/"Put in trashbin" neighbours. #}
+    <button type="button" class="btn btn-outline-secondary me-2 d-none" id="domainmanager-updatenow">
+        <i class="ti ti-refresh me-1"></i>
+        {{ __('Update Now', 'domainmanager') }}
+    </button>
+{% endif %}
+
 <script>
 (function () {
+    const updateNowButton = document.getElementById('domainmanager-updatenow');
+    if (updateNowButton) {
+        const relocateUpdateNowButton = function () {
+            const buttonRow = document.querySelector('.form-button-separator');
+            if (buttonRow) {
+                const saveButton = buttonRow.querySelector('button[name="update"]');
+                if (saveButton) {
+                    saveButton.insertAdjacentElement('afterend', updateNowButton);
+                } else {
+                    buttonRow.appendChild(updateNowButton);
+                }
+            }
+            updateNowButton.classList.remove('d-none');
+        };
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', relocateUpdateNowButton);
+        } else {
+            relocateUpdateNowButton();
+        }
+    }
+
     // Cosmetic lock layer: disable synced fields for users without the
     // unlock right (server-side enforcement is authoritative)
     const lockedFields = {{ locked_fields|json_encode|raw }};
@@ -220,7 +251,7 @@
         }
     }
 
-    const button = document.getElementById('domainmanager-updatenow');
+    const button = updateNowButton;
     if (!button) {
         return;
     }

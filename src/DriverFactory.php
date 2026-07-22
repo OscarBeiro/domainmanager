@@ -32,6 +32,7 @@
 namespace GlpiPlugin\Domainmanager;
 
 use GlpiPlugin\Domainmanager\Contract\DnsPipelineInterface;
+use GlpiPlugin\Domainmanager\Contract\DomainDiscoveryInterface;
 use GlpiPlugin\Domainmanager\Contract\RegistrarDriverInterface;
 use GlpiPlugin\Domainmanager\Driver\CloudflareDriver;
 use GlpiPlugin\Domainmanager\Driver\DinahostingDriver;
@@ -80,6 +81,30 @@ class DriverFactory
         }
 
         return $driver;
+    }
+
+    /**
+     * Domain discovery pipeline driver for a supplier (§9 Phase 8), or null
+     * when its configured driver doesn't implement DomainDiscoveryInterface
+     * (the common case today — only IonosDriver does) or has none/an
+     * invalid driver configured. Deliberately nullable rather than throwing,
+     * unlike forRegistrar()/forDns(): those are only ever called once a
+     * pipeline is already known to exist, while this is used to decide
+     * whether to show the "Import Domains" button at all — capability is
+     * checked structurally (instanceof), never via a per-driver allowlist.
+     *
+     * @param  SupplierConfig $config
+     * @return DomainDiscoveryInterface|null
+     */
+    public static function forDiscovery(SupplierConfig $config): ?DomainDiscoveryInterface
+    {
+        try {
+            $driver = self::build($config);
+        } catch (DriverException) {
+            return null;
+        }
+
+        return $driver instanceof DomainDiscoveryInterface ? $driver : null;
     }
 
     /**

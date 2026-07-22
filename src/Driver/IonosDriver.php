@@ -34,8 +34,10 @@ namespace GlpiPlugin\Domainmanager\Driver;
 use DateTimeImmutable;
 use GlpiPlugin\Domainmanager\Contract\ConnectionTestableInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsPipelineInterface;
+use GlpiPlugin\Domainmanager\Contract\DomainDiscoveryInterface;
 use GlpiPlugin\Domainmanager\Contract\RegistrarDriverInterface;
 use GlpiPlugin\Domainmanager\Dto\ConnectionTestResult;
+use GlpiPlugin\Domainmanager\Dto\DiscoveredDomain;
 use GlpiPlugin\Domainmanager\Dto\DomainLifecycle;
 use GlpiPlugin\Domainmanager\Dto\LifecycleStatus;
 use GlpiPlugin\Domainmanager\Dto\ZoneRecord;
@@ -107,7 +109,7 @@ use Toolbox;
  *   returns a JSON **array** of `{"code": "...", "message": "..."}`
  *   objects instead. describeDomainsApiError() handles both.
  */
-class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, ConnectionTestableInterface
+class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, ConnectionTestableInterface, DomainDiscoveryInterface
 {
     private const BASE_URI = 'https://api.hosting.ionos.com/dns/v1/';
 
@@ -276,6 +278,44 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Con
         throw new DriverException(
             sprintf(__('No IONOS domain item found for %s with this account', 'domainmanager'), $domain)
         );
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * §9 Phase 8: same `GET /v1/domainitems` list endpoint and pagination
+     * shape findDomainId() already uses, just without its `name` filter —
+     * this fetches every domain item on the account rather than searching
+     * for one. `DiscoveredDomain::$previewStatus` is left null: the list
+     * response's per-domain fields beyond `id`/`name` were not re-verified
+     * against a live account for this slice (see class docblock's existing
+     * "confirmed vs unconfirmed" bar) — a real, honest gap rather than a
+     * guess, to be revisited if a genuinely useful preview field turns up.
+     */
+    public function listAccountDomains(): array
+    {
+        $domains = [];
+
+        for ($page = 0; $page < self::DOMAINS_MAX_PAGES; $page++) {
+            $offset = $page * self::DOMAINS_PAGE_SIZE;
+            $data   = $this->requestDomainsApi('GET', 'domainitems', [
+                'limit'  => self::DOMAINS_PAGE_SIZE,
+                'offset' => $offset,
+            ]);
+
+            foreach ($data['domains'] ?? [] as $row) {
+                if (is_array($row) && !empty($row['name'])) {
+                    $domains[] = new DiscoveredDomain((string) $row['name']);
+                }
+            }
+
+            $count = (int) ($data['count'] ?? 0);
+            if ($offset + self::DOMAINS_PAGE_SIZE >= $count) {
+                break;
+            }
+        }
+
+        return $domains;
     }
 
     /**
