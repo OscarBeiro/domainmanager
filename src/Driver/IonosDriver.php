@@ -243,14 +243,39 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Con
     }
 
     /**
-     * Resolve the IONOS-internal domainId of a domain by name. The list
-     * endpoint's `name` filter is a substring match (documented minimum 3
-     * characters, no exact-match-by-full-name filter exists — see class
-     * docblock), so this fetches candidate pages and matches the `name`
-     * field exactly, case-insensitively — the same pattern findZoneId()
-     * already uses for the DNS zone list.
+     * Resolve the IONOS-internal domainId of a domain by name. For a plain
+     * ASCII domain, uses the list endpoint's `name` filter (a substring
+     * match, documented minimum 3 characters, no exact-match-by-full-name
+     * filter exists — see class docblock) as a server-side narrowing hint,
+     * then matches candidate rows' `name` field exactly, case-insensitively
+     * — the same pattern findZoneId() already uses for the DNS zone list.
      *
-     * @param  string $domain
+     * §9 Phase 10 addendum — two live findings against `viñamoraima.com`
+     * (2026-07-22) drove this to skip the `name` filter entirely for IDN
+     * domains:
+     * 1. Querying with the Punycode form (`xn--viamoraima-u9a.com`)
+     *    returned zero rows ("No IONOS domain item found") for a domain
+     *    that *was* registered on the account — the filter apparently
+     *    doesn't match Punycode against IONOS's own (Unicode) record.
+     * 2. Querying with the literal Unicode form instead made things worse:
+     *    a raw, non-JSON HTML "400 Bad request" page from IONOS's own
+     *    gateway — even though the request line itself was valid,
+     *    correctly percent-encoded UTF-8 (confirmed directly against
+     *    Guzzle's query builder). The gateway's own edge validation for
+     *    this `name` parameter evidently rejects non-ASCII outright,
+     *    encoded or not.
+     * Since neither form of the filter can be trusted for an IDN domain,
+     * and the endpoint's exact-match filter unreliability was already the
+     * reason full-page fetch-and-compare was in use, this method now
+     * simply omits `name` for every lookup and paginates through the full
+     * list unfiltered — bandwidth cost is bounded by
+     * DOMAINS_MAX_PAGES/DOMAINS_PAGE_SIZE, same as listAccountDomains().
+     * Each row is matched against $domain (canonical Punycode) after
+     * normalizing the row's own `name` to Punycode first, since a
+     * provider is free to echo a name back in either form (§9 Phase 10
+     * point 2).
+     *
+     * @param  string $domain Punycode/ACE form (as produced by normalizeDomain())
      * @return string
      * @throws DriverException
      */
@@ -259,7 +284,6 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Con
         for ($page = 0; $page < self::DOMAINS_MAX_PAGES; $page++) {
             $offset = $page * self::DOMAINS_PAGE_SIZE;
             $data   = $this->requestDomainsApi('GET', 'domainitems', [
-                'name'   => $domain,
                 'limit'  => self::DOMAINS_PAGE_SIZE,
                 'offset' => $offset,
             ]);
@@ -663,10 +687,14 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Con
 
     /**
      * Converts a possibly-Unicode/IDN domain name (GLPI's stored `name`) to
-     * Punycode/ACE before it ever reaches the IONOS API (§9 Phase 10) — no
-     * documented Unicode-vs-Punycode requirement was found for either the
-     * DNS or Domains API, so Punycode is used as the safe universal
-     * outbound form.
+     * Punycode/ACE (§9 Phase 10) — the canonical form used throughout this
+     * driver for validation and comparison, and what's sent on the wire to
+     * the DNS zone API (findZoneId()/fetchZoneRecords()). The Domains
+     * (registrar) API's `name` filter doesn't reliably accept *either*
+     * form for an IDN domain (Punycode silently matches nothing; literal
+     * Unicode gets rejected outright by IONOS's own gateway) — see
+     * findDomainId()'s docblock — so that lookup skips the filter and
+     * matches client-side instead of relying on a converted query value.
      *
      * @param  string $domain
      * @return string

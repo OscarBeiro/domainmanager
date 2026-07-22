@@ -1722,9 +1722,12 @@ addendum).
 testing Phase 8, 2026-07-22) is a permanent regression case, not a
 one-off anecdote. `intl` is confirmed present in this dev environment's
 PHP 8.4 (`php -m | grep intl`) and is now a hard activation-time
-dependency (`plugin_domainmanager_check_prerequisites()`) — the checks
-below still need a real browser/account pass by Óscar per this file's
-standing convention.
+dependency (`plugin_domainmanager_check_prerequisites()`). Live testing
+against a real IONOS account also surfaced a second-round finding
+(2026-07-22, §3.11): IONOS's registrar (Domains) API and DNS (zone) API
+disagree on Unicode vs. Punycode, fixed per-endpoint in `IonosDriver` —
+see 10.1a. The checks below still need a real browser/account pass by
+Óscar per this file's standing convention.
 
 ### 10.1 IDN domain gets a correct Punycode field and functions end-to-end
 - **Steps:** add `viñamoraima.com` (or an equivalent real IDN domain) as
@@ -1736,6 +1739,29 @@ standing convention.
   and DNS sync all complete with a real result (not silently
   failing/erroring just because the name contains non-ASCII characters)
   — this is the actual regression test for the originally reported bug.
+- [ ] Pass
+
+### 10.1a IONOS registrar sync succeeds after the per-endpoint fix (regression)
+- **Steps:** with `viñamoraima.com` registered on a live IONOS account
+  (both as the registrar and DNS provider), run a registrar/lifecycle
+  sync against it. This specifically re-tests two live findings from
+  2026-07-22, in order:
+  1. The DNS sync succeeded querying IONOS's zone list with the
+     Punycode form, but the Domains (registrar) API's `name` filter
+     returned `"No IONOS domain item found for xn--viamoraima-u9a.com
+     with this account"` when queried with that same Punycode string.
+  2. Switching that query to the literal Unicode form instead (the
+     first attempted fix) was worse: IONOS's own gateway returned a raw,
+     non-JSON HTML `400 Bad request` page — confirmed not a
+     request-encoding bug on this plugin's side, meaning the gateway
+     itself rejects non-ASCII in that parameter outright.
+- **Expected:** the registrar sync now succeeds. `IonosDriver::findDomainId()`
+  no longer sends a `name` filter at all — it paginates through the
+  full unfiltered `domainitems` list and matches each row's `name`
+  client-side (canonicalized to Punycode). DNS sync continues to
+  succeed unaffected (`findZoneId()`/`fetchZoneRecords()` still query
+  with Punycode, and never used a server-side name filter to begin
+  with).
 - [ ] Pass
 
 ### 10.2 Plain ASCII domains are unaffected
