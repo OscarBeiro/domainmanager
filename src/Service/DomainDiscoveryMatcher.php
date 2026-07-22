@@ -34,6 +34,7 @@ namespace GlpiPlugin\Domainmanager\Service;
 use Domain;
 use Dropdown;
 use GlpiPlugin\Domainmanager\Dto\DiscoveredDomain;
+use GlpiPlugin\Domainmanager\IdnNormalizer;
 use Supplier;
 
 /**
@@ -143,13 +144,19 @@ class DomainDiscoveryMatcher
 
     /**
      * Public: shared by DomainImportController so "already exists" checks
-     * use the exact same normalization on both sides.
+     * use the exact same normalization on both sides. Canonicalized to
+     * Punycode/ACE, not left as raw Unicode (§9 Phase 10 point 2) — a
+     * driver's discovered-domain name and GLPI's own stored `name` can each
+     * independently be in either form (a registrar's list endpoint may
+     * return Unicode or Punycode; GLPI always stores Unicode), so comparing
+     * un-normalized strings risks a false "does not exist" match for any
+     * IDN domain.
      *
      * @param  string $name
      * @return string
      */
     public static function normalize(string $name): string
     {
-        return strtolower(trim($name));
+        return IdnNormalizer::toAscii(strtolower(trim($name)));
     }
 }

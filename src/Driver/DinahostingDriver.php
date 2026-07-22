@@ -41,6 +41,7 @@ use GlpiPlugin\Domainmanager\Dto\DomainLifecycle;
 use GlpiPlugin\Domainmanager\Dto\LifecycleStatus;
 use GlpiPlugin\Domainmanager\Dto\ZoneRecord;
 use GlpiPlugin\Domainmanager\Exception\DriverException;
+use GlpiPlugin\Domainmanager\IdnNormalizer;
 use GlpiPlugin\Domainmanager\Service\PluginLogger;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
@@ -534,13 +535,18 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
     }
 
     /**
+     * Converts a possibly-Unicode/IDN domain name (GLPI's stored `name`) to
+     * Punycode/ACE before it ever reaches the Dinahosting API (§9 Phase 10)
+     * — no documented Unicode-vs-Punycode requirement was found for this
+     * API, so Punycode is used as the safe universal outbound form.
+     *
      * @param  string $domain
      * @return string
      * @throws DriverException
      */
     private static function normalizeDomain(string $domain): string
     {
-        $domain = strtolower(rtrim(trim($domain), '.'));
+        $domain = IdnNormalizer::toAscii(strtolower(rtrim(trim($domain), '.')));
         if ($domain === '' || !preg_match('/^[a-z0-9.-]+\.[a-z0-9-]+$/i', $domain)) {
             throw new DriverException(__('Domain name is not a valid FQDN', 'domainmanager'));
         }

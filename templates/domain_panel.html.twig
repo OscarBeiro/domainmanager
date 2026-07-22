@@ -97,6 +97,12 @@
             </table>
 
             <div class="p-3">
+                {% if punycode %}
+                    <div class="form-text mb-2">
+                        {{ __('Punycode / ASCII form', 'domainmanager') }}:
+                        <code>{{ punycode }}</code>
+                    </div>
+                {% endif %}
                 <div class="form-text mb-2">
                     <a href="{{ infocom_tab_url }}">{{ __('Set the Registrar via the Financial and administrative information tab', 'domainmanager') }}</a>
                 </div>

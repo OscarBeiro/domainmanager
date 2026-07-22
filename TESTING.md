@@ -1716,37 +1716,57 @@ addendum).
 - [ ] Pass — not verified live; only reasoned about from the code
   (mirrors a core pattern verified by direct source read).
 
-## Phase 10 (planned) — IDN / Punycode handling (§9)
+## Phase 10 (implemented 2026-07-22) — IDN / Punycode handling (§3.11, §9)
 
-Not yet implemented — this section documents the intended regression
-coverage ahead of time so it's ready to run once Phase 10 lands, and so
 `viñamoraima.com` (the real domain that surfaced this gap while manually
-testing Phase 8, 2026-07-22) isn't forgotten as a one-off anecdote.
+testing Phase 8, 2026-07-22) is a permanent regression case, not a
+one-off anecdote. `intl` is confirmed present in this dev environment's
+PHP 8.4 (`php -m | grep intl`) and is now a hard activation-time
+dependency (`plugin_domainmanager_check_prerequisites()`) — the checks
+below still need a real browser/account pass by Óscar per this file's
+standing convention.
 
 ### 10.1 IDN domain gets a correct Punycode field and functions end-to-end
 - **Steps:** add `viñamoraima.com` (or an equivalent real IDN domain) as
   a `Domain`. Open its Domain Manager panel. Run NS detection, a
   registrar sync, and a DNS sync (Update Now / Check Connection / cron).
-- **Expected:** a new read-only "Punycode / ASCII form" field shows the
-  correct ACE form (`xn--...`). NS detection, registrar sync, and DNS
-  sync all complete with a real result (not silently failing/erroring
-  just because the name contains non-ASCII characters) — this is the
-  actual regression test for the originally reported bug.
+- **Expected:** a read-only "Punycode / ASCII form" field shows the
+  correct ACE form (`xn--viamoraima-u9a.com`, confirmed via
+  `idn_to_ascii()` directly — see §3.11). NS detection, registrar sync,
+  and DNS sync all complete with a real result (not silently
+  failing/erroring just because the name contains non-ASCII characters)
+  — this is the actual regression test for the originally reported bug.
 - [ ] Pass
 
 ### 10.2 Plain ASCII domains are unaffected
 - **Steps:** open the Domain Manager panel for an ordinary ASCII-only
   domain (e.g. `tic.gal`).
-- **Expected:** no behavior change from before Phase 10; the new
-  Punycode field displays sensibly per whichever "identical form"
-  decision Phase 10 documents (either omitted, or shown identical to
-  `name`) — not a confusing duplicate value with no explanation.
+- **Expected:** no behavior change from before Phase 10; the Punycode
+  field is **omitted entirely** (decided/documented in §3.11 — not shown
+  as a duplicate of `name`), so the panel looks identical to before this
+  phase.
 - [ ] Pass
 
-### 10.3 `intl` extension is confirmed present before relying on it
-- **Steps:** check the target PHP 8.4 environment(s) for the `intl`
-  extension (`php -m | grep intl`).
-- **Expected:** documented as confirmed present (or, if absent anywhere
-  Phase 10 needs to run, flagged explicitly as a hard dependency gap —
-  never silently routed around with a hand-rolled encoder).
+### 10.3 `intl` extension is a hard activation-time dependency
+- **Steps:** on an environment without the `intl` PHP extension, attempt
+  to activate the plugin.
+- **Expected:** `plugin_domainmanager_check_prerequisites()` blocks
+  activation with a clear message naming `intl` and its purpose, rather
+  than activating successfully and failing later with an opaque fatal
+  error on the first sync.
+- [ ] Pass — not verified live (would need a container without `intl`);
+  reasoned about from the code, matches the documented GLPI
+  `check_prerequisites` convention.
+
+### 10.4 Bulk-import existence check isn't fooled by a Unicode/Punycode mismatch
+- **Steps:** with a registrar Supplier whose driver supports
+  `listAccountDomains()` (IONOS, §9 Phase 8) and which has
+  `viñamoraima.com` registered, also create the domain as a native
+  `Domain` item in GLPI (stored as Unicode, per GLPI convention). Open
+  the Import Domains modal for that Supplier.
+- **Expected:** the domain shows as already existing (a real match, not
+  a false "new domain" row) regardless of which form (Unicode or
+  Punycode) the registrar's API happens to return in its discovered-domain
+  list — `DomainDiscoveryMatcher::normalize()` canonicalizes both sides to
+  Punycode before comparing (§3.11).
 - [ ] Pass

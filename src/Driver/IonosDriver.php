@@ -42,6 +42,7 @@ use GlpiPlugin\Domainmanager\Dto\DomainLifecycle;
 use GlpiPlugin\Domainmanager\Dto\LifecycleStatus;
 use GlpiPlugin\Domainmanager\Dto\ZoneRecord;
 use GlpiPlugin\Domainmanager\Exception\DriverException;
+use GlpiPlugin\Domainmanager\IdnNormalizer;
 use GlpiPlugin\Domainmanager\Service\PluginLogger;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
@@ -264,7 +265,12 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Con
             ]);
 
             foreach ($data['domains'] ?? [] as $row) {
-                if (is_array($row) && strcasecmp((string) ($row['name'] ?? ''), $domain) === 0) {
+                // Normalize the returned name to Punycode before comparing:
+                // some providers are known to echo a queried domain back in
+                // Unicode even when the request itself used Punycode (§9
+                // Phase 10 point 2) — comparing two un-normalized forms
+                // could silently read as "not found".
+                if (is_array($row) && strcasecmp(IdnNormalizer::toAscii((string) ($row['name'] ?? '')), $domain) === 0) {
                     return (string) ($row['id'] ?? '');
                 }
             }
@@ -436,7 +442,10 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Con
         $zones = $this->request('GET', 'zones');
 
         foreach ($zones as $zone) {
-            if (is_array($zone) && strcasecmp((string) ($zone['name'] ?? ''), $domain) === 0) {
+            // See findDomainId()'s identical comment: normalize the
+            // returned zone name to Punycode before comparing (§9 Phase 10
+            // point 2).
+            if (is_array($zone) && strcasecmp(IdnNormalizer::toAscii((string) ($zone['name'] ?? '')), $domain) === 0) {
                 return (string) ($zone['id'] ?? '');
             }
         }
@@ -653,13 +662,19 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Con
     }
 
     /**
+     * Converts a possibly-Unicode/IDN domain name (GLPI's stored `name`) to
+     * Punycode/ACE before it ever reaches the IONOS API (§9 Phase 10) — no
+     * documented Unicode-vs-Punycode requirement was found for either the
+     * DNS or Domains API, so Punycode is used as the safe universal
+     * outbound form.
+     *
      * @param  string $domain
      * @return string
      * @throws DriverException
      */
     private static function normalizeDomain(string $domain): string
     {
-        $domain = strtolower(rtrim(trim($domain), '.'));
+        $domain = IdnNormalizer::toAscii(strtolower(rtrim(trim($domain), '.')));
         if ($domain === '' || !preg_match('/^[a-z0-9.-]+\.[a-z0-9-]+$/i', $domain)) {
             throw new DriverException(__('Domain name is not a valid FQDN', 'domainmanager'));
         }

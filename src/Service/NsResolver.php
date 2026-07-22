@@ -31,6 +31,8 @@
 
 namespace GlpiPlugin\Domainmanager\Service;
 
+use GlpiPlugin\Domainmanager\IdnNormalizer;
+
 /**
  * Live NS lookup, isolated as a testable seam
  */
@@ -39,12 +41,15 @@ class NsResolver
     /**
      * Nameserver hosts of a domain ([] = lookup failed / none found)
      *
-     * @param  string $fqdn
+     * @param  string $fqdn GLPI's stored (possibly Unicode/IDN) domain name
      * @return string[]
      */
     public function getNameservers(string $fqdn): array
     {
-        $fqdn = strtolower(rtrim(trim($fqdn), '.'));
+        // dns_get_record() operates on the DNS wire form: a Unicode label
+        // (e.g. "viñamoraima.com") simply fails to resolve — must convert
+        // to Punycode/ACE first (§9 Phase 10).
+        $fqdn = IdnNormalizer::toAscii(strtolower(rtrim(trim($fqdn), '.')));
         if ($fqdn === '' || !preg_match('/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?\.[a-z0-9-]{2,}$/', $fqdn)) {
             return [];
         }

@@ -93,12 +93,25 @@ class DomainForm
             }
         }
 
+        // §9 Phase 10: read-only Punycode/ACE form of the domain's stored
+        // (possibly Unicode/IDN) name — shown only when it actually differs
+        // from `name`, so a plain ASCII domain's panel isn't cluttered with
+        // a redundant duplicate value.
+        $punycode = null;
+        if (!$is_new) {
+            $ascii = IdnNormalizer::toAscii((string) $item->fields['name']);
+            if ($ascii !== '' && strcasecmp($ascii, (string) $item->fields['name']) !== 0) {
+                $punycode = $ascii;
+            }
+        }
+
         TemplateRenderer::getInstance()->display('@domainmanager/domain_panel.html.twig', [
             'is_new'             => $is_new,
             'can_update'         => $can_update,
             'state'              => $state?->fields,
             'registrar_supplier' => $registrar_supplier,
             'dns_supplier'       => $dns_supplier,
+            'punycode'           => $punycode,
             'status_labels'      => self::getStatusLabels(),
             'status_classes'     => self::getStatusClasses(),
             'domains_id'         => $domains_id,

@@ -85,6 +85,25 @@ function plugin_version_domainmanager(): array
 }
 
 /**
+ * §9 Phase 10: `IdnNormalizer` (Unicode <-> Punycode conversion, needed for
+ * every DNS lookup and driver call as of this phase) hard-depends on the
+ * `intl` PHP extension's `idn_to_ascii()`/`idn_to_utf8()` — block activation
+ * with a clear message rather than letting every subsequent sync fail with
+ * an opaque fatal error.
+ *
+ * @return bool
+ */
+function plugin_domainmanager_check_prerequisites(): bool
+{
+    if (!extension_loaded('intl')) {
+        echo __('The intl PHP extension is required by Domain Manager (used for IDN/Punycode domain name conversion).', 'domainmanager');
+        return false;
+    }
+
+    return true;
+}
+
+/**
  * Register the plugin's search options (§3.7): a single, non-functional
  * "Domain Manager" entry per itemtype, used only so Log::history() can set
  * id_search_option to something whose 'name' resolves to "Domain Manager"
