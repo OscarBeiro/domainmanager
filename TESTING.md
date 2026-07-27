@@ -802,6 +802,21 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
   covered by any existing test.
 - [ ] Pass
 
+### 5.6c RaiolaNetworks and LucusHost entries (2026-07-27)
+- **Steps:** `php -r 'json_decode(file_get_contents("resources/ns-providers.json"), true, 512, JSON_THROW_ON_ERROR); echo "ok\n";'`
+  and review the entries appended after Arsys; re-run `dig NS lucushost.com`
+  and compare against `who.is`/`myip.ms` third-party listings for
+  `dns1.raiolanetworks.es`/`dns3.raiolanetworks.es`.
+- **Expected:** RaiolaNetworks = `dns1-dns3.raiolanetworks.es`, sourced from
+  RaiolaNetworks's own official help article (unlike Strato/Arsys/LucusHost,
+  this one has a real vendor doc). LucusHost = `ns1-ns3.lucushost.com`, no
+  official vendor page states this — same live-DNS exception as Strato/Arsys —
+  confirmed via `dig NS lucushost.com` resolving to exactly this 3-host set
+  (LucusHost's own corporate domain is self-hosted on its own nameservers).
+  Neither entry has a `driver` key — no registrar/DNS API is documented for
+  either provider.
+- [ ] Pass
+
 ### 5.7 Batch 2 providers are detected as unsupported, no collisions (§4, §5, §6.3)
 - **Steps:** sync a domain whose live NS records sit on one of the batch 2
   providers (e.g. one.com: `ns01.one.com`/`ns02.one.com`); also exercise

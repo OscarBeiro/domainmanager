@@ -215,6 +215,24 @@
                 "ns-arsys.ui-dns.biz"
             ],
             "source": "No official Arsys vendor page states these hostnames (older third-party/community pages instead cite unconfirmed ns1.arsystems.com-style guesses). Confirmed live via authoritative `dig NS` against arsys.es and arsys.net (both currently resolve to exactly this 4-host ui-dns.* set — the same United Internet shared DNS platform as Strato above, Arsys being United Internet's Spanish-market brand); brand label `ns-arsys.` confirmed distinct from sibling brands (see Strato entry's source note)."
+        },
+        {
+            "name": "RaiolaNetworks",
+            "patterns": [
+                "dns1.raiolanetworks.es",
+                "dns2.raiolanetworks.es",
+                "dns3.raiolanetworks.es"
+            ],
+            "source": "https://raiolanetworks.com/ayuda/cambiar-servidores-dns-dominio/ (official: Hosting SSD / Hosting Elástico default nameservers are dns1-dns3.raiolanetworks.es). The same page also documents distinct nameservers for other RaiolaNetworks products/brands (Hosting SEO: seo-dns1/2.raiolanetworks.es; Reseller/VPS, under the separate webcloud.es domain: net-dns1/2.webcloud.es, dns1/2.webcloud.es) — deliberately not added here to keep this entry scoped to the primary shared-hosting product actually confirmed live via public nameserver records (who.is/myip.ms show real domains delegated to dns1/dns3.raiolanetworks.es); the other products' hostnames can be added as their own follow-up entries if a domain using them is ever seen. Detection-only — no registrar/DNS API is documented anywhere for RaiolaNetworks, so no 'driver' is set."
+        },
+        {
+            "name": "LucusHost",
+            "patterns": [
+                "ns1.lucushost.com",
+                "ns2.lucushost.com",
+                "ns3.lucushost.com"
+            ],
+            "source": "No official LucusHost vendor page states these hostnames (only third-party sources — who.is, myip.ms — and LucusHost's own blog articles describing the ns1/ns2 convention generically without an exhaustive list). Confirmed live via authoritative `dig NS` against lucushost.com itself, which resolves to exactly this 3-host set (ns1/ns2/ns3.lucushost.com) — same live-DNS-observation exception already established for Strato/Arsys above. Detection-only — no registrar/DNS API is documented anywhere for LucusHost, so no 'driver' is set."
         }
     ]
 }
