@@ -39,7 +39,7 @@ use GlpiPlugin\Domainmanager\LockEnforcer;
 use GlpiPlugin\Domainmanager\Profile as DomainmanagerProfile;
 use GlpiPlugin\Domainmanager\SupplierTab;
 
-define('PLUGIN_DOMAINMANAGER_VERSION', '0.11.5');
+define('PLUGIN_DOMAINMANAGER_VERSION', '0.11.6');
 define('PLUGIN_DOMAINMANAGER_MIN_GLPI', '11.0.0');
 define('PLUGIN_DOMAINMANAGER_MAX_GLPI', '11.0.99');
 define('PLUGIN_DOMAINMANAGER_REPOSITORY_URL', 'https://github.com/TICGAL-GLPI-Plugins/domainmanager');
@@ -82,6 +82,13 @@ define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_NS_PROVIDER', 9407);
 define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR_STATUS', 9408);
 define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_STATUS', 9409);
 define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_LAST_SYNC', 9410);
+// Real, filterable search options on Supplier (§9 Phase 16 "Supplier-side
+// searchable fields") — see their own registration below.
+define('PLUGIN_DOMAINMANAGER_SO_SUPPLIER_DOMAINS', 9411);
+define('PLUGIN_DOMAINMANAGER_SO_SUPPLIER_REGISTRAR', 9412);
+define('PLUGIN_DOMAINMANAGER_SO_SUPPLIER_NS_PROVIDER', 9413);
+define('PLUGIN_DOMAINMANAGER_SO_SUPPLIER_REGISTRAR_COUNT', 9414);
+define('PLUGIN_DOMAINMANAGER_SO_SUPPLIER_NS_PROVIDER_COUNT', 9415);
 
 /**
  * Plugin_Version_Domainmanager
@@ -306,6 +313,165 @@ function plugin_domainmanager_getAddSearchOptionsNew($itemtype): array
             'massiveaction' => false,
             'joinparams'    => [
                 'jointype' => 'child',
+            ],
+        ];
+    }
+
+    if ($itemtype === Supplier::class) {
+        $options[] = [
+            'id'   => 'domainmanager',
+            'name' => __('Domain Manager', 'domainmanager'),
+        ];
+
+        // §9 Phase 16 "Supplier-side searchable fields", revised: modeled
+        // directly on core's own `CommonITILTask::rawSearchOptionsToAdd()`
+        // pair for Tickets — one 'itemlink' field showing the actual
+        // related items (there: task "Description", id 26; here: the
+        // domain names themselves) plus one 'count' field for filtering/
+        // sorting by quantity (there: "Number of tasks", id 28; here:
+        // "Number of domains (...)"). Confirmed against the live 11.0.8
+        // source (`/var/www/glpi/src/CommonITILTask.php`) rather than
+        // assumed from older docs.
+        //
+        // All four below are reverse one-hop joins — many rows on another
+        // table point back at this Supplier's id, the opposite cardinality
+        // from every Domain-side option above — so each needs
+        // 'forcegroupby' (and 'usehaving' for the ones used in a HAVING-
+        // filtered/count context) the same way core's reverse-count/
+        // reverse-list options do (e.g. Software's "Number of
+        // installations", Ticket's "Parent tickets"/id 50).
+        //
+        // "Domains" (total, union of both roles) stays count-only: it
+        // reuses DomainState's own registrar_suppliers_id mirror column
+        // (§0.1, kept in sync with the live Infocom link by
+        // HookHandler::infocomSaved()) to OR both roles in one join, since
+        // a single search-option join can only encode one OR'd pair of
+        // columns on one table — there is no single table that could carry
+        // an actual combined domain-name *list* the same way (that would
+        // need two different tables' rows unioned, which the search
+        // framework's one-join-per-option/beforejoin-chain model can't
+        // express). Good enough for "is this supplier worth a closer look"
+        // filtering; it is not the authoritative per-domain view that's on
+        // the Supplier's own Domain Manager tab
+        // (DomainState::getDomainsForSupplier(), which cross-checks the
+        // mirror against the live Infocom value row by row).
+        $options[] = [
+            'id'            => PLUGIN_DOMAINMANAGER_SO_SUPPLIER_DOMAINS,
+            'table'         => DomainState::getTable(),
+            'field'         => 'id',
+            'name'          => __('Domains', 'domainmanager'),
+            'datatype'      => 'count',
+            'forcegroupby'  => true,
+            'usehaving'     => true,
+            'massiveaction' => false,
+            'joinparams'    => [
+                'jointype'  => 'child',
+                'linkfield' => 'registrar_suppliers_id',
+                'condition' => 'OR NEWTABLE.`dns_suppliers_id` = REFTABLE.`id`',
+            ],
+        ];
+
+        // "Registrar": the actual domain names (clickable, 'itemlink'),
+        // reading the live, authoritative link (glpi_infocoms, the same
+        // one that puts a Domain on this Supplier's native "Items" tab)
+        // rather than DomainState's mirror — no state row needs to exist
+        // at all for a domain to show up here. Two-hop join: Supplier ->
+        // glpi_infocoms (child, default linkfield 'suppliers_id' already
+        // matches, restricted to itemtype='Domain' since Infocom is
+        // polymorphic across itemtypes) -> glpi_domains (default/
+        // 'standard' outer join, explicit linkfield 'items_id' overriding
+        // the default 'domains_id' guess since Infocom's own FK column to
+        // its target item is the generic, itemtype-agnostic 'items_id').
+        $options[] = [
+            'id'            => PLUGIN_DOMAINMANAGER_SO_SUPPLIER_REGISTRAR,
+            'table'         => 'glpi_domains',
+            'field'         => 'name',
+            'linkfield'     => 'items_id',
+            'name'          => __('Registrar', 'domainmanager'),
+            'datatype'      => 'itemlink',
+            'forcegroupby'  => true,
+            'usehaving'     => true,
+            'massiveaction' => false,
+            'joinparams'    => [
+                'beforejoin' => [
+                    'table'      => 'glpi_infocoms',
+                    'joinparams' => [
+                        'jointype'  => 'child',
+                        'condition' => "AND NEWTABLE.`itemtype` = 'Domain'",
+                    ],
+                ],
+            ],
+        ];
+
+        // "Number of domains (Registrar)": the 'count' companion to the
+        // "Registrar" list above — same two-hop relationship, restated as
+        // a single-hop 'count' join directly to glpi_infocoms (counting
+        // Infocom rows is equivalent to counting the Domains they point at,
+        // one row per Domain, and avoids a redundant beforejoin/count
+        // through glpi_domains itself).
+        $options[] = [
+            'id'            => PLUGIN_DOMAINMANAGER_SO_SUPPLIER_REGISTRAR_COUNT,
+            'table'         => 'glpi_infocoms',
+            'field'         => 'id',
+            'name'          => __('Number of domains (Registrar)', 'domainmanager'),
+            'datatype'      => 'count',
+            'forcegroupby'  => true,
+            'usehaving'     => true,
+            'massiveaction' => false,
+            'joinparams'    => [
+                'jointype'  => 'child',
+                'linkfield' => 'suppliers_id',
+                'condition' => "AND NEWTABLE.`itemtype` = 'Domain'",
+            ],
+        ];
+
+        // "NS Provider": the actual domain names (clickable, 'itemlink'),
+        // sync-dependent by nature (§0.1 docblock on
+        // DomainState::getDomainsForSupplier()) — a domain only shows up
+        // here once at least one real sync has resolved this Supplier as
+        // the DNS provider. Two-hop join: Supplier -> DomainState (child,
+        // explicit linkfield 'dns_suppliers_id' overriding the default
+        // 'suppliers_id' guess) -> glpi_domains (default/'standard' outer
+        // join, linkfield 'domains_id' — DomainState's real FK column to
+        // Domain, which already matches the default guess for this table
+        // name so no override is strictly needed, kept explicit for
+        // symmetry with the Registrar option above).
+        $options[] = [
+            'id'            => PLUGIN_DOMAINMANAGER_SO_SUPPLIER_NS_PROVIDER,
+            'table'         => 'glpi_domains',
+            'field'         => 'name',
+            'linkfield'     => 'domains_id',
+            'name'          => __('NS Provider', 'domainmanager'),
+            'datatype'      => 'itemlink',
+            'forcegroupby'  => true,
+            'usehaving'     => true,
+            'massiveaction' => false,
+            'joinparams'    => [
+                'beforejoin' => [
+                    'table'      => DomainState::getTable(),
+                    'joinparams' => [
+                        'jointype'  => 'child',
+                        'linkfield' => 'dns_suppliers_id',
+                    ],
+                ],
+            ],
+        ];
+
+        // "Number of domains (NS Provider)": the 'count' companion to the
+        // "NS Provider" list above, same single-hop shape as before this
+        // revision.
+        $options[] = [
+            'id'            => PLUGIN_DOMAINMANAGER_SO_SUPPLIER_NS_PROVIDER_COUNT,
+            'table'         => DomainState::getTable(),
+            'field'         => 'id',
+            'name'          => __('Number of domains (NS Provider)', 'domainmanager'),
+            'datatype'      => 'count',
+            'forcegroupby'  => true,
+            'usehaving'     => true,
+            'massiveaction' => false,
+            'joinparams'    => [
+                'jointype'  => 'child',
+                'linkfield' => 'dns_suppliers_id',
             ],
         ];
     }

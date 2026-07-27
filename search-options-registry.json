@@ -70,6 +70,51 @@
           "field": "last_sync_date",
           "purpose": "Real, filterable/sortable native 'datetime' search option (ARCHITECTURE.md §9 Phase 15 addendum \"Searchable fields\") — no custom display/select needed, same 'child' join shape as 9406",
           "verified_collision_free": false
+        },
+        {
+          "itemtype": "Supplier",
+          "id": 9411,
+          "name": "Domains",
+          "table": "glpi_plugin_domainmanager_states",
+          "field": "id",
+          "purpose": "Real, filterable/sortable 'count' search option: number of domains where this Supplier is the registrar and/or the resolved DNS provider (ARCHITECTURE.md §9 Phase 16 \"Supplier-side searchable fields\") — reverse 'child' join (many states rows point back at one Supplier), 'linkfield' => 'registrar_suppliers_id' plus a joinparams 'condition' OR'ing in 'dns_suppliers_id' so both roles count once each without a second join",
+          "verified_collision_free": false
+        },
+        {
+          "itemtype": "Supplier",
+          "id": 9412,
+          "name": "Registrar",
+          "table": "glpi_domains",
+          "field": "name",
+          "purpose": "Real, filterable/sortable 'itemlink' search option: the actual clickable Domain names for which this Supplier is the live, native Infocom-linked registrar (ARCHITECTURE.md §9 Phase 16, revised) — two-hop join Supplier -> glpi_infocoms (child, default linkfield 'suppliers_id', condition restricts to itemtype='Domain' since Infocom is polymorphic) -> glpi_domains (default/'standard' join, explicit linkfield 'items_id' overriding the default 'domains_id' guess). Verified live: SQL built and executed correctly against the glpi-claude 11.0.8 dev instance via Search::getDatas()",
+          "verified_collision_free": false
+        },
+        {
+          "itemtype": "Supplier",
+          "id": 9413,
+          "name": "NS Provider",
+          "table": "glpi_domains",
+          "field": "name",
+          "purpose": "Real, filterable/sortable 'itemlink' search option: the actual clickable Domain names for which this Supplier is the resolved DNS provider (ARCHITECTURE.md §9 Phase 16, revised) — two-hop join Supplier -> glpi_plugin_domainmanager_states (child, explicit linkfield 'dns_suppliers_id') -> glpi_domains (default/'standard' join, linkfield 'domains_id'), sync-dependent by nature. Verified live against the glpi-claude 11.0.8 dev instance",
+          "verified_collision_free": false
+        },
+        {
+          "itemtype": "Supplier",
+          "id": 9414,
+          "name": "Number of domains (Registrar)",
+          "table": "glpi_infocoms",
+          "field": "id",
+          "purpose": "Real, filterable/sortable 'count' companion to id 9412's 'Registrar' itemlink list — single-hop reverse 'child' join to glpi_infocoms, 'linkfield' => 'suppliers_id', condition restricts to itemtype='Domain'. Same shape as the pre-revision 9412 (renamed/renumbered when 9412 itself became the itemlink list, mirroring core's Ticket-task 'Description' + 'Number of tasks' pairing)",
+          "verified_collision_free": false
+        },
+        {
+          "itemtype": "Supplier",
+          "id": 9415,
+          "name": "Number of domains (NS Provider)",
+          "table": "glpi_plugin_domainmanager_states",
+          "field": "id",
+          "purpose": "Real, filterable/sortable 'count' companion to id 9413's 'NS Provider' itemlink list — single-hop reverse 'child' join, 'linkfield' => 'dns_suppliers_id'. Same shape as the pre-revision 9413",
+          "verified_collision_free": false
         }
       ],
       "removed": [

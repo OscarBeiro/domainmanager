@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.6] - 2026-07-27
+### Added
+- **Five new searchable/sortable fields on the native Supplier search page** (Phase 16 "Supplier-side searchable fields"), modeled on core's own Ticket-task "Description" + "Number of tasks" pairing: "Registrar" and "NS Provider" show the actual clickable domain names (not just a count) for which the Supplier holds that role, each paired with a "Number of domains (Registrar)"/"Number of domains (NS Provider)" count field for quick sorting; plus "Domains", a combined count across both roles. Lets a Supplier list be filtered/sorted down to e.g. "only suppliers actually used as a registrar" or browsed to see exactly which domains, without opening each Supplier's own tab. See `search-options-registry.json` (ids 9411-9415) and `ARCHITECTURE.md` §9 Phase 16.
+
 ## [0.11.5] - 2026-07-27
 ### Changed
 - **Extracted `DomainState::getStatusLabels()`/`getStatusClasses()` into a new `GlpiPlugin\Domainmanager\Service\DomainStatusResolver`** (Phase 16, step deferred from `PHASE13_PLAN.md` step 2): completes the originally-planned resolver extraction — behavior is unchanged (still the single source of truth shared by the Domain form panel, the Supplier "Domains" list, and the "Registrar sync status"/"DNS sync status" search options), but the label/class maps now live in their own `Service` class alongside `SyncEngine`/`NsResolver`/etc. instead of as static methods on the `DomainState` itemtype class. `DomainForm`, `SupplierTab`, and `DomainState`'s own search-option methods now call `DomainStatusResolver` directly.
