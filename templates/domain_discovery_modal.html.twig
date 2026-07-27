@@ -43,7 +43,13 @@
 {% elseif rows is empty %}
     <div class="modal-body">
         <div class="text-muted small">
-            {{ __('No domains found in this supplier\'s account.', 'domainmanager') }}
+            {{ __('No pending domains to import: this supplier\'s account has no domains.', 'domainmanager') }}
+        </div>
+    </div>
+{% elseif rows|filter(row => not row.exists) is empty %}
+    <div class="modal-body">
+        <div class="text-muted small">
+            {{ __('No pending domains to import: every domain found in this supplier\'s account already exists in GLPI.', 'domainmanager') }}
         </div>
     </div>
 {% else %}

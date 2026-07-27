@@ -86,8 +86,9 @@ class DriverFactory
     /**
      * Domain discovery pipeline driver for a supplier (§9 Phase 8), or null
      * when its configured driver doesn't implement DomainDiscoveryInterface
-     * (the common case today — only IonosDriver does) or has none/an
-     * invalid driver configured. Deliberately nullable rather than throwing,
+     * (currently implemented by IonosDriver, CloudflareDriver and
+     * DinahostingDriver) or has none/an invalid driver configured.
+     * Deliberately nullable rather than throwing,
      * unlike forRegistrar()/forDns(): those are only ever called once a
      * pipeline is already known to exist, while this is used to decide
      * whether to show the "Import Domains" button at all — capability is
