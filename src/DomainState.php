@@ -33,6 +33,7 @@ namespace GlpiPlugin\Domainmanager;
 
 use CommonDBTM;
 use Dropdown;
+use GlpiPlugin\Domainmanager\Service\DomainStatusResolver;
 
 /**
  * Per-domain sync state: registrar supplier, resolved DNS provider and
@@ -91,56 +92,6 @@ class DomainState extends CommonDBTM
     }
 
     /**
-     * Human-readable label per `registrar_status`/`dns_status` value — the
-     * single source of truth for both the Domain form panel's status badge
-     * (`DomainForm`) and the "Registrar sync status"/"DNS sync status"
-     * search options' dropdown/display (§9 Phase 15 addendum "Searchable
-     * fields"). Moved here (from `DomainForm`) so both call sites share one
-     * definition instead of maintaining the enum's labels twice.
-     *
-     * @return array<string, string>
-     */
-    public static function getStatusLabels(): array
-    {
-        return [
-            self::STATUS_NEVER             => __('Never synchronized', 'domainmanager'),
-            self::STATUS_OK                => __('OK', 'domainmanager'),
-            self::STATUS_ERROR             => __('Error', 'domainmanager'),
-            self::STATUS_UNCONFIGURED      => __('Not configured', 'domainmanager'),
-            self::STATUS_UNSUPPORTED       => __('Provider not supported', 'domainmanager'),
-            self::STATUS_UNKNOWN           => __('Unknown provider', 'domainmanager'),
-            self::STATUS_SUPPLIER_INACTIVE => __('Supplier inactive', 'domainmanager'),
-            self::STATUS_REASSIGNED        => __('Registrar changed, not yet verified', 'domainmanager'),
-        ];
-    }
-
-    /**
-     * Badge CSS class per `registrar_status`/`dns_status` value — see
-     * {@see self::getStatusLabels()}'s docblock for why this lives here.
-     *
-     * @return array<string, string>
-     */
-    public static function getStatusClasses(): array
-    {
-        return [
-            self::STATUS_NEVER             => 'text-bg-secondary',
-            self::STATUS_OK                => 'text-bg-success',
-            self::STATUS_ERROR             => 'text-bg-danger',
-            self::STATUS_UNCONFIGURED      => 'text-bg-secondary',
-            self::STATUS_UNSUPPORTED       => 'text-bg-warning',
-            self::STATUS_UNKNOWN           => 'text-bg-warning',
-            self::STATUS_SUPPLIER_INACTIVE => 'text-bg-secondary',
-            // Distinct from STATUS_ERROR (text-bg-danger, a failed API
-            // call) and STATUS_SUPPLIER_INACTIVE (text-bg-secondary, an
-            // intentional, calm state) — this reflects genuinely
-            // incorrect/outdated stored data that needs a fresh sync,
-            // without implying anything actually failed (§9 Phase 8
-            // addendum).
-            self::STATUS_REASSIGNED        => 'text-bg-info',
-        ];
-    }
-
-    /**
      * {@inheritDoc}
      *
      * Renders `registrar_status`/`dns_status`/`detected_provider` for the
@@ -161,7 +112,7 @@ class DomainState extends CommonDBTM
             case 'registrar_status':
             case 'dns_status':
                 $value  = (string) ($values[$field] ?? '');
-                $labels = self::getStatusLabels();
+                $labels = DomainStatusResolver::getStatusLabels();
                 return \htmlescape($labels[$value] ?? $value);
 
             case 'detected_provider':
@@ -192,7 +143,7 @@ class DomainState extends CommonDBTM
             case 'registrar_status':
             case 'dns_status':
                 $options['value'] = $values[$field] ?? '';
-                return Dropdown::showFromArray($name, self::getStatusLabels(), $options);
+                return Dropdown::showFromArray($name, DomainStatusResolver::getStatusLabels(), $options);
 
             case 'detected_provider':
                 $choices = [];

@@ -33,6 +33,7 @@ namespace GlpiPlugin\Domainmanager;
 
 use Domain;
 use Glpi\Application\View\TemplateRenderer;
+use GlpiPlugin\Domainmanager\Service\DomainStatusResolver;
 use Session;
 use Supplier;
 
@@ -112,8 +113,8 @@ class DomainForm
             'registrar_supplier' => $registrar_supplier,
             'dns_supplier'       => $dns_supplier,
             'punycode'           => $punycode,
-            'status_labels'      => DomainState::getStatusLabels(),
-            'status_classes'     => DomainState::getStatusClasses(),
+            'status_labels'      => DomainStatusResolver::getStatusLabels(),
+            'status_classes'     => DomainStatusResolver::getStatusClasses(),
             'domains_id'         => $domains_id,
             'infocom_tab_url'    => $is_new ? '' : (Domain::getFormURLWithID($domains_id) . '&forcetab=Infocom$1'),
             'repository_url'     => PLUGIN_DOMAINMANAGER_REPOSITORY_URL,

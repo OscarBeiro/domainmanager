@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.5] - 2026-07-27
+### Changed
+- **Extracted `DomainState::getStatusLabels()`/`getStatusClasses()` into a new `GlpiPlugin\Domainmanager\Service\DomainStatusResolver`** (Phase 16, step deferred from `PHASE13_PLAN.md` step 2): completes the originally-planned resolver extraction — behavior is unchanged (still the single source of truth shared by the Domain form panel, the Supplier "Domains" list, and the "Registrar sync status"/"DNS sync status" search options), but the label/class maps now live in their own `Service` class alongside `SyncEngine`/`NsResolver`/etc. instead of as static methods on the `DomainState` itemtype class. `DomainForm`, `SupplierTab`, and `DomainState`'s own search-option methods now call `DomainStatusResolver` directly.
+
 ## [0.11.4] - 2026-07-27
 ### Changed
 - **"NS provider" column header (Supplier "Domains" list and Domain form panel) renamed again, this time to "DNS Provider"** — a follow-up request settled on this term over 0.11.2's "NS provider", one consistent label instead of two.

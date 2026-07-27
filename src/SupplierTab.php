@@ -37,6 +37,7 @@ use Domain;
 use Dropdown;
 use Entity;
 use Glpi\Application\View\TemplateRenderer;
+use GlpiPlugin\Domainmanager\Service\DomainStatusResolver;
 use Session;
 use Supplier;
 use Toolbox;
@@ -206,8 +207,8 @@ class SupplierTab extends CommonGLPI
                 array_map([DriverRegistry::class, 'getPrimaryTestableCapability'], DriverRegistry::getAvailableDrivers())
             ),
             'domains'            => self::buildDomainsListRows($domains_raw),
-            'status_labels'      => DomainState::getStatusLabels(),
-            'status_classes'     => DomainState::getStatusClasses(),
+            'status_labels'      => DomainStatusResolver::getStatusLabels(),
+            'status_classes'     => DomainStatusResolver::getStatusClasses(),
             'never_synced_count' => $never_synced_count,
             'domains_search_url' => self::getDomainsSearchUrl((int) $supplier->getID()),
             'discovery_supported'  => $discovery_supported,
@@ -256,7 +257,7 @@ class SupplierTab extends CommonGLPI
      * Presentation-layer enrichment of DomainState::getDomainsForSupplier()'s
      * raw rows: itemtype hyperlinks, the Registrar column's badge (rendered
      * straight from `registrar_status` in the Twig template, via the shared
-     * `DomainState::getStatusLabels()`/`getStatusClasses()` maps, Phase 16),
+     * `DomainStatusResolver::getStatusLabels()`/`getStatusClasses()` maps, Phase 16),
      * and the NS column's own managed/unmanaged/unknown/never classification
      * (`describeDnsProvider()` — kept separate from the shared status maps,
      * see its docblock for why).
@@ -384,7 +385,7 @@ class SupplierTab extends CommonGLPI
      * distinguishes every case this needs. That turned out to be a real
      * regression in practice — reverted back to this classification, which
      * is the one actually verified working. Kept as its own thing rather
-     * than reusing `DomainState::getStatusLabels()`/`getStatusClasses()`.
+     * than reusing `DomainStatusResolver::getStatusLabels()`/`getStatusClasses()`.
      *
      * @param  array{dns_suppliers_id:int, detected_provider:string, dns_status:string} $domain
      * @return array{kind:string, name:string, url:?string}
