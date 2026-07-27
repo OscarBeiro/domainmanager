@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-07-27
+### Changed
+- **"Domain type to apply to imported domains" is now a configurable setting instead of hardcoded (Phase 12)**: a new "Domain Manager" tab on Setup > General (`plugins/domainmanager/Config`, `GlpiPlugin\Domainmanager\Config\Config`, stored via GLPI's native config store under the `plugin:domainmanager` context — no new table) lets an admin pick which native `DomainType` (if any) gets applied to a domain the plugin creates via bulk import (Phase 8). Left empty (the default for a fresh install), imported domains get no type at all, exactly like one created by hand — the plugin never sets or revisits `Type` again afterward on any later sync, since it's a purely local GLPI classification never sourced from any registrar/DNS API. An existing install upgrading from a pre-0.9.0 version has this setting defaulted automatically to the previously-hardcoded "Internet Domain" type at migration time, so upgrading changes nothing about current behavior until an admin deliberately changes the setting. `Type` remains deliberately excluded from the plugin's locked-fields list — it always was, and this change doesn't alter that: the setting only affects the one-time value at creation, an admin is always free to change it afterward. See `ARCHITECTURE.md` §6.6/§9 Phase 12.
+
 ## [0.8.0] - 2026-07-27
 ### Added
 - **NS detection for RaiolaNetworks and LucusHost**: added to `resources/ns-providers.json` — RaiolaNetworks (`dns1-dns3.raiolanetworks.es`, sourced from RaiolaNetworks's own official help article) and LucusHost (`ns1-ns3.lucushost.com`, no official vendor page states this — confirmed via `dig NS` against LucusHost's own corporate domain, which resolves to exactly this set, the same live-DNS exception already established for Strato/Arsys). Detection-only for both — no registrar/DNS API is documented for either provider, so neither has a `driver` key.

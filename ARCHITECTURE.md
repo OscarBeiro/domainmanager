@@ -621,11 +621,27 @@ Any time a plugin panel shows which **Entity** an item belongs to, reuse core's 
 
 ---
 
+## 6.6 Plugin configuration (`src/Config/Config.php`, §9 Phase 12)
+
+Before this phase, the plugin had **no plugin-wide settings of any kind** — every existing "config" concept (`SupplierConfig`) is per-supplier API credentials, not a global setting. Phase 12's one setting — "Domain type to apply to imported domains" — is the first, so this section (and the pattern it follows) is new.
+
+- **Storage**: GLPI's native config store (`Config::setConfigurationValues()`/`getConfigurationValues()`/`deleteConfigurationValues()`) under context `plugin:domainmanager`, key `domaintypes_id`. No new database table — deliberately, for a single int setting. `0` means "unset", the same convention the native `DomainType` dropdown itself already uses for "-----".
+- **Access class**: `GlpiPlugin\Domainmanager\Config\Config` (`CommonGLPI` subclass, `$rightname = 'config'`), registered via `Plugin::registerClass(Config::class, ['addtabon' => \Config::class])` — it shows as a real, native-feeling tab ("Domain Manager") on Setup > General, not a bespoke standalone page. This is the exact same pattern already established by the sibling TICGAL plugin `uxia` (`GlpiPlugin\Uxia\Config\Config`) — followed here for consistency rather than inventing a different config-page convention.
+- **`Hooks::CONFIG_PAGE`**: `$PLUGIN_HOOKS[Hooks::CONFIG_PAGE]['domainmanager'] = 'Config'` (in `setup.php`) makes the plugin's row on Setup > Plugins show a "Configure" gear icon, resolving to `GET /plugins/domainmanager/Config` (`Controller\ConfigController::index()`), which just redirects to the Setup > General tab above — the actual form lives there, not on a separate page.
+- **Save**: `POST /plugins/domainmanager/Config/Save` (`Controller\ConfigController::save()`), gated by `Session::checkRight('config', UPDATE)` both for the GET redirect and the POST save (this is core's own general-config right — every super-admin profile already has it, and it's the correct scope for a plugin-wide, not per-supplier/per-domain, setting). A submitted `domaintypes_id` that no longer resolves to a real `DomainType` (e.g. it was since deleted) is defensively treated as `0`/unset rather than stored as a dangling FK. The change is logged via `PluginLogger::activity()` — not `Log::history()` against some unrelated itemtype, since a plugin-wide setting has no genuinely-relevant itemtype with a visible Historical tab to attribute it to (the sibling `uxia` plugin's own config save doesn't log via History either, for the same reason).
+- **Applied**: only by `Controller\DomainImportController` (Phase 8's bulk-import path), at `Domain::add()` time, and only if the configured value is `> 0` — the `domaintypes_id` key is omitted from the `add()` input entirely when unset, so an unset config produces a domain byte-for-byte identical (as far as `Type` goes) to one created by hand. **No other Domain-creation path exists in this plugin** (re-verified for this phase — `Cron.php`/`SyncController.php`/`MassiveActionHandler.php` only ever `getFromDB()` an existing `Domain`, never `add()`), so this is the only call site that needed updating.
+- **Never re-applied on sync**: `Type` was never part of `SyncEngine`'s per-sync `update()`/`ImportLock` field set (§0.3, §9 Phase 8) — a domain's registrar/DNS sync has never touched `domaintypes_id` — and this phase doesn't add it there either. An admin's later manual change to `Type` is never reverted by a subsequent sync, by construction, not by a new guard.
+- **`Type` stays out of the locked-fields list, deliberately** — it never was in `ImportLock`'s tracked Domain fields (`name`, `is_active`, `date_domaincreation`, `date_expiration`, §0.3/§9 Phase 8), and this phase doesn't add it: the config only decides the *initial* value at creation, never something a sync needs to defend against user edits, so there's nothing here for a lock to protect.
+- **Upgrade default (pre-Phase-12 installs)**: `Installer::seedDomainType()` seeds the config value to the id of the already-seeded "Internet Domain" `DomainType` **only if** that type already existed *before* this install/activation call — meaning a prior version of the plugin (which unconditionally force-assigned it) already created it. A brand-new install has no such pre-existing type, so it defaults the config to `0`/unset instead. `Config::seedDefault()` itself is idempotent in the usual sense too — it only ever sets the value once (checked via whether the config key exists at all in `glpi_configs`, not whether it's `0`), so it never overwrites an admin's own later choice, including an explicit "clear it back to unset."
+- **Uninstall**: `Config::uninstall()` (called from `Installer::uninstall()`) purges the `plugin:domainmanager` config context entirely — same residue-free rule as every other phase.
+
+---
+
 ## 7. Install / uninstall (`src/Installer.php`, driven from `hook.php`)
 
 **Install (idempotent, upgrade-aware via `Migration(PLUGIN_DOMAINMANAGER_VERSION)`):**
 1. Create the four tables (§2) if missing; `Migration` field/key helpers for future upgrades.
-2. Seed Domain Type "Internet Domain" (by-name check).
+2. Seed Domain Type "Internet Domain" (by-name check), then seed the §9 Phase 12 "domain type to apply to imported domains" config default (`Config::seedDefault()` — the previously-seeded type's id on an upgrade from a pre-Phase-12 install, `0`/unset on a fresh install; see §6.6).
 3. Ensure the six `DomainRecordType` names exist.
 4. `Migration::addRight('domainmanager:unlock_imported', UNLOCK_RIGHT, ['config' => UPDATE])` — granted by default to profiles holding config UPDATE.
 5. Register the cron task (§6.4).
@@ -634,9 +650,10 @@ Any time a plugin panel shows which **Entity** an item belongs to, reuse core's 
 **Uninstall (zero residue):**
 1. `Migration::dropTable()` × 4 plugin tables.
 2. `CronTask::unregister('domainmanager')` (+ its `CronTaskLog` rows go with it).
-3. `ProfileRight::deleteProfileRights(['domainmanager:unlock_imported'])`.
-4. Delete plugin `DisplayPreference` rows for plugin itemtypes (defensive even though none are registered by default).
-5. Native data is **left intact by design**: domains, domain records, the seeded Domain Type and record types remain (they are the user's inventory). Plugin lock rows live in plugin tables, so dropping them removes every locking artifact. *(The brief's "locked-field entries created by the plugin" are exactly these rows — nothing is ever written to `glpi_lockedfields`, per §0.3.)*
+3. `Config::uninstall()` purges the `plugin:domainmanager` config context (§6.6, §9 Phase 12).
+4. `ProfileRight::deleteProfileRights(['domainmanager:unlock_imported'])`.
+5. Delete plugin `DisplayPreference` rows for plugin itemtypes (defensive even though none are registered by default).
+6. Native data is **left intact by design**: domains, domain records, the seeded Domain Type and record types remain (they are the user's inventory). Plugin lock rows live in plugin tables, so dropping them removes every locking artifact. *(The brief's "locked-field entries created by the plugin" are exactly these rows — nothing is ever written to `glpi_lockedfields`, per §0.3.)*
 
 ---
 
@@ -653,6 +670,7 @@ Any time a plugin panel shows which **Entity** an item belongs to, reuse core's 
 | Edit/unlock sync-locked Domain fields | **`domainmanager:unlock_imported`** (single bit, value 1) | `LockEnforcer` (server-side, every entry point incl. massive actions & API since hooks fire on model update) |
 | Edit/delete/purge plugin-imported DomainRecords | **`domainmanager:unlock_imported`** (+ native `managed_domainrecordtypes` gate still applies, §0.4) | `LockEnforcer` |
 | Grant the plugin right | native `profile` UPDATE | `src/Profile.php` tab (`displayRightsChoiceMatrix` + `ProfileRight`) |
+| See/change the "Domain type to apply to imported domains" setting | native `config` UPDATE (this plugin's only genuinely global, not per-supplier/per-domain, setting — unlike the supplier-credentials row above, native `config` is the correct scope here) | `Config\Config` tab on Setup > General + `Controller\ConfigController` (§6.6, §9 Phase 12) |
 
 Right registered per-profile via `Migration::addRight` at install and manageable afterwards in a "Domain Manager" section of the Profile form (dedicated Profile tab). Right name is the literal string `domainmanager:unlock_imported` (a `glpi_profilerights.name` value; GLPI accepts arbitrary strings — verified `varchar(255)` + `Session::haveRight` bitmask check).
 
@@ -724,6 +742,8 @@ Right registered per-profile via `Migration::addRight` at install and manageable
     - **New "Entity" column on the Supplier tab's "Domains" list** (`supplier_domains_list.html.twig`), placed last (after DNS/NS provider) rather than crowding the DOMAIN/REGISTRAR pair — each domain's `entities_id` (already fetched by `DomainState::getDomainsForSupplier()`, just previously unused by this list) rendered via `SupplierTab::describeEntity()`, core's own tree/breadcrumb entity badge (§6.5 "Entity display"). Verified live: a domain moved into a child entity ("Client1" under "TICGAL-Dev-01") rendered the correct two-segment breadcrumb, root-entity domains rendered the single-segment form, and the added column caused no horizontal overflow at a 1280px viewport.
     - Both verified against a live GLPI 11.0.8 instance (`glpi-claude`, port 65008) after running `bin/console cache:clear` — this container's Twig/Symfony template cache (`/var/glpi/files/_cache/<version>-<hash>-production/`, distinct from `/var/www/glpi/files/_cache`) does not appear to auto-invalidate on file mtime changes the way a dev-mode cache would, so a stale-render false negative is possible on this environment after a **template** edit until that command is re-run — worth remembering for future sessions against this same container.
     - **Correction (2026-07-27): `cache:clear` only covers the Twig/Symfony cache above — it does *not* clear PHP opcache.** Editing a **PHP** file (e.g. a driver class) and re-testing live can still silently serve the old bytecode even after `cache:clear`, despite `opcache.validate_timestamps=On` and a confirmed-fresh mtime on the mounted file — seen live while adding `DinahostingDriver::listAccountDomains()` (§9 Phase 8 addendum). The fix that actually worked was `podman restart glpi-claude_glpi_1` (safe — no data loss, the DB lives in the separate `glpi-claude_db_1` container). So: template-only changes → `cache:clear`; any PHP change → restart the container to be safe, `cache:clear` alone is not sufficient.
+
+11. **Phase 12 (implemented 2026-07-27) — configurable "Domain type to apply to imported domains".** Bulk-import (Phase 8) force-assigned the seeded "Internet Domain" `DomainType` to every domain it created, with no way for an admin to turn this off or pick a different one. Replaced with a real plugin-wide setting — the plugin's **first** general config of any kind (§6.6) — applied only at creation time (never re-applied on sync, never added to the locked-fields list). Fresh installs default to unset (imported domains get no type, same as one created by hand); installs upgrading from a pre-Phase-12 version default to the previously-hardcoded "Internet Domain" type, so upgrading changes nothing about current behavior until an admin deliberately changes it (`Installer::seedDomainType()` distinguishes the two by whether that `DomainType` row already existed before the current install/activation ran). See §6.6 for the full design and §8 for the right (`config` UPDATE).
 
 Every phase leaves install → uninstall residue-free.
 

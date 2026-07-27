@@ -35,6 +35,7 @@ use CronTask;
 use DBConnection;
 use DomainRecordType;
 use DomainType;
+use GlpiPlugin\Domainmanager\Config\Config;
 use Migration;
 use ProfileRight;
 
@@ -91,6 +92,8 @@ class Installer
         }
 
         CronTask::unregister('domainmanager');
+
+        Config::uninstall();
 
         ProfileRight::deleteProfileRights([Profile::UNLOCK_RIGHT]);
 
@@ -313,14 +316,28 @@ class Installer
     }
 
     /**
-     * Seed the "Internet Domain" domain type (by-name idempotent check)
+     * Seed the "Internet Domain" domain type (by-name idempotent check),
+     * always — it stays a convenient default option in the §9 Phase 12
+     * config dropdown regardless of whether it's actually applied.
+     *
+     * Also seeds the Phase 12 "domain type to apply to imported domains"
+     * config value, exactly once (`Config::seedDefault()` never overwrites
+     * an admin's later choice): if "Internet Domain" already existed
+     * *before* this call, this install/activation is an upgrade from a
+     * pre-Phase-12 version that force-assigned it to every imported domain
+     * — default the new setting to that same type so upgrading doesn't
+     * silently change behavior. A fresh install (the type didn't exist
+     * yet) has no prior behavior to preserve, so it defaults to unset/0
+     * (imported domains get no type, same as one created by hand).
      *
      * @return void
      */
     private static function seedDomainType(): void
     {
-        $type = new DomainType();
-        if (!$type->getFromDBByCrit(['name' => self::DOMAIN_TYPE_NAME])) {
+        $type    = new DomainType();
+        $existed = (bool) $type->getFromDBByCrit(['name' => self::DOMAIN_TYPE_NAME]);
+
+        if (!$existed) {
             $type->add([
                 'name'         => self::DOMAIN_TYPE_NAME,
                 'entities_id'  => 0,
@@ -328,6 +345,8 @@ class Installer
                 'comment'      => 'Created by the Domain Manager plugin',
             ]);
         }
+
+        Config::seedDefault($existed ? (int) $type->getID() : 0);
     }
 
     /**

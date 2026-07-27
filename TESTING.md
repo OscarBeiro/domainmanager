@@ -1903,3 +1903,83 @@ see 10.1a. The checks below still need a real browser/account pass by
   list — `DomainDiscoveryMatcher::normalize()` canonicalizes both sides to
   Punycode before comparing (§3.11).
 - [ ] Pass
+
+## Phase 12 — Configurable "Domain type to apply to imported domains" (§6.6, §9)
+
+### 12.1 Fresh install defaults to unset, no type ever applied
+- **Steps:** on a fresh install (no prior Domain Manager version ever
+  activated on this GLPI instance), activate the plugin. Open Setup >
+  General > "Domain Manager" tab.
+- **Expected:** the "Domain type to apply to imported domains" dropdown
+  shows "-----" (unset). Import a domain via the Import Domains modal
+  (§9 Phase 8).
+- [ ] Pass
+
+### 12.2 Fresh-install import leaves `Type` unset, like a hand-created domain
+- **Steps:** continuing from 12.1, open the newly-imported domain's form.
+- **Expected:** the "Type" field on the domain's own native form reads
+  "-----", exactly as it would for a domain created by hand through
+  Setup > Assets > Domains > "+". Nothing in the plugin sets or revisits
+  it afterward, including on a later sync ("Update Now").
+- [ ] Pass
+
+### 12.3 Setting a type applies it only to domains created afterward
+- **Steps:** in the "Domain Manager" config tab, set "Domain type to
+  apply to imported domains" to "Internet Domain" (or any other existing
+  `DomainType`) and save. Import a new domain via the Import Domains
+  modal.
+- **Expected:** a "Configuration saved" confirmation appears after
+  saving. The newly-imported domain's `Type` field is set to the chosen
+  value immediately on creation.
+- [ ] Pass
+
+### 12.4 A manual `Type` change is never reverted by a sync
+- **Steps:** on the domain imported in 12.3, manually change its `Type`
+  field (on the domain's native form) to a different `DomainType`, or
+  clear it back to "-----". Trigger "Update Now".
+- **Expected:** the sync completes normally (registrar/DNS status
+  updates as usual), and `Type` still shows the admin's manually-chosen
+  value afterward — unchanged by the sync.
+- [ ] Pass
+
+### 12.5 Upgrade from a pre-Phase-12 install preserves prior behavior automatically
+- **Steps:** on an instance that already ran a pre-0.9.0 version of the
+  plugin (i.e. "Internet Domain" was already seeded by a previous
+  `Installer::seedDomainType()` call, from unconditionally force-assigning
+  it), upgrade to this version and let the plugin's install/migration
+  step run (reactivate, or `bin/console glpi:plugin:install --force`).
+  Open Setup > General > "Domain Manager" without touching anything.
+- **Expected:** the config already reads "Internet Domain" — no
+  reconfiguration was needed to keep the previous effective behavior.
+  Importing a domain afterward still gets "Internet Domain" applied,
+  identical to pre-upgrade behavior, purely from the automatic default.
+- [ ] Pass
+
+### 12.6 Clearing the setting back to unset is honored, not silently re-defaulted
+- **Steps:** with the config set to a real `DomainType` (from 12.3 or
+  12.5), open the config tab again, set the dropdown back to "-----",
+  and save. Deactivate and reactivate the plugin (re-running
+  `Installer::install()`). Import a new domain.
+- **Expected:** the config still reads "-----" after reactivation (the
+  install-time default-seed is a one-time, already-configured check —
+  it never re-applies once a value, including an explicit "unset", has
+  ever been stored). The newly-imported domain's `Type` is left unset.
+- [ ] Pass
+
+### 12.7 Right enforcement on the config page
+- **Steps:** as a user/profile without `config` UPDATE, attempt to
+  reach `/plugins/domainmanager/Config` or POST to
+  `/plugins/domainmanager/Config/Save` directly.
+- **Expected:** both are rejected (`Session::checkRight()` denial),
+  matching the same `config` UPDATE gate every super-admin profile
+  already holds by default for this genuinely global setting.
+- [ ] Pass
+
+### 12.8 Uninstall leaves no config residue
+- **Steps:** uninstall the plugin (UI or
+  `bin/console glpi:plugin:uninstall`), having previously set the
+  "Domain type to apply to imported domains" config to a real value.
+- **Expected:** the `plugin:domainmanager` context in `glpi_configs` is
+  fully purged (`Config::uninstall()`) — no leftover rows, matching every
+  other phase's zero-residue rule.
+- [ ] Pass

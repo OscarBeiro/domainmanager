@@ -32,9 +32,8 @@
 namespace GlpiPlugin\Domainmanager\Controller;
 
 use Domain;
-use DomainType;
 use Glpi\Controller\AbstractController;
-use GlpiPlugin\Domainmanager\Installer;
+use GlpiPlugin\Domainmanager\Config\Config;
 use GlpiPlugin\Domainmanager\Service\DomainDiscoveryMatcher;
 use GlpiPlugin\Domainmanager\Service\PluginLogger;
 use GlpiPlugin\Domainmanager\Service\SyncEngine;
@@ -100,7 +99,11 @@ class DomainImportController extends AbstractController
             return $this->redirectToSupplierTab($suppliers_id);
         }
 
-        $domaintypes_id = self::getSeededDomainTypeId();
+        // §9 Phase 12: apply the configured "domain type to apply to
+        // imported domains" setting at creation time only, if the admin
+        // has set one. Left unset (0), the created Domain gets no
+        // `domaintypes_id` key at all — identical to one created by hand.
+        $domaintypes_id = Config::getDomainTypeId();
         $existing       = DomainDiscoveryMatcher::loadExistingDomains();
 
         $created      = 0;
@@ -115,12 +118,16 @@ class DomainImportController extends AbstractController
                 continue;
             }
 
+            $domain_data = [
+                'name'        => $name,
+                'entities_id' => $entities_id,
+            ];
+            if ($domaintypes_id > 0) {
+                $domain_data['domaintypes_id'] = $domaintypes_id;
+            }
+
             $domain = new Domain();
-            $domains_id = $domain->add([
-                'name'           => $name,
-                'entities_id'    => $entities_id,
-                'domaintypes_id' => $domaintypes_id,
-            ]);
+            $domains_id = $domain->add($domain_data);
 
             if (!$domains_id) {
                 $failed++;
@@ -197,18 +204,5 @@ class DomainImportController extends AbstractController
         return new RedirectResponse(
             Supplier::getFormURLWithID($suppliers_id) . '&forcetab=' . urlencode(SupplierTab::class . '$1')
         );
-    }
-
-    /**
-     * @return int
-     */
-    private static function getSeededDomainTypeId(): int
-    {
-        $type = new DomainType();
-        if ($type->getFromDBByCrit(['name' => Installer::DOMAIN_TYPE_NAME])) {
-            return (int) $type->getID();
-        }
-
-        return 0;
     }
 }

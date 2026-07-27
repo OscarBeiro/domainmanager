@@ -30,6 +30,7 @@
  */
 
 use Glpi\Plugin\Hooks;
+use GlpiPlugin\Domainmanager\Config\Config as DomainmanagerConfig;
 use GlpiPlugin\Domainmanager\DomainForm;
 use GlpiPlugin\Domainmanager\HookHandler;
 use GlpiPlugin\Domainmanager\ImportedRecord;
@@ -37,7 +38,7 @@ use GlpiPlugin\Domainmanager\LockEnforcer;
 use GlpiPlugin\Domainmanager\Profile as DomainmanagerProfile;
 use GlpiPlugin\Domainmanager\SupplierTab;
 
-define('PLUGIN_DOMAINMANAGER_VERSION', '0.8.0');
+define('PLUGIN_DOMAINMANAGER_VERSION', '0.9.0');
 define('PLUGIN_DOMAINMANAGER_MIN_GLPI', '11.0.0');
 define('PLUGIN_DOMAINMANAGER_MAX_GLPI', '11.0.99');
 define('PLUGIN_DOMAINMANAGER_REPOSITORY_URL', 'https://github.com/TICGAL-GLPI-Plugins/domainmanager');
@@ -265,6 +266,10 @@ function plugin_init_domainmanager(): void
     if (Plugin::isPluginActive('domainmanager')) {
         Plugin::registerClass(DomainmanagerProfile::class, ['addtabon' => Profile::class]);
         Plugin::registerClass(SupplierTab::class, ['addtabon' => Supplier::class]);
+        // §9 Phase 12: plugin-wide config, shown as a real tab of Setup >
+        // General on core's own Config itemtype (same pattern as the
+        // sibling `uxia` plugin's Config\Config).
+        Plugin::registerClass(DomainmanagerConfig::class, ['addtabon' => Config::class]);
 
         // So a core-wide `security:change_key` rotation re-encrypts this
         // field instead of silently orphaning it (leaving it encrypted
@@ -305,5 +310,9 @@ function plugin_init_domainmanager(): void
         $PLUGIN_HOOKS[Hooks::PRE_ITEM_PURGE]['domainmanager'] = [
             DomainRecord::class => [LockEnforcer::class, 'domainRecordPrePurge'],
         ];
+
+        // Resolves to /plugins/domainmanager/Config, which redirects to the
+        // Setup > General tab registered just above (§9 Phase 12).
+        $PLUGIN_HOOKS[Hooks::CONFIG_PAGE]['domainmanager'] = 'Config';
     }
 }
