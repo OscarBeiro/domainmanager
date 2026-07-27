@@ -108,7 +108,7 @@ class DomainState extends CommonDBTM
             self::STATUS_ERROR             => __('Error', 'domainmanager'),
             self::STATUS_UNCONFIGURED      => __('Not configured', 'domainmanager'),
             self::STATUS_UNSUPPORTED       => __('Provider not supported', 'domainmanager'),
-            self::STATUS_UNKNOWN           => __('Provider unknown', 'domainmanager'),
+            self::STATUS_UNKNOWN           => __('Unknown provider', 'domainmanager'),
             self::STATUS_SUPPLIER_INACTIVE => __('Supplier inactive', 'domainmanager'),
             self::STATUS_REASSIGNED        => __('Registrar changed, not yet verified', 'domainmanager'),
         ];
@@ -242,24 +242,27 @@ class DomainState extends CommonDBTM
      *   under a Supplier's native "Items" tab) and requires no sync/state
      *   row to exist at all. Never gate a domain's presence in this list
      *   on a state row existing just because the registrar link is real.
-     * - **DNS/NS provider**: `states.dns_suppliers_id`, which genuinely
+     * - **NS provider**: `states.dns_suppliers_id`, which genuinely
      *   cannot be known without at least one real sync — this half stays
      *   sync-dependent, it just must not suppress a row the registrar
      *   side already justifies.
      * `registrar_status` only comes from the state row when that row's own
-     * `registrar_suppliers_id` mirror actually agrees with the live Infocom
-     * value queried here — otherwise it falls back to `STATUS_NEVER`
-     * ("not yet checked *for this supplier*"). This matters even when a
-     * state row genuinely exists: a domain can have been synced (DNS side
-     * populated) while its Infocom registrar assignment predates or
-     * otherwise missed `HookHandler::infocomSaved()`'s mirror (§0.1) — in
-     * that case the row's `registrar_status` describes some *other*
-     * registrar relationship (often "none"), not this supplier's, and
-     * showing it next to this supplier's real name would be actively
-     * misleading rather than merely stale. `dns_status` has no equivalent
-     * problem: a row only matches the DNS half of the union at all when
-     * `dns_suppliers_id` already equals `$suppliers_id`, written directly
-     * by the most recent real sync.
+     * `registrar_suppliers_id` mirror actually agrees with the row's own
+     * live Infocom value queried here (`registrar_suppliers_id`, from the
+     * `infocom` join) — otherwise it falls back to `STATUS_NEVER` ("not yet
+     * checked"). This check is intentionally independent of `$suppliers_id`
+     * (which supplier's tab is being viewed): the mirror either matches the
+     * domain's real registrar or it doesn't, regardless of who's looking.
+     * This matters even when a state row genuinely exists: a domain can
+     * have been synced (DNS side populated) while its Infocom registrar
+     * assignment predates or otherwise missed
+     * `HookHandler::infocomSaved()`'s mirror (§0.1) — in that case the
+     * row's `registrar_status` describes some *other*, now-stale registrar
+     * relationship, not the domain's current one, and showing it would be
+     * actively misleading rather than merely stale. `dns_status` has no
+     * equivalent problem: a row only matches the DNS half of the union at
+     * all when `dns_suppliers_id` already equals `$suppliers_id`, written
+     * directly by the most recent real sync.
      *
      * @param  int $suppliers_id
      * @return array<int, array{domains_id:int, name:string, entities_id:int,
@@ -322,7 +325,7 @@ class DomainState extends CommonDBTM
 
         $rows = [];
         foreach ($iterator as $row) {
-            $registrar_verified = (int) ($row['state_registrar_suppliers_id'] ?? 0) === $suppliers_id;
+            $registrar_verified = (int) ($row['state_registrar_suppliers_id'] ?? 0) === (int) ($row['registrar_suppliers_id'] ?? 0);
 
             $rows[] = [
                 'domains_id'             => (int) $row['domains_id'],

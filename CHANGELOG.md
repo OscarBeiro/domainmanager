@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.3] - 2026-07-27
+### Fixed
+- **Dinahosting-hosted domains using `ns[.2-4].gestiondecuenta.com` nameservers showed "Unknown provider" instead of "Dinahosting"**: Dinahosting's own documented nameserver hostnames are `*.dinahosting.com`, but a real Dinahosting-hosted domain was found live using its customer-control-panel domain, `gestiondecuenta.com`, for NS delegation instead — undocumented in Dinahosting's own help article. Added `ns.gestiondecuenta.com`/`ns2-ns4.gestiondecuenta.com`/`*.gestiondecuenta.com` to the existing `Dinahosting` entry in `resources/ns-providers.json` (same driver, not a new provider). See `ARCHITECTURE.md` §4.
+### Changed
+- **"Provider unknown" status label reworded to "Unknown provider"** (`DomainState::getStatusLabels()`), used everywhere the shared status badge renders (Domain form, Registrar column, search-option dropdown).
+
+## [0.11.2] - 2026-07-27
+### Fixed
+- **Reverted 0.11.1's NS/DNS provider column badge change (Phase 16) — confirmed a regression by live testing**: switching the "Domains" list's NS column badge to the same `dns_status` sync-outcome vocabulary the Registrar column uses made genuinely-managed domains show a worse/wrong-looking status than the "Plugin managed"/"Known, unmanaged"/"Unknown"/"Not yet checked" classification it replaced. `SupplierTab::describeDnsProvider()` and the Twig template's `dns_kind_labels`/`_classes` maps are back to exactly their pre-0.11.1 behavior. See `ARCHITECTURE.md` §9 Phase 16.
+### Changed
+- **"DNS / NS Provider" column header renamed to "NS provider"** (Supplier "Domains" list and the Domain form panel) — one consistent term instead of two, matching the existing `NsProviderRegistry`/"NS Provider" search-option naming (Phase 15 addendum).
+
+## [0.11.1] - 2026-07-27
+### Fixed
+- **Supplier "Domains" list showed "Not yet checked" for a domain's Registrar status whenever viewed from a different supplier's tab than its registrar** (Phase 16, e.g. `ticgal.com` — registrar IONOS, DNS Cloudflare — viewed from Cloudflare's tab): `DomainState::getDomainsForSupplier()`'s verification gate compared the state row's registrar mirror against the *supplier whose tab is being viewed* instead of the row's own live Infocom registrar value fetched in the same query, so it was always false whenever those two suppliers differed. The Domain form was unaffected (it reads `state->fields` directly, no such gate). Fixed by comparing the mirror against the row's own live value instead, independent of which tab is open.
+### Changed
+- **DNS/NS provider column badge in the "Domains" list now shows the same OK/Error/Unconfigured/Unsupported/Unknown/Never sync-outcome badge the Domain form uses** (via the already-shared `DomainState::getStatusLabels()`/`getStatusClasses()`), instead of a separate, narrower "Plugin managed / Known, unmanaged / Unknown / Not yet checked" detection-only classification. The Registrar column already used this shared vocabulary; the Twig template's own duplicate `registrar_status_labels`/`_classes` maps are removed in favor of it too. See `ARCHITECTURE.md` §9 Phase 16.
+
 ## [0.11.0] - 2026-07-27
 ### Added
 - **Four new filterable Domain search options (Phase 15 addendum "Searchable fields")**: "NS Provider" (`detected_provider`), "Registrar sync status" (`registrar_status`), "DNS sync status" (`dns_status`), and "Last sync" (`last_sync_date`) — the first step of exposing every plugin-tracked field as a real, searchable column under the "Domain Manager" category, alongside the existing "Managed" option. The three enum-like fields ("NS Provider", "Registrar sync status", "DNS sync status") render as a real dropdown in the search criteria UI (`DomainState::getSpecificValueToSelect()`/`getSpecificValueToDisplay()`, `'datatype' => 'specific'`) instead of a free-text box — "NS Provider"'s choices come live from `NsProviderRegistry::getProviders()` (plus "Unknown"), the two status fields' choices from a new shared `DomainState::getStatusLabels()` (moved out of `DomainForm`, which now delegates to it, so the Domain form panel's badge and the search dropdown never drift apart). "Last sync" uses GLPI's native `datetime` datatype (no dropdown — not a bounded set), giving sort plus before/after/empty filtering to find stale or never-synced domains. See `ARCHITECTURE.md` §9 Phase 15 addendum and `search-options-registry.json` (reserved block widened `9400-9409` → `9400-9429` for the remaining fields still to come).

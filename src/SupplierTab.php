@@ -206,6 +206,8 @@ class SupplierTab extends CommonGLPI
                 array_map([DriverRegistry::class, 'getPrimaryTestableCapability'], DriverRegistry::getAvailableDrivers())
             ),
             'domains'            => self::buildDomainsListRows($domains_raw),
+            'status_labels'      => DomainState::getStatusLabels(),
+            'status_classes'     => DomainState::getStatusClasses(),
             'never_synced_count' => $never_synced_count,
             'domains_search_url' => self::getDomainsSearchUrl((int) $supplier->getID()),
             'discovery_supported'  => $discovery_supported,
@@ -252,9 +254,12 @@ class SupplierTab extends CommonGLPI
 
     /**
      * Presentation-layer enrichment of DomainState::getDomainsForSupplier()'s
-     * raw rows: itemtype hyperlinks and the plugin-managed/known-unmanaged/
-     * unknown classification for the DNS/NS column (reuses the sync engine's
-     * existing states verbatim, no new classification logic — §5, §9 Phase 5.5).
+     * raw rows: itemtype hyperlinks, the Registrar column's badge (rendered
+     * straight from `registrar_status` in the Twig template, via the shared
+     * `DomainState::getStatusLabels()`/`getStatusClasses()` maps, Phase 16),
+     * and the NS column's own managed/unmanaged/unknown/never classification
+     * (`describeDnsProvider()` — kept separate from the shared status maps,
+     * see its docblock for why).
      *
      * @param  array<int, array{domains_id:int, name:string, entities_id:int,
      *                registrar_suppliers_id:int, dns_suppliers_id:int,
@@ -262,8 +267,8 @@ class SupplierTab extends CommonGLPI
      *                dns_status:string, registrar_verified:bool}> $domains
      * @return array<int, array{domains_id:int, name:string, url:string,
      *                entity_html:string, registrar:?array{name:string, url:string},
-     *                registrar_status:string, dns:array{kind:string,
-     *                name:string, url:?string}, dns_status:string}>
+     *                registrar_status:string, dns:array{kind:string, name:string,
+     *                url:?string}, dns_status:string}>
      */
     private static function buildDomainsListRows(array $domains): array
     {
@@ -371,6 +376,16 @@ class SupplierTab extends CommonGLPI
     }
 
     /**
+     * NS provider name + link, plus the plugin-managed/known-unmanaged/
+     * unknown/never classification for the NS column's badge. Phase 16
+     * originally replaced this "kind" classification with a badge driven
+     * directly by `dns_status` (the same vocabulary the Registrar column and
+     * Domain form use), on the theory that `dns_status` alone already
+     * distinguishes every case this needs. That turned out to be a real
+     * regression in practice — reverted back to this classification, which
+     * is the one actually verified working. Kept as its own thing rather
+     * than reusing `DomainState::getStatusLabels()`/`getStatusClasses()`.
+     *
      * @param  array{dns_suppliers_id:int, detected_provider:string, dns_status:string} $domain
      * @return array{kind:string, name:string, url:?string}
      */

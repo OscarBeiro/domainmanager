@@ -2306,3 +2306,46 @@ see 10.1a. The checks below still need a real browser/account pass by
 - **Expected:** no `Unknown column`/`invalid search option` warnings; all
   four columns/criteria continue to work together (AND/OR combinations).
 - [ ] Pass
+
+## 17. Phase 16: Registrar/DNS status is identical everywhere, from any supplier tab
+
+Permanent regression case — the bug this covers only reproduces when a
+domain's registrar and DNS provider are **different suppliers**, so it must
+be checked from every supplier tab a domain is linked to, not just its own
+Domain form. Verify against `ticgal.com`, `tic.gal`, and `miedoavolar.es`
+specifically (real domains with this registrar/DNS-provider split used to
+diagnose the original bug).
+
+### 17.1 Registrar status matches between the Domain form and every linked supplier's "Domains" tab
+- **Steps:** for a domain whose registrar and DNS provider are different
+  suppliers (e.g. `ticgal.com`, registrar IONOS / DNS Cloudflare): open its
+  Domain form and note the Registrar sync badge. Then open the *DNS
+  provider's* Supplier ("Cloudflare") "Domains" tab and find the same domain's
+  row.
+- **Expected:** the Registrar badge shown in Cloudflare's "Domains" tab is
+  identical to the Domain form's (e.g. both "OK"), never "Not yet checked"
+  just because the tab being viewed isn't the registrar.
+- [ ] Pass
+
+### 17.2 NS provider column keeps its own managed/unmanaged/unknown/never badge (not the shared sync-outcome vocabulary)
+- **Note:** an earlier draft of this phase switched the NS column to the same
+  `dns_status`-driven badge the Registrar column uses; that was reverted
+  after live testing showed it as a regression (worse/wrong-looking status
+  for genuinely-managed domains, ARCHITECTURE.md §9 Phase 16). The NS column
+  keeps its pre-existing `SupplierTab::describeDnsProvider()` classification
+  ("Plugin managed"/"Known, unmanaged (yet)"/"Unknown"/"Not yet checked").
+- **Steps:** on a domain whose DNS provider is actively managed (a real
+  Supplier linked via `dns_suppliers_id`), check the NS column badge in that
+  supplier's "Domains" tab.
+- **Expected:** green "Plugin managed" badge (red only if the last sync
+  actually errored) — not a `dns_status`-literal label like "Never
+  synchronized"/"Not configured" for a domain that is in fact managed.
+- [ ] Pass
+
+### 17.3 No lag immediately after a sync, either path
+- **Steps:** trigger a sync for the domain both via "Update Now" (Domain
+  form) and via the batch "Review and sync" massive action, and re-check
+  both the Domain form and every linked supplier tab right after each.
+- **Expected:** badges update immediately and match everywhere with zero lag
+  after either sync path.
+- [ ] Pass

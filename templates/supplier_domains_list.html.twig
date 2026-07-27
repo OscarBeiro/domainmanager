@@ -27,20 +27,6 @@
  # -------------------------------------------------------------------------
  #}
 
-{% set registrar_status_labels = {
-    'never': __('Not yet checked', 'domainmanager'),
-    'ok': __('OK', 'domainmanager'),
-    'error': __('Error', 'domainmanager'),
-    'unconfigured': __('Not configured', 'domainmanager'),
-    'reassigned': __('Registrar changed, not yet verified', 'domainmanager'),
-} %}
-{% set registrar_status_classes = {
-    'never': 'text-bg-secondary',
-    'ok': 'text-bg-success',
-    'error': 'text-bg-danger',
-    'unconfigured': 'text-bg-secondary',
-    'reassigned': 'text-bg-info',
-} %}
 {% set dns_kind_labels = {
     'managed': __('Plugin managed', 'domainmanager'),
     'unmanaged': __('Known, unmanaged (yet)', 'domainmanager'),
@@ -85,7 +71,7 @@
                     <tr>
                         <th>{{ __('Domain', 'domainmanager') }}</th>
                         <th>{{ __('Registrar', 'domainmanager') }}</th>
-                        <th>{{ __('DNS / NS provider', 'domainmanager') }}</th>
+                        <th>{{ __('NS provider', 'domainmanager') }}</th>
                         <th>{{ _n('Entity', 'Entities', 1) }}</th>
                     </tr>
                 </thead>
@@ -98,8 +84,8 @@
                             <td>
                                 {% if domain.registrar %}
                                     <a href="{{ domain.registrar.url }}">{{ domain.registrar.name }}</a>
-                                    <span class="badge {{ registrar_status_classes[domain.registrar_status]|default('text-bg-secondary') }} ms-1">
-                                        {{ registrar_status_labels[domain.registrar_status]|default(domain.registrar_status) }}
+                                    <span class="badge {{ status_classes[domain.registrar_status]|default('text-bg-secondary') }} ms-1">
+                                        {{ status_labels[domain.registrar_status]|default(domain.registrar_status) }}
                                     </span>
                                 {% else %}
                                     <span class="text-muted">{{ __('None', 'domainmanager') }}</span>

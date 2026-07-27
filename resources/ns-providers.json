@@ -30,10 +30,15 @@
                 "ns2.dinahosting.com",
                 "ns3.dinahosting.com",
                 "ns4.dinahosting.com",
-                "*.dinahosting.com"
+                "*.dinahosting.com",
+                "ns.gestiondecuenta.com",
+                "ns2.gestiondecuenta.com",
+                "ns3.gestiondecuenta.com",
+                "ns4.gestiondecuenta.com",
+                "*.gestiondecuenta.com"
             ],
             "driver": "dinahosting",
-            "source": "https://dinahosting.com/ayuda/cuales-son-los-dns-de-dinahosting/ (ns.dinahosting.com, ns2-ns4.dinahosting.com)"
+            "source": "https://dinahosting.com/ayuda/cuales-son-los-dns-de-dinahosting/ (ns.dinahosting.com, ns2-ns4.dinahosting.com); gestiondecuenta.com hostnames (ns/ns2/ns3/ns4.gestiondecuenta.com) confirmed live via real Dinahosting-hosted domain (2026-07-27) — Dinahosting's own customer control panel is branded/hosted at gestiondecuenta.com and it delegates NS there for at least some accounts, undocumented in the help article above."
         },
         {
             "name": "AWS Route 53",
