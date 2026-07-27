@@ -66,6 +66,7 @@ class Installer
         self::addRegistrarMetadataColumns($migration);
         self::addRecordProxiedColumn($migration);
         self::addDomainManagedColumn($migration);
+        self::pruneStaleSearchOptionCriteria();
         self::seedDomainType();
         self::seedRecordTypes();
         self::registerRights($migration);
@@ -353,6 +354,12 @@ class Installer
 
         $migration->addField($table, 'is_managed', 'bool', ['value' => 0]);
         $migration->addKey($table, 'is_managed');
+        // Migration::addField()/addKey() only queue the ALTER; flush it now
+        // so the backfill UPDATE below (raw $DB->update(), not queued) runs
+        // against a column that actually exists yet. executeMigration() is
+        // safe to call multiple times per migration (it flushes the current
+        // queue) and is also called once more at the end of install().
+        $migration->executeMigration();
 
         if (!$column_existed) {
             $resolved = [DomainState::STATUS_OK, DomainState::STATUS_ERROR];
@@ -366,6 +373,72 @@ class Installer
                 if ($is_managed) {
                     $DB->update($table, ['is_managed' => 1], ['id' => (int) $row['id']]);
                 }
+            }
+        }
+    }
+
+    /**
+     * Rewrite any pre-existing saved search / bookmark still referencing one
+     * of the three dummy/duplicate search-option IDs dropped in §9 Phase 14
+     * addendum "Search UI cleanup" (`search-options-registry.json`'s
+     * `removed` entries: Supplier 9401, Domain 9402/9403). GLPI's
+     * `QueryBuilder::validateFilters()` already silently discards any
+     * criterion referencing an option ID that no longer exists for that
+     * itemtype (`src/Glpi/Search/Input/QueryBuilder.php`) — safe, but it
+     * re-triggers a `E_USER_WARNING` ("Attempted to use invalid search
+     * options...") on every render of a saved/default search still carrying
+     * one of these IDs, indefinitely, since nothing ever rewrites the saved
+     * `query` string itself. `glpi_savedsearches.query` is a plain
+     * URL-encoded query string (`criteria[0][field]=9403&...`), not JSON —
+     * `parse_str()`/`http_build_query()` round-trip it losslessly for the
+     * one `criteria[n][field]` key this touches, leaving every other
+     * criterion/sort/display option in the saved search untouched. Idempotent:
+     * a row with none of these IDs is read and skipped without a write.
+     *
+     * @return void
+     */
+    private static function pruneStaleSearchOptionCriteria(): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $stale_ids_by_itemtype = [
+            'Supplier' => [9401],
+            'Domain'   => [9402, 9403],
+        ];
+
+        foreach ($stale_ids_by_itemtype as $itemtype => $stale_ids) {
+            $iterator = $DB->request([
+                'SELECT' => ['id', 'query'],
+                'FROM'   => 'glpi_savedsearches',
+                'WHERE'  => ['itemtype' => $itemtype],
+            ]);
+
+            foreach ($iterator as $row) {
+                parse_str((string) $row['query'], $params);
+
+                if (!isset($params['criteria']) || !is_array($params['criteria'])) {
+                    continue;
+                }
+
+                $changed = false;
+                foreach ($params['criteria'] as $key => $criterion) {
+                    if (isset($criterion['field']) && in_array((int) $criterion['field'], $stale_ids, true)) {
+                        unset($params['criteria'][$key]);
+                        $changed = true;
+                    }
+                }
+
+                if (!$changed) {
+                    continue;
+                }
+
+                $params['criteria'] = array_values($params['criteria']);
+                $DB->update(
+                    'glpi_savedsearches',
+                    ['query' => http_build_query($params)],
+                    ['id' => (int) $row['id']]
+                );
             }
         }
     }

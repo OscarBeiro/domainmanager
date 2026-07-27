@@ -2146,3 +2146,84 @@ see 10.1a. The checks below still need a real browser/account pass by
   `9406` entry in `search-options-registry.json` (repo root) — `9404`/
   `9405` are already marked verified from a prior pass.
 - [ ] Pass
+
+## 15. Phase 15 regression: version bump now triggers the pending Phase 14 migration
+
+### 15.1 Upgrading from a pre-0.10.0 install no longer crashes the Domains search
+- **Requirement verified:** `PLUGIN_DOMAINMANAGER_VERSION` bump (0.9.0 →
+  0.10.0, this release) makes GLPI's version-mismatch check re-run
+  `Installer::install()` — including `addDomainManagedColumn()` — on an
+  instance that was already activated at 0.9.0 and therefore never got
+  the `is_managed` column added to `glpi_plugin_domainmanager_states`.
+- **Steps:** on an instance previously activated at plugin version 0.9.0
+  (Phase 14's code present but version constant not yet bumped, the exact
+  state that produced the crash), deploy 0.10.0's code and go to
+  Setup > Plugins to trigger the version-mismatch reactivation/update.
+  Then open the native Domains search and add the "Managed" column/filter.
+- **Expected:** no `Unknown column
+  'glpi_plugin_domainmanager_states_domains_id.is_managed'` (or any other)
+  SQL error; the migration log shows the `is_managed` column/key being
+  added; the "Managed" column/filter renders and filters correctly.
+- [ ] Pass
+
+### 15.2 "Managed" search option returns correct values for a managed/unmanaged mix
+- **Steps:** with at least one domain whose Registrar or DNS role
+  currently resolves to a real, active, driver-configured supplier, and
+  at least one domain with neither, filter Domain's native search by
+  "Managed" = Yes, then No.
+- **Expected:** the managed domain(s) appear only under Yes, the
+  unmanaged domain(s) (including any with no state row at all) only under
+  No — confirms the `child`-join wiring itself (unchanged by this fix)
+  is correct, isolating the regression to the version-bump gap in 15.1.
+- [ ] Pass
+
+### 15.1b Upgrade itself no longer crashes with "Unknown column 'is_managed' in 'SET'"
+- **Requirement verified:** `Installer::addDomainManagedColumn()` now calls
+  `$migration->executeMigration()` right after queuing the `is_managed`
+  field/key, flushing that `ALTER TABLE` before its own backfill loop's
+  raw `$DB->update()` calls run against the column — previously the
+  backfill ran while the column was still only queued, not yet physically
+  added, and only on upgrade (`!$column_existed` branch), never on a
+  fresh install.
+- **Steps:** on an instance previously activated at plugin version 0.9.0
+  (`is_managed` column absent from `glpi_plugin_domainmanager_states`,
+  with a realistic mix of rows — some with `registrar_status`/
+  `dns_status` in `ok`/`error`, some `never`), deploy 0.10.0's code and
+  trigger the plugin update from Setup > Plugins.
+- **Expected:** no `Unknown column 'is_managed' in 'SET'` (or any other)
+  SQL error during the update; the migration completes; every
+  pre-existing row whose `registrar_status`/`dns_status` was `ok`/`error`
+  is backfilled to `is_managed = 1`, every other row stays `0`.
+- [ ] Pass
+
+### 15.1c Stale saved-search criteria referencing a dropped search-option ID no longer warn
+- **Requirement verified:** `Installer::pruneStaleSearchOptionCriteria()`
+  rewrites any `glpi_savedsearches` row for `Domain`/`Supplier` still
+  referencing one of the three retired dummy/duplicate IDs (`9401`/
+  `9402`/`9403`, dropped in the Phase 14 addendum), stripping only that
+  criterion.
+- **Steps:** before upgrading, manually create (or confirm an existing)
+  saved search / bookmark on `Domain` with a criterion using field id
+  `9403` (or `9402`), and one on `Supplier` using `9401` — e.g. by
+  crafting the URL query string directly, since the option no longer
+  exists to pick from the UI. Deploy 0.10.0 and trigger the plugin
+  update. Then open that saved search from Domain's/Supplier's saved
+  searches list.
+- **Expected:** no `Attempted to use invalid search options...` warning
+  (dev/debug mode) and no "Some search criteria were removed..." message
+  on open; the saved search's other criteria/sort/columns are unchanged;
+  inspecting `glpi_savedsearches.query` for that row shows the stale
+  `criteria[n][field]=9403`-style entry gone, everything else intact.
+- [ ] Pass
+
+### 15.3 DomainRecord-level "Managed" field unaffected (audit, no fix needed)
+- **Requirement verified:** `PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_MANAGED`
+  already correctly targets `ImportedRecord::getTable()` /
+  `is_managed` (a table Phase 5.7 created directly, no post-hoc migration
+  gap) — audited against this same crash and found not to share the root
+  cause.
+- **Steps:** filter DomainRecord's native search by "Managed" = Yes, then
+  No, on an instance upgraded to 0.10.0.
+- **Expected:** correct results, no SQL error — confirms no regression
+  and no latent version-bump gap for this option.
+- [ ] Pass
