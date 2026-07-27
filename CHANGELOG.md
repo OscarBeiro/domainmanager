@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.7.0] - 2026-07-27
 ### Added
 - **NS detection for Strato and Arsys**: added to `resources/ns-providers.json` — `ns-strato.ui-dns.{de,com,org,biz}` and `ns-arsys.ui-dns.{es,com,org,biz}` respectively. Both are United Internet brands sharing the same `ui-dns.*` DNS platform, distinguished only by a brand-specific hostname label (`ns-strato.`/`ns-arsys.`, confirmed distinct from sibling brands `ns-1and1.`/`ns-fh.`). Deliberately **not sourced from an official vendor page** — none exists for either brand (Phase 5 batch 2 already established this) — instead confirmed live via authoritative `dig NS` against each brand's own domains (strato.de, strato.com, strato-hosting.co.uk; arsys.es, arsys.net), all of which currently resolve to exactly this hostname set. A deliberate, explicit exception to the registry's usual official-docs-only sourcing rule, made at Óscar's request; see ARCHITECTURE.md §9/TESTING.md §5.6 for the reasoning and the caveat that live DNS observation can drift if either brand migrates infrastructure later. Detection-only — no `driver` key, matching every other NS-provider-registry entry without a registrar/DNS API driver.
 
