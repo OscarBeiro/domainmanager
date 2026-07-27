@@ -1502,17 +1502,18 @@ search-option registration itself and the migration.
 - [x] Pass (confirmed as a documented, known limitation — not something
   to mark failing, since building a new list page was never requested)
 
-## Phase 8 — Bulk-import undiscovered registrar domains (IONOS slice, §9)
+## Phase 8 — Bulk-import undiscovered registrar domains (IONOS + Dinahosting, §9)
 
 ### 8.1 "Import Domains" button visibility is gated correctly
 - **Steps:** compare the Supplier tab across four suppliers: one
   configured with IONOS, one with Cloudflare, one with Dinahosting, and
   one with no driver ("None").
-- **Expected:** the "Import Domains" button appears only for the IONOS
-  supplier — Cloudflare/Dinahosting/None show no button at all (no
-  `DomainDiscoveryInterface` implementation exists for them yet). Confirm
-  this is a real `instanceof` check (`DriverFactory::forDiscovery()`), not
-  a hardcoded driver-name allowlist, by reading `SupplierTab.php`.
+- **Expected:** the "Import Domains" button appears for the IONOS and
+  Dinahosting suppliers — Cloudflare/None show no button at all (no
+  `DomainDiscoveryInterface` implementation exists for Cloudflare yet).
+  Confirm this is a real `instanceof` check
+  (`DriverFactory::forDiscovery()`), not a hardcoded driver-name
+  allowlist, by reading `SupplierTab.php`.
 - [ ] Pass
 
 ### 8.2 Button disabled on an inactive IONOS supplier
@@ -1612,6 +1613,20 @@ search-option registration itself and the migration.
   The reassign button's click handler actually fires (confirms embedded
   `<script>` tags in the AJAX-loaded fragment are executing, not just
   inert HTML).
+- [ ] Pass
+
+### 8.11 Dinahosting discovery lists the full account with expiration previews
+- **Steps:** on the active, configured Dinahosting test supplier, click
+  "Import Domains".
+- **Expected:** a modal opens listing every domain on that Dinahosting
+  account in one response (no internal pagination — confirmed live
+  2026-07-27 that `Services_GetDomains` returns a flat, unpaginated list).
+  Every row not yet in GLPI shows a real `(Expires YYYY-MM-DD)` hint next
+  to "Not yet in GLPI", sourced from the API's own `endDate` field. The
+  rest of the flow (existence/mismatch classification, import, reassign)
+  behaves identically to the IONOS case (8.3–8.7) since it's the same
+  shared `DomainDiscoveryMatcher`/modal/controller code path.
+- [ ] Pass
 - [ ] Pass
 
 ## Phase 9 addendum — Design/UX polish (§9)

@@ -83,6 +83,9 @@
                             <td>
                                 {% if not row.exists %}
                                     <span class="text-muted">{{ __('Not yet in GLPI', 'domainmanager') }}</span>
+                                    {% if row.preview_status %}
+                                        <span class="text-muted small">({{ row.preview_status }})</span>
+                                    {% endif %}
                                 {% elseif row.mismatch %}
                                     <span class="badge text-bg-warning">{{ __('Registrar mismatch', 'domainmanager') }}</span>
                                     <button type="button" class="btn btn-sm btn-outline-warning ms-1 domainmanager-reassign-btn"

@@ -34,9 +34,11 @@ namespace GlpiPlugin\Domainmanager\Driver;
 use DateTimeImmutable;
 use GlpiPlugin\Domainmanager\Contract\ConnectionTestableInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsPipelineInterface;
+use GlpiPlugin\Domainmanager\Contract\DomainDiscoveryInterface;
 use GlpiPlugin\Domainmanager\Contract\RegistrarDriverInterface;
 use GlpiPlugin\Domainmanager\Dto\ConnectionTestResult;
 use GlpiPlugin\Domainmanager\Dto\ConnectionTestStatus;
+use GlpiPlugin\Domainmanager\Dto\DiscoveredDomain;
 use GlpiPlugin\Domainmanager\Dto\DomainLifecycle;
 use GlpiPlugin\Domainmanager\Dto\LifecycleStatus;
 use GlpiPlugin\Domainmanager\Dto\ZoneRecord;
@@ -74,8 +76,23 @@ use Toolbox;
  * - There is no confirmed way to detect a registrar-hold/suspended status
  *   (no documented response shape for Domain_Status_Get was found), so
  *   fetchLifecycle() only distinguishes Ok/Expired via the expiration date.
+ *
+ * §9 Phase 8 addendum (2026-07-27) — bulk-import discovery: `Services_GetDomains`
+ * (Services category, no parameters) is a real, confirmed command — the docs
+ * site's own "Simulator" (which actually round-trips a live API call rather
+ * than faking a response, confirmed by it returning a real responseCode=2200
+ * auth error for fake credentials) only exposes the auth-error envelope, not
+ * a success example. The real success shape was confirmed with a live,
+ * read-only call against a real account (2026-07-27, Óscar's explicit
+ * one-time permission — same precedent as the earlier live driver
+ * verification work):
+ * `{"responseCode":1000,"message":"Success.","data":[{"domain":"...",
+ * "tld":"...","startDate":"YYYY-MM-DD","endDate":"YYYY-MM-DD"}, ...]}` — a
+ * flat, unpaginated list (Óscar's account: 9 domains in one response, no
+ * `count`/`limit`/`offset` fields present at all, unlike IONOS's discovery
+ * endpoint). See listAccountDomains().
  */
-class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterface, ConnectionTestableInterface
+class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterface, ConnectionTestableInterface, DomainDiscoveryInterface
 {
     private const BASE_URI = 'https://dinahosting.com/special/';
 
@@ -359,6 +376,38 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
         }
 
         return $records;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * §9 Phase 8 addendum: `Services_GetDomains` (no parameters) returns
+     * every domain on the account in one flat, unpaginated response — no
+     * pagination loop needed here, unlike IonosDriver::listAccountDomains().
+     * `previewStatus` is populated with the real expiration date
+     * (`endDate`), a genuinely useful preview this API happens to include
+     * for free — unlike IONOS's list endpoint, which was left null pending
+     * further verification (§9 Phase 8).
+     */
+    public function listAccountDomains(): array
+    {
+        $data = $this->request('Services_GetDomains');
+
+        $domains = [];
+        foreach ($data['data'] ?? [] as $row) {
+            if (!is_array($row) || empty($row['domain'])) {
+                continue;
+            }
+
+            $endDate       = trim((string) ($row['endDate'] ?? ''));
+            $previewStatus = $endDate !== ''
+                ? sprintf(__('Expires %s', 'domainmanager'), $endDate)
+                : null;
+
+            $domains[] = new DiscoveredDomain((string) $row['domain'], $previewStatus);
+        }
+
+        return $domains;
     }
 
     /**
