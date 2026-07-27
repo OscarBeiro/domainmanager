@@ -187,6 +187,14 @@
                 "dns[1-4].p*.nsone.net"
             ],
             "source": "https://www.ibm.com/docs/en/ns1-connect?topic=nameservers-nameserver-assignments (zones are assigned dns1-dns4.p<NN>.nsone.net from a numbered pool, e.g. dns1.p03.nsone.net; NS1 was acquired by and is now documented under IBM)"
+        },
+        {
+            "name": "bunny.net (Bunny DNS)",
+            "patterns": [
+                "kiki.bunny.net",
+                "coco.bunny.net"
+            ],
+            "source": "https://docs.bunny.net/dns/nameservers (standard Bunny DNS nameservers: kiki.bunny.net, coco.bunny.net; a custom-nameserver option also exists but has no fixed enumerable hostnames, so it is not covered here). Detection-only: bunny.net is a CDN/DNS host, not a domain registrar, so no 'driver' is set."
         }
     ]
 }
