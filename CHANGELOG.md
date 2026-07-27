@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.0] - 2026-07-27
 ### Added
 - **NS detection for bunny.net (Bunny DNS)**: added `kiki.bunny.net`/`coco.bunny.net` to `resources/ns-providers.json`, confirmed against bunny.net's own docs (https://docs.bunny.net/dns/nameservers). Detection-only, no driver — bunny.net is a CDN/DNS host, not a domain registrar.
 - **Bulk-import discovery for Dinahosting registrar accounts (Phase 8 addendum)**: the "Import Domains" button on the Supplier tab now also appears for Dinahosting suppliers, not just IONOS. Dinahosting's `Services_GetDomains` command returns every domain on the account in one flat, unpaginated call, including its real expiration date — shown as a preview hint next to domains not yet in GLPI. See ARCHITECTURE.md §9 Phase 8.
