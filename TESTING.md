@@ -1110,24 +1110,15 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
   same tab.
 - [ ] Pass
 
-### 3.7.7 Search-option ID collision check
-- **Steps:** run `php tools/getsearchoptions.php --type=Supplier` and
-  `--type=Domain` against the target instance (requires DB access) before
-  go-live; separately, check that "Domain Manager" appears exactly once as a
-  selectable column in Supplier's and Domain's Search config (Setup → search
-  options / the search page's "+" column picker) and that adding it as a
-  displayed/sorted column doesn't error (it's bound to the itemtype's own
-  `name` column, so it should just behave like a redundant Name column, not
-  crash).
-- **Expected:** IDs `9401` (Supplier) / `9402` (Domain,
-  `PLUGIN_DOMAINMANAGER_SO_SUPPLIER`/`PLUGIN_DOMAINMANAGER_SO_DOMAIN` in
-  `setup.php`) are not already used by another installed plugin for that
-  itemtype; no SQL error when the column is added to a search/sort. If a
-  collision is found, change the constants in `setup.php` to unused values
-  and re-test. Once confirmed clean, flip `verified_collision_free` to `true`
-  for both entries in `search-options-registry.json` (repo root) — the
-  TICGAL-wide ledger of every search-option ID any TICGAL plugin registers.
-- [ ] Pass
+### 3.7.7 (superseded 2026-07-27, §9 Phase 14 addendum "Search UI cleanup" — see TESTING.md Phase 14 for the replacement)
+The two dummy "Domain Manager" search options this item covered
+(`PLUGIN_DOMAINMANAGER_SO_SUPPLIER`/`_SO_DOMAIN`, ids `9401`/`9402`) were
+dropped entirely — there is nothing left to collision-check for them.
+`Log::history()` now passes `id_search_option = 0` and prefixes messages
+with `"[Domain Manager] "` instead (§3.7.1). See Phase 14's own items for
+the corrected Search UI behavior and its remaining collision-check
+requirement (only `9404`/`9405`/`9406` still need it).
+- [ ] N/A — superseded
 
 > Verification status: Phase 1 items were exercised on GLPI 11.0.8 via CLI on
 > 2026-07-17/18. Phase 2 items 2.2–2.6 (model level), 2.9, 2.10 and 2.11 were
@@ -1311,11 +1302,13 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
   link; then sync every flagged domain and reload the panel.
 - **Expected:** banner text correctly pluralized (singular/plural via
   `_n()`) and counts only unverified registrar links, not the whole list.
-  The link lands on Domain's native search, already filtered by the new
-  "Registrar (Financial information)" search option
-  (`PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR = 9403`) — confirm the value
+  The link lands on Domain's native search, already filtered by **native
+  search option id `53`** (`glpi_suppliers.name` under "Financial and
+  administrative information") — updated 2026-07-27 (§9 Phase 14 addendum
+  "Search UI cleanup") from the plugin's own now-dropped duplicate option
+  (`PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR = 9403`); confirm the value
   dropdown resolves to the Supplier's real name (not "-----" / an Infocom
-  record lookup — an earlier, incorrect version of this search option
+  record lookup — an earlier, incorrect version of the plugin's own option
   broke exactly that way, silently returning zero results too). After
   every flagged domain has been synced once, the banner disappears
   entirely.
@@ -1982,4 +1975,174 @@ see 10.1a. The checks below still need a real browser/account pass by
 - **Expected:** the `plugin:domainmanager` context in `glpi_configs` is
   fully purged (`Config::uninstall()`) — no leftover rows, matching every
   other phase's zero-residue rule.
+- [ ] Pass
+
+## Phase 14 — Conditional field locking, Registrar lock + Unlink action, Domain-level "Managed" field (§0.3, §9)
+
+### 14.1 Registration date stays unlocked when the driver never reports it
+- **Steps:** sync a domain via a registrar driver whose `fetchLifecycle()`
+  never sets `registrationDate` (e.g. IONOS, which only reports
+  expiration/status — confirm against the driver's own code first). After
+  sync, edit the domain's "Registration date" field directly.
+- **Expected:** the edit saves normally — `date_domaincreation` was never
+  added to the lock set for this domain. `date_expiration`/`is_active`
+  (if reported) are locked as expected (regression of already-correct
+  behavior, §0.3).
+- [ ] Pass
+
+### 14.2 `is_active` is always locked (no "not reported" case exists)
+- **Steps:** after any successful registrar sync, attempt to edit the
+  domain's `is_active`/status-derived field directly without the unlock
+  right.
+- **Expected:** stripped with a warning — `LifecycleStatus` is a mandatory
+  DTO field every driver always populates, so this is correct, not a gap.
+- [ ] Pass
+
+### 14.3 DomainRecord locking is now conditional per-sync (behavior-preserving today)
+- **Steps:** sync a domain's DNS records, then attempt to edit a
+  plugin-imported record's `name`/`data`/`ttl`/`domainrecordtypes_id`
+  without the unlock right.
+- **Expected:** all four are still stripped with a warning, same as
+  before — today's `ZoneRecord` DTO reports all four unconditionally, so
+  `RecordReconciler`'s new per-sync `ImportLock::replaceLocks()` calls
+  lock the same fields the old static list did. `domains_id` remains
+  always-locked (structural, not driver-dependent).
+- [ ] Pass
+
+### 14.4 Registrar (`suppliers_id`) locks once a confirmed match exists
+- **Steps:** sync a domain to `registrar_status = STATUS_OK`. As a user
+  **without** `domainmanager:unlock_imported`, open the domain's Infocom
+  ("Financial and administrative information") tab and change the
+  Supplier field directly, then save.
+- **Expected:** the change is stripped with a warning
+  ("The registrar is locked..."), the Supplier field reverts to its prior
+  value on reload. Retry as a right-holder — the change saves normally.
+- [ ] Pass
+
+### 14.5 A reassignment/error/never-synced registrar stays freely editable
+- **Steps:** on a domain whose `registrar_status` is `never`, `error`, or
+  `reassigned` (not `ok`), change the Infocom Supplier field as a user
+  without the unlock right.
+- **Expected:** the change saves — "confirmed working registrar match" is
+  strictly `STATUS_OK`, so none of these count as locked.
+- [ ] Pass
+
+### 14.6 "Unlink registrar" clears the assignment without the unlock right
+- **Steps:** on a domain with `registrar_status = STATUS_OK`, as a user
+  who can update the Domain but does **not** hold
+  `domainmanager:unlock_imported`, click "Unlink registrar" next to the
+  Registrar field on the Domain Manager panel.
+- **Expected:** the action succeeds (POST
+  `/plugins/domainmanager/domainunlink/{id}` returns `{ok: true}`), the
+  Infocom Supplier field clears, `registrar_status` resets to
+  `unconfigured` (via the existing `infocomSaved()` transition logic), and
+  the Domain's Historical tab logs "Registrar supplier cleared" — all
+  without needing the unlock right, mirroring the existing Reassign
+  action's own narrower auth scope.
+- [ ] Pass
+
+### 14.7 Add Record remains available and unrestricted on managed domains
+- **Steps:** on an actively-managed (synced) domain, use the native
+  "Add" affordance on the Records tab to manually create a new
+  `DomainRecord`.
+- **Expected:** the affordance is present and enabled regardless of the
+  domain's managed status (no gating code exists — confirmed by
+  code review, `DomainRecord::showForDomain()` is never overridden by this
+  plugin). The new record has `ImportedRecord::isPluginOwned()` false, no
+  `ImportLock` rows, and is fully editable (this supersedes an earlier
+  addendum's never-implemented "hide Add Record on managed domains" idea).
+- [ ] Pass
+
+### 14.8 Domain-level "Managed" search option reflects registrar-or-DNS resolution
+- **Steps:** across three domains — (a) both registrar and DNS resolve to
+  a real, active, driver-configured supplier; (b) only one role does; (c)
+  neither does (no supplier assigned, or assigned to an inactive/
+  unconfigured supplier) — open Setup > Assets > Domains (native list) and
+  filter by the new "Managed" column.
+- **Expected:** (a) and (b) show `Managed = Yes`, (c) shows `Managed = No`
+  or blank for a domain with no state row at all. Filtering by
+  `Managed = Yes`/`No` returns exactly the expected set.
+- [ ] Pass
+
+### 14.9 "Managed" reflects reassignment immediately, without waiting for a sync
+- **Steps:** on a fully-unmanaged domain (no registrar, no DNS resolved),
+  assign a registrar via Infocom to a Supplier with a valid, active,
+  configured driver and credentials. Check the "Managed" search option
+  immediately, before triggering any sync.
+- **Expected:** `Managed` already reads `Yes` — computed live in
+  `HookHandler::infocomSaved()` via `DomainState::resolvesToActiveDriver()`,
+  not deferred to the next sync. Unlink the registrar (14.6) on a domain
+  with no DNS role resolved — `Managed` drops back to `No` immediately.
+- [ ] Pass
+
+### 14.10 Upgrade backfills `is_managed` from existing sync history
+- **Steps:** on an instance with domains already synced under a
+  pre-Phase-14 version (real `registrar_status`/`dns_status` history
+  already stored), upgrade and let `Installer::addDomainManagedColumn()`
+  run.
+- **Expected:** every domain whose last known `registrar_status` or
+  `dns_status` is `ok`/`error` immediately reads `Managed = Yes` after
+  the migration — not `No` until its next sync happens to run.
+- [ ] Pass
+
+### 14.11 Search UI cleanup (addendum, 2026-07-27) — duplicate/dummy options dropped
+- **Steps:** live testing surfaced three problems with the Search UI's
+  field/criteria picker for `Domain`: a generic "Plugins" category (not
+  naming the plugin) containing a "Domain Manager" entry with no real
+  filtering value (duplicate of Name), and a "Registrar (Financial
+  information)" entry duplicating a native option. Open Domain's Search
+  "+" column/criteria picker and inspect the available fields.
+- **Expected:** no "Domain Manager" (dummy, ex-`9402`) or "Registrar
+  (Financial information)" (ex-`9403`) entries remain. The equivalent
+  Supplier-side dummy ("Domain Manager", ex-`9401`) is also gone from
+  Supplier's own picker.
+- [ ] Pass
+
+### 14.12 Managed options group under a "Domain Manager" category, not generic "Plugins"
+- **Steps:** in the same picker, locate the "Managed" option for `Domain`
+  and for `DomainRecord`.
+- **Expected:** both appear grouped under a category header reading
+  "Domain Manager" (not a generic, unlabeled "Plugins" bucket), via the
+  new `'id' => 'domainmanager'` category-tab entry each itemtype's option
+  group now opens with.
+- [ ] Pass
+
+### 14.13 "Managed" filters as a plain Yes/No
+- **Steps:** filter Domain's native search by "Managed" = Yes, then No.
+  Repeat for `DomainRecord`'s "Managed" option.
+- **Expected:** both are simple two-value (Yes/No) filters (native `bool`
+  datatype `equals`/`notequals`), returning exactly the expected managed
+  vs. unmanaged sets — no more elaborate filter type is offered or needed.
+- [ ] Pass
+
+### 14.14 Historical tab entries now show a blank field + "[Domain Manager]" prefix
+- **Steps:** trigger a registrar-supplier assignment change, a
+  SupplierConfig credential change, and a sync milestone. Open each
+  affected item's Historical tab.
+- **Expected:** the "field" column is now blank (`id_search_option = 0`)
+  and the message text itself starts with `"[Domain Manager] "` — e.g.
+  `"[Domain Manager] Registrar supplier cleared"` — instead of the
+  previous "Domain Manager"-labeled field column with an unprefixed
+  message.
+- [ ] Pass
+
+### 14.15 Supplier tab's "Domains" list deep link still works via the native option
+- **Steps:** from a Supplier's Domain Manager tab, click the recommendation
+  banner's "Review and sync" link (or any link built by
+  `SupplierTab::getDomainsSearchUrl()`).
+- **Expected:** lands on Domain's native search, correctly pre-filtered to
+  this supplier via native search option id `53` — same correct behavior
+  as before (5.5.8), now via the native option instead of the dropped
+  `PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR`.
+- [ ] Pass
+
+### 14.16 Remaining search-option ID collision check
+- **Steps:** run `php tools/getsearchoptions.php --type=Domain` and
+  `--type=DomainRecord` against the target instance (requires DB access)
+  before go-live.
+- **Expected:** IDs `9404`/`9405` (DomainRecord) and `9406` (Domain) are
+  not already used by another installed plugin for that itemtype. Once
+  confirmed clean, flip `verified_collision_free` to `true` for the
+  `9406` entry in `search-options-registry.json` (repo root) — `9404`/
+  `9405` are already marked verified from a prior pass.
 - [ ] Pass

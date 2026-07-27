@@ -36,6 +36,7 @@ use DomainRecord;
 use DomainRecordType;
 use GlpiPlugin\Domainmanager\Dto\ZoneRecord;
 use GlpiPlugin\Domainmanager\ImportedRecord;
+use GlpiPlugin\Domainmanager\ImportLock;
 use GlpiPlugin\Domainmanager\LockEnforcer;
 use Session;
 
@@ -205,6 +206,25 @@ class RecordReconciler
                 $stats['unchanged']++;
             }
 
+            // §9 Phase 14: refresh the lock set every sync (whether or not
+            // the hash changed this time), mirroring how Domain's own locks
+            // are refreshed by every successful registrar sync regardless
+            // of whether the values actually changed. Conditional per-field
+            // in principle — built from exactly the fields ZoneRecord
+            // reports this sync — though today's ZoneRecord DTO has no
+            // nullable fields among these four, so in practice this locks
+            // the same set every time (see ImportLock::replaceLocks()).
+            ImportLock::replaceLocks(
+                DomainRecord::class,
+                (int) $native->getID(),
+                [
+                    'name'                 => $record->name,
+                    'data'                 => $record->data,
+                    'ttl'                  => $record->ttl,
+                    'domainrecordtypes_id' => $type_ids[$record->type],
+                ]
+            );
+
             // is_proxied is refreshed on every sync regardless of which
             // branch above ran: unlike type/name/data/ttl, a proxy toggle
             // can change without the record's own content changing at all,
@@ -288,6 +308,19 @@ class RecordReconciler
             'is_managed'       => 1,
             'is_proxied'       => self::toNullableInt($record->isProxied),
         ]);
+
+        // §9 Phase 14: same conditional per-field lock set as the update
+        // path above.
+        ImportLock::replaceLocks(
+            DomainRecord::class,
+            (int) $records_id,
+            [
+                'name'                 => $record->name,
+                'data'                 => $record->data,
+                'ttl'                  => $record->ttl,
+                'domainrecordtypes_id' => $type_ids[$record->type],
+            ]
+        );
 
         return true;
     }

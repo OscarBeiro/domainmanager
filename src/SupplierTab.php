@@ -323,9 +323,18 @@ class SupplierTab extends CommonGLPI
 
     /**
      * Deep link to Domain's native search, pre-filtered to domains whose
-     * Infocom Supplier is this one (`PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR`,
-     * setup.php) — reuses core's own search/criteria mechanism rather than
-     * a bespoke filtered view, per §9 Phase 5.5's recommendation banner.
+     * Infocom Supplier is this one — reuses core's own search/criteria
+     * mechanism rather than a bespoke filtered view, per §9 Phase 5.5's
+     * recommendation banner.
+     *
+     * Search option id **53** is core's own, already-native
+     * `glpi_suppliers.name` field under "Financial and administrative
+     * information" (`Infocom::rawSearchOptionsToAdd()`, confirmed live
+     * against a running GLPI 11 instance) — exposed automatically for any
+     * Infocom-bearing itemtype, Domain included. This plugin previously
+     * duplicated it with its own `PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR`
+     * search option (dropped, §9 Phase 14 addendum "Search UI cleanup") —
+     * reuse the native one instead of maintaining a redundant copy.
      *
      * @param  int $suppliers_id
      * @return string
@@ -335,7 +344,7 @@ class SupplierTab extends CommonGLPI
         $params = [
             'criteria' => [
                 [
-                    'field'      => PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR,
+                    'field'      => 53,
                     'searchtype' => 'equals',
                     'value'      => $suppliers_id,
                 ],

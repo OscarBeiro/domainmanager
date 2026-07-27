@@ -65,6 +65,7 @@ class Installer
         self::migrateRecordManagedColumn($migration);
         self::addRegistrarMetadataColumns($migration);
         self::addRecordProxiedColumn($migration);
+        self::addDomainManagedColumn($migration);
         self::seedDomainType();
         self::seedRecordTypes();
         self::registerRights($migration);
@@ -154,6 +155,7 @@ class Installer
                     `registrar_message` text,
                     `dns_status` varchar(50) NOT NULL DEFAULT 'never',
                     `dns_message` text,
+                    `is_managed` tinyint NOT NULL DEFAULT '0',
                     `date_mod` timestamp NULL DEFAULT NULL,
                     `date_creation` timestamp NULL DEFAULT NULL,
                     PRIMARY KEY (`id`),
@@ -161,6 +163,7 @@ class Installer
                     KEY `registrar_suppliers_id` (`registrar_suppliers_id`),
                     KEY `dns_suppliers_id` (`dns_suppliers_id`),
                     KEY `last_sync_date` (`last_sync_date`),
+                    KEY `is_managed` (`is_managed`),
                     KEY `date_mod` (`date_mod`),
                     KEY `date_creation` (`date_creation`)
                 ) ENGINE=InnoDB DEFAULT CHARSET={$charset} COLLATE={$collation} ROW_FORMAT=DYNAMIC
@@ -313,6 +316,58 @@ class Installer
 
         $migration->addField($table, 'is_proxied', 'tinyint NULL DEFAULT NULL');
         $migration->addKey($table, 'is_proxied');
+    }
+
+    /**
+     * Add `is_managed` to the states table (§9 Phase 14 "Domain-level
+     * Managed field"), backing the new Domain-level "Managed" search
+     * option. Idempotent via `Migration::addField()`/`addKey()` for
+     * upgrades; already present in `createTables()`'s raw CREATE TABLE for
+     * fresh installs, same convention as `is_proxied`/`is_managed` on the
+     * records table.
+     *
+     * Unlike `is_proxied` (which must stay `NULL` on upgrade — nothing has
+     * re-synced under proxy-awareness yet), this table's existing rows
+     * already carry real, meaningful `registrar_status`/`dns_status`
+     * history from every prior sync/reassignment — defaulting them all to
+     * `0` would falsely report every already-managed domain as unmanaged
+     * until its next sync happens to run. So this migration also backfills
+     * every existing row from that history in the same definition
+     * `SyncEngine`/`HookHandler::infocomSaved()` use going forward: managed
+     * whenever either leg's last known status is one only reachable after
+     * that leg's pre-flight checks passed (`STATUS_OK`/`STATUS_ERROR`) —
+     * see `DomainState::resolvesToActiveDriver()`'s docblock for why those
+     * two values specifically mean "a real, driver-backed, active supplier
+     * was resolved", independent of whether the API call itself succeeded.
+     *
+     * @param  Migration $migration
+     * @return void
+     */
+    private static function addDomainManagedColumn(Migration $migration): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $table           = 'glpi_plugin_domainmanager_states';
+        $column_existed  = $DB->fieldExists($table, 'is_managed', false);
+
+        $migration->addField($table, 'is_managed', 'bool', ['value' => 0]);
+        $migration->addKey($table, 'is_managed');
+
+        if (!$column_existed) {
+            $resolved = [DomainState::STATUS_OK, DomainState::STATUS_ERROR];
+            $iterator = $DB->request([
+                'SELECT' => ['id', 'registrar_status', 'dns_status'],
+                'FROM'   => $table,
+            ]);
+            foreach ($iterator as $row) {
+                $is_managed = in_array($row['registrar_status'], $resolved, true)
+                    || in_array($row['dns_status'], $resolved, true);
+                if ($is_managed) {
+                    $DB->update($table, ['is_managed' => 1], ['id' => (int) $row['id']]);
+                }
+            }
+        }
     }
 
     /**

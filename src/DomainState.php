@@ -218,6 +218,33 @@ class DomainState extends CommonDBTM
     }
 
     /**
+     * Whether $suppliers_id currently resolves to a real, driver-backed,
+     * active supplier — the same pre-flight check `SyncEngine::
+     * syncRegistrarLeg()`/`syncDnsLeg()` perform before attempting a live
+     * API call (§9 Phase 14 "Domain-level Managed field"): the supplier
+     * exists, is active (`SupplierConfig::isSupplierActive()`), has a real
+     * driver configured (not `DriverRegistry::DRIVER_NONE`), and has
+     * decrypted credentials on file. Deliberately independent of whether a
+     * sync actually ran or what it found — a domain counts as "managed" the
+     * moment a real driver is behind it, even before the first sync.
+     *
+     * @param  int $suppliers_id
+     * @return bool
+     */
+    public static function resolvesToActiveDriver(int $suppliers_id): bool
+    {
+        if ($suppliers_id <= 0 || !SupplierConfig::isSupplierActive($suppliers_id)) {
+            return false;
+        }
+
+        $config = SupplierConfig::getForSupplier($suppliers_id);
+
+        return $config !== null
+            && $config->fields['api_driver'] !== DriverRegistry::DRIVER_NONE
+            && $config->getDecryptedCredentials() !== [];
+    }
+
+    /**
      * Detach a purged supplier from every state row referencing it
      *
      * @param  int $suppliers_id

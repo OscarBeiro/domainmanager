@@ -7,41 +7,53 @@
       "registered_in": "setup.php::plugin_domainmanager_getAddSearchOptionsNew()",
       "search_options": [
         {
-          "itemtype": "Supplier",
-          "id": 9401,
-          "name": "Domain Manager",
-          "table": "glpi_suppliers",
-          "field": "name",
-          "purpose": "Log::history() field-column label for SupplierConfig driver/credential changes (ARCHITECTURE.md §3.7)",
-          "verified_collision_free": false
-        },
-        {
-          "itemtype": "Domain",
-          "id": 9402,
-          "name": "Domain Manager",
-          "table": "glpi_domains",
-          "field": "name",
-          "purpose": "Log::history() field-column label for registrar-supplier-assignment changes and sync milestones (ARCHITECTURE.md §3.7)",
-          "verified_collision_free": false
-        },
-        {
-          "itemtype": "Domain",
-          "id": 9403,
-          "name": "Registrar (Financial information)",
-          "table": "glpi_infocoms",
-          "field": "suppliers_id",
-          "purpose": "Real, filterable search option (unlike 9401/9402) so the Supplier tab's \"Domains\" list recommendation banner (ARCHITECTURE.md §9 Phase 5.5) can deep-link to a native, pre-filtered Domain search instead of a bespoke view — core never exposes Infocom's suppliers_id as an add-on search option for any itemtype",
-          "verified_collision_free": false
-        },
-        {
           "itemtype": "DomainRecord",
           "id": 9404,
           "name": "Managed",
           "table": "glpi_plugin_domainmanager_records",
           "field": "is_managed",
-          "purpose": "Real, filterable bool search option (like 9403, unlike 9401/9402) showing whether a native DomainRecord was imported/is tracked by this plugin's sync (ARCHITECTURE.md §5.7, addendum \"Searchable 'Managed' Field on Domain Records\") — joined via 'jointype' => 'child' since glpi_plugin_domainmanager_records has a direct, non-polymorphic domainrecords_id FK back to DomainRecord's own id, confirmed against Glpi\\Search\\Provider\\SQLProvider::getLeftJoinCriteria() on the live 11.0.8 source",
+          "purpose": "Real, filterable bool search option showing whether a native DomainRecord was imported/is tracked by this plugin's sync (ARCHITECTURE.md §5.7, addendum \"Searchable 'Managed' Field on Domain Records\") — joined via 'jointype' => 'child' since glpi_plugin_domainmanager_records has a direct, non-polymorphic domainrecords_id FK back to DomainRecord's own id, confirmed against Glpi\\Search\\Provider\\SQLProvider::getLeftJoinCriteria() on the live 11.0.8 source",
           "verified_collision_free": true,
           "verified_collision_free_note": "Confirmed against DomainRecord::rawSearchOptions() read directly from the live 11.0.8 source (core options 2,3,4,6,7,8,9,10,80 — none near 9400+); not checked against any third-party plugin, since none besides this one is installed on the instance checked"
+        },
+        {
+          "itemtype": "DomainRecord",
+          "id": 9405,
+          "name": "Proxy status",
+          "table": "glpi_plugin_domainmanager_records",
+          "field": "is_proxied",
+          "purpose": "Real, filterable bool search option (same 'child' join shape as 9404) for CDN-proxied records (ARCHITECTURE.md §9 Phase 7 addendum \"Searchable 'Proxy Status' Field for CDN-Proxied Records\")",
+          "verified_collision_free": true,
+          "verified_collision_free_note": "Same join/table as 9404, checked in the same pass"
+        },
+        {
+          "itemtype": "Domain",
+          "id": 9406,
+          "name": "Managed",
+          "table": "glpi_plugin_domainmanager_states",
+          "field": "is_managed",
+          "purpose": "Real, filterable bool search option: true iff either role (Registrar or DNS) currently resolves to a real, driver-backed, active supplier, independent of last sync success/failure (ARCHITECTURE.md §2, §9 Phase 14 \"Domain-level Managed field\") — joined via 'jointype' => 'child' since glpi_plugin_domainmanager_states has a direct, non-polymorphic domains_id FK back to Domain's own id",
+          "verified_collision_free": false
+        }
+      ],
+      "removed": [
+        {
+          "itemtype": "Supplier",
+          "id": 9401,
+          "removed_in": "§9 Phase 14 addendum \"Search UI cleanup\"",
+          "reason": "Dummy placeholder bound to glpi_suppliers.name, used only to label Log::history()'s id_search_option \"Domain Manager\" — cluttered the Search UI's generic \"Plugins\" category with no real filtering value. Log::history() call sites now pass id_search_option 0 (blank field) and prefix the message text with \"[Domain Manager] \" instead."
+        },
+        {
+          "itemtype": "Domain",
+          "id": 9402,
+          "removed_in": "§9 Phase 14 addendum \"Search UI cleanup\"",
+          "reason": "Same as 9401, for Domain."
+        },
+        {
+          "itemtype": "Domain",
+          "id": 9403,
+          "removed_in": "§9 Phase 14 addendum \"Search UI cleanup\"",
+          "reason": "Duplicated native search option id 53 (glpi_suppliers.name under \"Financial and administrative information\", Infocom::rawSearchOptionsToAdd(), confirmed live) — an earlier verification pass had incorrectly concluded core never exposes this. SupplierTab::getDomainsSearchUrl() now links to native id 53 instead."
         }
       ]
     }

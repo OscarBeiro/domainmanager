@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- **Registrar (`suppliers_id`) is now lock-protected once a domain has a confirmed working registrar match** (Phase 14): previously this field had no server-side protection at all, only a read-only UI hint. A new "Unlink registrar" button/action (`DomainRegistrarUnlinkController`) clears it without requiring the unlock right, mirroring the existing "Reassign registrar" action's own narrower auth scope.
+- **New Domain-level "Managed" search option** (Phase 14): filterable on the native Domains list, true whenever either role (Registrar or DNS) currently resolves to a real, active, driver-configured supplier — independent of whether the last sync attempt succeeded or errored. Mirrors the existing DomainRecord-level "Managed" field.
+
+### Changed
+- **DomainRecord field locking is now conditional per-sync, matching how Domain's own locking already worked**, instead of a fixed static field list — behavior-preserving today (every current DNS driver reports all four protected fields every time), but a future driver whose reported fields vary is now handled correctly without further plugin changes. See `ARCHITECTURE.md` §0.3/§9 Phase 14.
+- **Search UI cleanup (addendum)**: dropped two dummy "Domain Manager" search options on Supplier/Domain (they only labeled `Log::history()`'s field column, cluttering the Search UI's generic "Plugins" category with no real filtering value — history entries now show a blank field and a `"[Domain Manager] "` message prefix instead) and one on Domain that duplicated a native option (`"Registrar (Financial information)"` — turned out core already exposes this via `Infocom::rawSearchOptionsToAdd()`'s search option id 53; an earlier verification pass had incorrectly concluded otherwise). The remaining real options (DomainRecord/Domain "Managed") now group under a "Domain Manager"-labeled category instead of falling into the unlabeled default. See `ARCHITECTURE.md` §3.7.1.
 
 ## [0.9.0] - 2026-07-27
 ### Changed

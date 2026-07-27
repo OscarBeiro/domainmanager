@@ -107,9 +107,21 @@ class HookHandler
         if ($state !== null) {
             $old_suppliers_id = (int) $state->fields['registrar_suppliers_id'];
             if ($old_suppliers_id !== $suppliers_id) {
+                // §9 Phase 14: recompute "Managed" immediately, without
+                // waiting for the next sync — the registrar side is
+                // re-evaluated live (DomainState::resolvesToActiveDriver()),
+                // OR'd with the DNS side's already-stored contribution
+                // (dns_status is untouched by an Infocom change, so its
+                // resolved-or-not state can't have changed here).
+                $dns_resolved  = in_array(
+                    $state->fields['dns_status'],
+                    [DomainState::STATUS_OK, DomainState::STATUS_ERROR],
+                    true
+                );
                 $update = [
                     'id'                     => $state->getID(),
                     'registrar_suppliers_id' => $suppliers_id,
+                    'is_managed'             => (int) (DomainState::resolvesToActiveDriver($suppliers_id) || $dns_resolved),
                 ];
                 // Whatever registrar_status/registrar_message the state row
                 // already held describes the *old* supplier (or no
@@ -136,6 +148,7 @@ class HookHandler
             (new DomainState())->add([
                 'domains_id'             => $domains_id,
                 'registrar_suppliers_id' => $suppliers_id,
+                'is_managed'             => (int) DomainState::resolvesToActiveDriver($suppliers_id),
             ]);
             self::logRegistrarChange($domains_id, 0, $suppliers_id);
         }
@@ -161,7 +174,11 @@ class HookHandler
             default => sprintf(__('Registrar supplier changed from %1$s to %2$s', 'domainmanager'), $old_name, $new_name),
         };
 
-        Log::history($domains_id, Domain::class, [PLUGIN_DOMAINMANAGER_SO_DOMAIN, '', $message]);
+        // §9 Phase 14 addendum "Search UI cleanup": id_search_option 0
+        // (blank "field" column) instead of a dummy search option that only
+        // cluttered the Search UI — the plugin name is prefixed into the
+        // message text instead.
+        Log::history($domains_id, Domain::class, [0, '', '[' . __('Domain Manager', 'domainmanager') . '] ' . $message]);
     }
 
     /**
@@ -203,5 +220,6 @@ class HookHandler
         }
 
         $DB->delete(ImportedRecord::getTable(), ['domainrecords_id' => $records_id]);
+        ImportLock::deleteForItem(DomainRecord::class, $records_id);
     }
 }

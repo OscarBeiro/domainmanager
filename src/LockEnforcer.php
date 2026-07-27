@@ -33,26 +33,32 @@ namespace GlpiPlugin\Domainmanager;
 
 use Domain;
 use DomainRecord;
+use Infocom;
 use Session;
 
 /**
  * Server-side enforcement of the plugin lock layer (§0.3): synced Domain
- * fields and plugin-imported DomainRecords are shielded from users lacking
- * the unlock right. Enforcement fires on every entry point (forms, massive
- * actions, API) because it hooks the model layer.
+ * fields, the Domain's Registrar (Infocom's Supplier), and plugin-imported
+ * DomainRecords are shielded from users lacking the unlock right.
+ * Enforcement fires on every entry point (forms, massive actions, API)
+ * because it hooks the model layer.
  */
 class LockEnforcer
 {
     /**
-     * Runtime flag set by SyncEngine so its own writes bypass enforcement;
-     * not input-based, so it cannot be forged through a form POST
+     * Runtime flag set by SyncEngine (and the Unlink action) so their own
+     * writes bypass enforcement; not input-based, so it cannot be forged
+     * through a form POST
      */
     public static bool $sync_in_progress = false;
 
     /**
-     * Fields on DomainRecord that a lock protects
+     * Field on DomainRecord that is always locked when the record is
+     * plugin-owned, regardless of what the DNS driver reported this sync —
+     * changing it would break the record/domain relationship the plugin
+     * itself maintains, the same reasoning as `name` on Domain (§9 Phase 14).
      */
-    private const PROTECTED_RECORD_FIELDS = ['name', 'data', 'ttl', 'domainrecordtypes_id', 'domains_id'];
+    private const STRUCTURAL_RECORD_FIELD = 'domains_id';
 
     /**
      * pre_item_update on Domain: strip locked fields from the input
@@ -112,8 +118,17 @@ class LockEnforcer
             return;
         }
 
+        // §9 Phase 14: conditional per-field locking, mirroring how Domain
+        // already works — only fields the most recent reconcile actually
+        // wrote are locked (ImportLock::replaceLocks(), called from
+        // RecordReconciler), plus the always-locked structural field above.
+        $protected = array_merge(
+            [self::STRUCTURAL_RECORD_FIELD],
+            ImportLock::getLockedFieldNames(DomainRecord::class, (int) $item->getID())
+        );
+
         $stripped = [];
-        foreach (self::PROTECTED_RECORD_FIELDS as $field) {
+        foreach ($protected as $field) {
             if (
                 array_key_exists($field, $item->input)
                 && isset($item->fields[$field])
@@ -131,6 +146,52 @@ class LockEnforcer
                 WARNING
             );
         }
+    }
+
+    /**
+     * pre_item_update on Infocom: strip a `suppliers_id` change once the
+     * Domain it belongs to has a confirmed working registrar match (§9
+     * Phase 14) — "confirmed" means the most recent registrar sync actually
+     * succeeded against the currently-assigned supplier
+     * (`DomainState::STATUS_OK`); a reassignment/error/never-synced state
+     * doesn't count as confirmed, so it stays freely editable. Bypassed the
+     * same way every other lock is: `unlock_imported`, cron, or the
+     * `$sync_in_progress` flag (used by the Unlink action to clear it
+     * without requiring the right, mirroring the existing Reassign action's
+     * own Supplier-scoped bypass).
+     *
+     * @param  Infocom $item
+     * @return void
+     */
+    public static function infocomPreUpdate(Infocom $item): void
+    {
+        if (self::canBypass() || !is_array($item->input)) {
+            return;
+        }
+
+        if (($item->fields['itemtype'] ?? null) !== Domain::class) {
+            return;
+        }
+
+        if (
+            !array_key_exists('suppliers_id', $item->input)
+            || (string) $item->input['suppliers_id'] === (string) $item->fields['suppliers_id']
+        ) {
+            return;
+        }
+
+        $domains_id = (int) $item->fields['items_id'];
+        $state      = DomainState::getForDomain($domains_id);
+        if ($state === null || $state->fields['registrar_status'] !== DomainState::STATUS_OK) {
+            return;
+        }
+
+        unset($item->input['suppliers_id']);
+        Session::addMessageAfterRedirect(
+            __s('The registrar is locked by Domain Manager synchronization and was not changed', 'domainmanager'),
+            false,
+            WARNING
+        );
     }
 
     /**

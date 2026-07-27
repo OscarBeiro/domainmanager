@@ -421,8 +421,12 @@ class SupplierConfig extends CommonDBTM
             return;
         }
 
+        // §9 Phase 14 addendum "Search UI cleanup": id_search_option 0
+        // (blank "field" column) instead of a dummy search option that only
+        // cluttered the Search UI — the plugin name is prefixed into the
+        // message text instead.
         foreach ($this->pendingHistoryLines as $line) {
-            Log::history($suppliers_id, Supplier::class, [PLUGIN_DOMAINMANAGER_SO_SUPPLIER, '', $line]);
+            Log::history($suppliers_id, Supplier::class, [0, '', '[' . __('Domain Manager', 'domainmanager') . '] ' . $line]);
         }
         $this->pendingHistoryLines = [];
     }
@@ -457,9 +461,10 @@ class SupplierConfig extends CommonDBTM
                 $suppliers_id,
                 Supplier::class,
                 [
-                    PLUGIN_DOMAINMANAGER_SO_SUPPLIER,
+                    0,
                     '',
-                    sprintf(__('API configuration removed (was %s)', 'domainmanager'), DriverRegistry::getDriverLabels()[$driver] ?? $driver),
+                    '[' . __('Domain Manager', 'domainmanager') . '] '
+                        . sprintf(__('API configuration removed (was %s)', 'domainmanager'), DriverRegistry::getDriverLabels()[$driver] ?? $driver),
                 ]
             );
         }

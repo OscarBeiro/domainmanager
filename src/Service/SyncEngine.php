@@ -159,6 +159,16 @@ class SyncEngine
         }
 
         // 5. State upsert
+        // §9 Phase 14: "Managed" is true the moment either leg resolved to a
+        // real, driver-backed, active supplier — STATUS_OK/STATUS_ERROR are
+        // the only two outcomes reachable *after* a leg's pre-flight checks
+        // passed (see syncRegistrarLeg()/syncDnsLeg() above and
+        // DomainState::resolvesToActiveDriver()'s docblock), so this is
+        // independent of whether the live API call itself then succeeded.
+        $resolved_statuses = [DomainState::STATUS_OK, DomainState::STATUS_ERROR];
+        $is_managed = in_array($result['registrar_status'], $resolved_statuses, true)
+            || in_array($result['dns_status'], $resolved_statuses, true);
+
         $state_input = [
             'registrar_suppliers_id' => $registrar_id,
             'dns_suppliers_id'  => $dns_config !== null ? (int) $dns_config->fields['suppliers_id'] : 0,
@@ -167,6 +177,7 @@ class SyncEngine
             'registrar_message' => $result['registrar_message'],
             'dns_status'        => $result['dns_status'],
             'dns_message'       => $result['dns_message'],
+            'is_managed'        => (int) $is_managed,
             'last_sync_date'    => $now,
             'registrar_auth_info'       => $result['registrar_auth_info'],
             'registrar_privacy_enabled' => $result['registrar_privacy_enabled'],

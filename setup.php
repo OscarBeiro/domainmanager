@@ -32,6 +32,7 @@
 use Glpi\Plugin\Hooks;
 use GlpiPlugin\Domainmanager\Config\Config as DomainmanagerConfig;
 use GlpiPlugin\Domainmanager\DomainForm;
+use GlpiPlugin\Domainmanager\DomainState;
 use GlpiPlugin\Domainmanager\HookHandler;
 use GlpiPlugin\Domainmanager\ImportedRecord;
 use GlpiPlugin\Domainmanager\LockEnforcer;
@@ -43,18 +44,25 @@ define('PLUGIN_DOMAINMANAGER_MIN_GLPI', '11.0.0');
 define('PLUGIN_DOMAINMANAGER_MAX_GLPI', '11.0.99');
 define('PLUGIN_DOMAINMANAGER_REPOSITORY_URL', 'https://github.com/TICGAL-GLPI-Plugins/domainmanager');
 
-// Plugin-owned search option IDs (§3.7) — used only as Log::history()'s
-// id_search_option so the Historical tab's "field" column reads
-// "Domain Manager", never exposed as a real editable/searchable value.
+// Plugin-owned, real filterable search option IDs (§3.7, §9 Phase 14
+// addendum "Search UI cleanup"). Two former dummy placeholders bound to
+// `name` (Supplier id 9401, Domain id 9402, used only to label
+// Log::history()'s id_search_option "Domain Manager") and one duplicate of
+// a native option (Domain's "Registrar", id 9403 — confirmed live against
+// `Infocom::rawSearchOptionsToAdd()` that native search option id **53**
+// already exposes `glpi_suppliers.name` under "Financial and administrative
+// information" for any Infocom-bearing itemtype, Domain included) were
+// dropped: all three cluttered the Search UI's generic "Plugins" category
+// with entries offering no real, non-duplicate filtering value. Log::history()
+// call sites now pass `id_search_option = 0` (blank "field" column) and
+// prefix the message text with "[Domain Manager] " instead — the documented
+// fallback convention for plugins that would rather not have any Search UI
+// footprint. `SupplierTab::getDomainsSearchUrl()` now links to native id 53
+// instead of the dropped 9403.
 // MUST be re-checked for collisions with `php tools/getsearchoptions.php
-// --type=Supplier` / `--type=Domain` against the target instance before
+// --type=Domain` / `--type=DomainRecord` against the target instance before
 // go-live: no other installed plugin may already use these IDs for the
 // same itemtype.
-define('PLUGIN_DOMAINMANAGER_SO_SUPPLIER', 9401);
-define('PLUGIN_DOMAINMANAGER_SO_DOMAIN', 9402);
-// Real, filterable search option (unlike the two above) — see its own
-// registration below and ARCHITECTURE.md §9 Phase 5.5 for why it exists.
-define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR', 9403);
 // Real, filterable search option on DomainRecord (§addendum "Searchable
 // 'Managed' Field on Domain Records") — see its own registration below.
 define('PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_MANAGED', 9404);
@@ -62,6 +70,9 @@ define('PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_MANAGED', 9404);
 // "Searchable 'Proxy Status' Field for CDN-Proxied Records") — see its own
 // registration below.
 define('PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_PROXY', 9405);
+// Real, filterable search option on Domain (§9 Phase 14 "Domain-level
+// Managed field") — see its own registration below.
+define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_MANAGED', 9406);
 
 /**
  * Plugin_Version_Domainmanager
@@ -105,13 +116,13 @@ function plugin_domainmanager_check_prerequisites(): bool
 }
 
 /**
- * Register the plugin's search options (§3.7): a single, non-functional
- * "Domain Manager" entry per itemtype, used only so Log::history() can set
- * id_search_option to something whose 'name' resolves to "Domain Manager"
- * in the Historical tab's "field" column. Bound to the itemtype's own
- * 'name' column so the Search UI (where this also appears as a normal,
- * selectable column/filter — an accepted side effect of this mechanism)
- * never hits a SQL error if a user actually tries to use it.
+ * Register the plugin's real, filterable search options (§3.7, §9 Phase 14
+ * addendum "Search UI cleanup"). Each itemtype's group opens with an
+ * explicit category-tab entry (`'id' => 'domainmanager'`, matching core's
+ * own convention e.g. Infocom's `'id' => 'financial'`) so these show up
+ * under a "Domain Manager"-labeled group in the Search UI's field/criteria
+ * picker instead of falling into the generic, unlabeled "Plugins" catch-all
+ * a plugin's search options default to without one.
  *
  * @param  string $itemtype
  * @return array
@@ -120,72 +131,40 @@ function plugin_domainmanager_getAddSearchOptionsNew($itemtype): array
 {
     $options = [];
 
-    if ($itemtype === Supplier::class) {
-        $options[] = [
-            'id'            => PLUGIN_DOMAINMANAGER_SO_SUPPLIER,
-            'table'         => Supplier::getTable(),
-            'field'         => 'name',
-            'name'          => __('Domain Manager', 'domainmanager'),
-            'datatype'      => 'string',
-            'massiveaction' => false,
-        ];
-    }
-
     if ($itemtype === Domain::class) {
         $options[] = [
-            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN,
-            'table'         => Domain::getTable(),
-            'field'         => 'name',
-            'name'          => __('Domain Manager', 'domainmanager'),
-            'datatype'      => 'string',
-            'massiveaction' => false,
+            'id'   => 'domainmanager',
+            'name' => __('Domain Manager', 'domainmanager'),
         ];
 
-        // A real, filterable option — unlike the one above. Infocom's own
-        // suppliers_id is never exposed as an add-on search option for any
-        // itemtype by core (verified against src/Infocom.php's
-        // rawSearchOptionsToAdd() on 11.0/bugfixes — it adds immo_number/
-        // order_number/dates/etc. for the same glpi_infocoms join, but not
-        // this field), so the Supplier tab's "Domains" list banner
-        // (§9 Phase 5.5) has nothing native to link a filtered Domain
-        // search to without this. Same join shape core itself uses for
-        // every other Infocom field added to an asset's search page.
+        // §9 Phase 14 "Domain-level Managed field": one row per Domain
+        // already exists on this table (unlike the DomainRecord-level
+        // Managed field, which needed its own table), so this is a direct
+        // single-hop 'child' join, same shape/precedent as
+        // PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_MANAGED below. A domain with
+        // no state row yet (never synced, never assigned a registrar) reads
+        // as NULL/"No" via the LEFT JOIN. 'massiveaction' => false: plugin
+        // -derived, never meant to be bulk-edited directly.
         $options[] = [
-            // A dropdown FK two hops away (Domain -> glpi_infocoms via
-            // itemtype_item -> glpi_suppliers via suppliers_id) needs both
-            // conventions combined: 'table'/'field' name the FINAL dropdown
-            // target (glpi_suppliers/name — this is what GLPI's dropdown
-            // datatype uses to resolve the *itemtype* for display/value
-            // lookup; pointing it at glpi_infocoms instead — verified live
-            // — makes GLPI try to resolve values as Infocom records, not
-            // Suppliers, silently breaking both display and filtering),
-            // 'linkfield' names the FK column, and 'joinparams.beforejoin'
-            // describes the first hop, mirroring how core's own
-            // CartridgeItem/ConsumableItem cases in
-            // Infocom::rawSearchOptionsToAdd() reach the right glpi_infocoms
-            // row before resolving a field on it — extended one hop further
-            // here since the field itself is on the table *after* that.
-            'id'           => PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR,
-            'table'        => 'glpi_suppliers',
-            'field'        => 'name',
-            'linkfield'    => 'suppliers_id',
-            'name'         => __('Registrar (Financial information)', 'domainmanager'),
-            'datatype'     => 'dropdown',
-            'forcegroupby' => true,
-            'joinparams'   => [
-                'beforejoin' => [
-                    [
-                        'table'      => 'glpi_infocoms',
-                        'joinparams' => [
-                            'jointype' => 'itemtype_item',
-                        ],
-                    ],
-                ],
+            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN_MANAGED,
+            'table'         => DomainState::getTable(),
+            'field'         => 'is_managed',
+            'linkfield'     => 'domains_id',
+            'name'          => __('Managed', 'domainmanager'),
+            'datatype'      => 'bool',
+            'massiveaction' => false,
+            'joinparams'    => [
+                'jointype' => 'child',
             ],
         ];
     }
 
     if ($itemtype === DomainRecord::class) {
+        $options[] = [
+            'id'   => 'domainmanager',
+            'name' => __('Domain Manager', 'domainmanager'),
+        ];
+
         // A single-hop join to the plugin's own ownership-map table
         // (glpi_plugin_domainmanager_records, ImportedRecord), which has a
         // direct, non-polymorphic domainrecords_id FK column back to this
@@ -197,8 +176,7 @@ function plugin_domainmanager_getAddSearchOptionsNew($itemtype): array
         // <table>.<linkfield>`, where <linkfield> defaults to
         // getForeignKeyFieldForTable() of this itemtype's own table —
         // `domainrecords_id`, already matching our schema even without the
-        // explicit 'linkfield' below). No `beforejoin` hop needed, unlike
-        // PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR above.
+        // explicit 'linkfield' below). No `beforejoin` hop needed.
         //
         // A row only exists here once RecordReconciler has actually
         // created/updated the native record at least once — a manually
@@ -303,6 +281,10 @@ function plugin_init_domainmanager(): void
         $PLUGIN_HOOKS[Hooks::PRE_ITEM_UPDATE]['domainmanager'] = [
             Domain::class       => [HookHandler::class, 'domainPreUpdate'],
             DomainRecord::class => [LockEnforcer::class, 'domainRecordPreUpdate'],
+            // §9 Phase 14: locks the Domain's Registrar (Infocom's Supplier)
+            // once a confirmed working registrar match exists — see
+            // LockEnforcer::infocomPreUpdate().
+            Infocom::class      => [LockEnforcer::class, 'infocomPreUpdate'],
         ];
         $PLUGIN_HOOKS[Hooks::PRE_ITEM_DELETE]['domainmanager'] = [
             DomainRecord::class => [LockEnforcer::class, 'domainRecordPreDelete'],

@@ -62,6 +62,11 @@
                         <td>
                             {% if registrar_supplier %}
                                 <a href="{{ registrar_supplier.getLinkURL() ~ supplier_tab_forcetab }}">{{ registrar_supplier.getName() }}</a>
+                                {% if can_update %}
+                                    <button type="button" class="btn btn-sm btn-outline-secondary ms-1 p-1" id="domainmanager-unlink-registrar" title="{{ __('Unlink registrar', 'domainmanager') }}">
+                                        <i class="ti ti-unlink"></i>
+                                    </button>
+                                {% endif %}
                             {% else %}
                                 <span class="text-muted">{{ __('No registrar supplier set', 'domainmanager') }}</span>
                             {% endif %}
@@ -255,6 +260,40 @@
                 });
             });
         }
+    }
+
+    // §9 Phase 14: unlink the registrar (clears Infocom's Supplier field),
+    // bypassing the suppliers_id lock without requiring the unlock right —
+    // same fetch/CSRF convention as Update Now and the reassign button.
+    const unlinkButton = document.getElementById('domainmanager-unlink-registrar');
+    if (unlinkButton) {
+        unlinkButton.addEventListener('click', function () {
+            if (!window.confirm({{ __('Unlink this domain\'s registrar?', 'domainmanager')|json_encode|raw }})) {
+                return;
+            }
+            const csrf = document.querySelector('meta[property="glpi:csrf_token"]');
+            unlinkButton.disabled = true;
+
+            fetch({{ path('/plugins/domainmanager/domainunlink/' ~ domains_id)|json_encode|raw }}, {
+                method: 'POST',
+                headers: {
+                    'X-Glpi-Csrf-Token': csrf ? csrf.getAttribute('content') : '',
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            }).then(function (response) {
+                return response.json().then(function (data) {
+                    return { ok: response.ok, data: data };
+                });
+            }).then(function (result) {
+                if (!result.ok || !result.data.ok) {
+                    throw new Error((result.data && result.data.message) || 'HTTP error');
+                }
+                window.location.reload();
+            }).catch(function (error) {
+                window.alert({{ __('Failed to unlink the registrar:', 'domainmanager')|json_encode|raw }} + ' ' + error.message);
+                unlinkButton.disabled = false;
+            });
+        });
     }
 
     const button = updateNowButton;

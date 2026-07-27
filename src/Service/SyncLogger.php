@@ -50,7 +50,11 @@ class SyncLogger
      */
     public function milestone(int $domains_id, string $message): void
     {
-        Log::history($domains_id, Domain::class, [PLUGIN_DOMAINMANAGER_SO_DOMAIN, '', $message]);
+        // §9 Phase 14 addendum "Search UI cleanup": id_search_option 0
+        // (blank "field" column) instead of a dummy search option that only
+        // cluttered the Search UI — the plugin name is prefixed into the
+        // message text instead.
+        Log::history($domains_id, Domain::class, [0, '', '[' . __('Domain Manager', 'domainmanager') . '] ' . $message]);
         PluginLogger::activity('Domain #' . $domains_id . ': ' . $message);
     }
 
