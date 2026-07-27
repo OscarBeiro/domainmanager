@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+### Added
+- **NS detection for Strato and Arsys**: added to `resources/ns-providers.json` — `ns-strato.ui-dns.{de,com,org,biz}` and `ns-arsys.ui-dns.{es,com,org,biz}` respectively. Both are United Internet brands sharing the same `ui-dns.*` DNS platform, distinguished only by a brand-specific hostname label (`ns-strato.`/`ns-arsys.`, confirmed distinct from sibling brands `ns-1and1.`/`ns-fh.`). Deliberately **not sourced from an official vendor page** — none exists for either brand (Phase 5 batch 2 already established this) — instead confirmed live via authoritative `dig NS` against each brand's own domains (strato.de, strato.com, strato-hosting.co.uk; arsys.es, arsys.net), all of which currently resolve to exactly this hostname set. A deliberate, explicit exception to the registry's usual official-docs-only sourcing rule, made at Óscar's request; see ARCHITECTURE.md §9/TESTING.md §5.6 for the reasoning and the caveat that live DNS observation can drift if either brand migrates infrastructure later. Detection-only — no `driver` key, matching every other NS-provider-registry entry without a registrar/DNS API driver.
+
+### Fixed
+- **Found while adding Strato/Arsys above: the IONOS registry entry's `*.ui-dns.{de,com,org,biz}` patterns were a bare domain-wide wildcard, silently matching every sibling United Internet brand's nameservers on the same shared `ui-dns.*` platform** — not just Strato/Arsys, but also 1&1 (`ns-1and1.ui-dns.*`) and Fasthosts (`ns-fh.ui-dns.*`), confirmed live via `dig NS` against each brand's own domain. Narrowed to `ns[0-9]*.ui-dns.{de,com,org,biz}`, matching the numbered hostname format IONOS's own cited docs actually describe, without narrowing IONOS's real coverage. This was a real, pre-existing false-positive-detection bug (a non-IONOS domain on `ui-dns.*` would have been misidentified as IONOS and offered the IONOS driver), not something introduced by this change — just surfaced by it.
+
 ## [0.6.0] - 2026-07-27
 ### Added
 - **NS detection for bunny.net (Bunny DNS)**: added `kiki.bunny.net`/`coco.bunny.net` to `resources/ns-providers.json`, confirmed against bunny.net's own docs (https://docs.bunny.net/dns/nameservers). Detection-only, no driver — bunny.net is a CDN/DNS host, not a domain registrar.

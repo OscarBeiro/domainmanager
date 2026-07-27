@@ -15,13 +15,13 @@
         {
             "name": "IONOS",
             "patterns": [
-                "*.ui-dns.de",
-                "*.ui-dns.com",
-                "*.ui-dns.org",
-                "*.ui-dns.biz"
+                "ns[0-9]*.ui-dns.de",
+                "ns[0-9]*.ui-dns.com",
+                "ns[0-9]*.ui-dns.org",
+                "ns[0-9]*.ui-dns.biz"
             ],
             "driver": "ionos",
-            "source": "https://www.ionos.com/help/domains/general-information-about-dns-settings/default-dns-settings-for-11-ionos-domains/ (nsXXXX.ui-dns.{com,org,de,biz})"
+            "source": "https://www.ionos.com/help/domains/general-information-about-dns-settings/default-dns-settings-for-11-ionos-domains/ (nsXXXX.ui-dns.{com,org,de,biz}). Narrowed from a bare `*.ui-dns.{tld}` domain-wide wildcard (2026-07-27) after adding Strato/Arsys below: `ui-dns.*` is a shared United Internet DNS platform, and the un-narrowed wildcard was matching every sibling brand's own hostname label (`ns-strato.`, `ns-arsys.`, `ns-1and1.`, `ns-fh.`) as false-positive IONOS, confirmed live via `dig NS` against each brand's own domain. IONOS's real default hostnames use a numeric `nsNNNN.` label per its own cited docs, so `ns[0-9]*.` scopes the match correctly without narrowing IONOS's own real coverage."
         },
         {
             "name": "Dinahosting",
@@ -195,6 +195,26 @@
                 "coco.bunny.net"
             ],
             "source": "https://docs.bunny.net/dns/nameservers (standard Bunny DNS nameservers: kiki.bunny.net, coco.bunny.net; a custom-nameserver option also exists but has no fixed enumerable hostnames, so it is not covered here). Detection-only: bunny.net is a CDN/DNS host, not a domain registrar, so no 'driver' is set."
+        },
+        {
+            "name": "Strato",
+            "patterns": [
+                "ns-strato.ui-dns.de",
+                "ns-strato.ui-dns.com",
+                "ns-strato.ui-dns.org",
+                "ns-strato.ui-dns.biz"
+            ],
+            "source": "No official Strato vendor page states these hostnames (older third-party/community pages instead cite a stale ns1-ns4.strato.de set). Confirmed live via authoritative `dig NS` against strato.de, strato.com, and strato-hosting.co.uk (all three currently resolve to exactly this 4-host ui-dns.* set), and cross-checked that the brand-specific `ns-strato.` label doesn't collide with sibling United Internet brands on the same shared ui-dns.* platform (1&1: ns-1and1.ui-dns.*; Fasthosts: ns-fh.ui-dns.*; Arsys: ns-arsys.ui-dns.* below) — each brand has its own distinct label, so the pattern is exact-hostname, not a wildcard on ui-dns.* itself."
+        },
+        {
+            "name": "Arsys",
+            "patterns": [
+                "ns-arsys.ui-dns.es",
+                "ns-arsys.ui-dns.com",
+                "ns-arsys.ui-dns.org",
+                "ns-arsys.ui-dns.biz"
+            ],
+            "source": "No official Arsys vendor page states these hostnames (older third-party/community pages instead cite unconfirmed ns1.arsystems.com-style guesses). Confirmed live via authoritative `dig NS` against arsys.es and arsys.net (both currently resolve to exactly this 4-host ui-dns.* set — the same United Internet shared DNS platform as Strato above, Arsys being United Internet's Spanish-market brand); brand label `ns-arsys.` confirmed distinct from sibling brands (see Strato entry's source note)."
         }
     ]
 }

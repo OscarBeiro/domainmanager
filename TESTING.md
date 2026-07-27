@@ -765,11 +765,41 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
 - **Expected:** valid JSON; 10 more providers appended — Gandi, Namecheap,
   Hetzner, Squarespace, Wix, Hostinger, Porkbun, cdmon, one.com, and
   NS1 (IBM NS1 Connect) — each with non-empty `patterns`, a `source` URL
-  pointing at official vendor documentation, and **no** `driver` key. Strato
-  and Arsys were investigated but **deliberately omitted**: no authoritative
-  official-vendor page stating their nameserver hostnames could be found
-  (only third-party/community sources), so no entry was added rather than
-  guessing — flagged to Óscar; add them once an official source surfaces.
+  pointing at official vendor documentation, and **no** `driver` key.
+- [ ] Pass
+
+### 5.6a Strato and Arsys entries, sourced from live DNS rather than official docs
+- **Steps:** review the Strato/Arsys entries appended after bunny.net; re-run
+  `dig NS strato.de`, `dig NS strato.com`, `dig NS arsys.es`, `dig NS arsys.net`
+  and compare against the registry's `patterns`.
+- **Expected:** Strato = `ns-strato.ui-dns.{de,com,org,biz}`; Arsys =
+  `ns-arsys.ui-dns.{es,com,org,biz}`. Neither has an official vendor page
+  stating these hostnames — no authoritative source could be found for either
+  brand, same conclusion as the original Phase 5 batch 2 investigation — so
+  this is a deliberate exception to the registry's usual official-docs-only
+  rule, made at Óscar's explicit request, sourced instead from live
+  authoritative `dig` output against each brand's own domains. Both brands
+  share the same `ui-dns.*` United Internet DNS platform, distinguished only
+  by hostname label; confirm the label doesn't collide with sibling brands on
+  the same platform (`dig NS 1and1.com` → `ns-1and1.ui-dns.*`; `dig NS
+  fasthosts.co.uk` → `ns-fh.ui-dns.*`). **Caveat:** unlike every other entry
+  in this registry, this one can silently go stale if either brand migrates
+  off `ui-dns.*` later, since there's no vendor doc to notice the change —
+  re-verify with `dig` periodically rather than assuming it's permanent.
+- [ ] Pass
+
+### 5.6b IONOS's ui-dns.* patterns no longer false-positive-match sibling brands
+- **Steps:** exercise `NsProviderRegistry::match()` directly with
+  `ns-strato.ui-dns.de`, `ns-arsys.ui-dns.es`, `ns-1and1.ui-dns.com`,
+  `ns-fh.ui-dns.org`, and a real IONOS-format host like `ns1035.ui-dns.de`.
+- **Expected:** the first four resolve to Strato / Arsys / no match / no match
+  respectively — **never** IONOS. `ns1035.ui-dns.de` still resolves to IONOS
+  (`driver: ionos`), confirming the narrowed `ns[0-9]*.ui-dns.*` pattern didn't
+  lose real IONOS coverage. Before this fix, all five (including the real
+  IONOS host) matched IONOS via the old bare `*.ui-dns.{tld}` wildcard — a
+  real false-positive-detection bug for any non-IONOS United Internet-brand
+  domain, found while adding the Strato/Arsys entries above, not previously
+  covered by any existing test.
 - [ ] Pass
 
 ### 5.7 Batch 2 providers are detected as unsupported, no collisions (§4, §5, §6.3)

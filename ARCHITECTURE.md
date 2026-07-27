@@ -445,9 +445,9 @@ Versioned in-repo, contributor-maintained via PRs (no DB table, not user-editabl
     },
     {
       "name": "IONOS",
-      "patterns": ["*.ui-dns.de", "*.ui-dns.com", "*.ui-dns.org", "*.ui-dns.biz"],
+      "patterns": ["ns[0-9]*.ui-dns.de", "ns[0-9]*.ui-dns.com", "ns[0-9]*.ui-dns.org", "ns[0-9]*.ui-dns.biz"],
       "driver": "ionos",
-      "source": "…"
+      "source": "… (narrowed to a numeric ns[0-9]* label 2026-07-27: ui-dns.* is a shared United Internet DNS platform — a bare *.ui-dns.{tld} wildcard also matched sibling brands' own labels, e.g. Strato's ns-strato.ui-dns.*, Arsys's ns-arsys.ui-dns.*)"
     },
     {
       "name": "Dinahosting",
