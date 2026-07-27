@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.4] - 2026-07-27
+### Changed
+- **"NS provider" column header (Supplier "Domains" list and Domain form panel) renamed again, this time to "DNS Provider"** — a follow-up request settled on this term over 0.11.2's "NS provider", one consistent label instead of two.
+
 ## [0.11.3] - 2026-07-27
 ### Fixed
 - **Dinahosting-hosted domains using `ns[.2-4].gestiondecuenta.com` nameservers showed "Unknown provider" instead of "Dinahosting"**: Dinahosting's own documented nameserver hostnames are `*.dinahosting.com`, but a real Dinahosting-hosted domain was found live using its customer-control-panel domain, `gestiondecuenta.com`, for NS delegation instead — undocumented in Dinahosting's own help article. Added `ns.gestiondecuenta.com`/`ns2-ns4.gestiondecuenta.com`/`*.gestiondecuenta.com` to the existing `Dinahosting` entry in `resources/ns-providers.json` (same driver, not a new provider). See `ARCHITECTURE.md` §4.

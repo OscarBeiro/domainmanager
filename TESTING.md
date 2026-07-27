@@ -2327,7 +2327,7 @@ diagnose the original bug).
   just because the tab being viewed isn't the registrar.
 - [ ] Pass
 
-### 17.2 NS provider column keeps its own managed/unmanaged/unknown/never badge (not the shared sync-outcome vocabulary)
+### 17.2 DNS Provider column keeps its own managed/unmanaged/unknown/never badge (not the shared sync-outcome vocabulary)
 - **Note:** an earlier draft of this phase switched the NS column to the same
   `dns_status`-driven badge the Registrar column uses; that was reverted
   after live testing showed it as a regression (worse/wrong-looking status
