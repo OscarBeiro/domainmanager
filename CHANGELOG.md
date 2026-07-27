@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.8.0] - 2026-07-27
 ### Added
 - **NS detection for RaiolaNetworks and LucusHost**: added to `resources/ns-providers.json` — RaiolaNetworks (`dns1-dns3.raiolanetworks.es`, sourced from RaiolaNetworks's own official help article) and LucusHost (`ns1-ns3.lucushost.com`, no official vendor page states this — confirmed via `dig NS` against LucusHost's own corporate domain, which resolves to exactly this set, the same live-DNS exception already established for Strato/Arsys). Detection-only for both — no registrar/DNS API is documented for either provider, so neither has a `driver` key.
 
