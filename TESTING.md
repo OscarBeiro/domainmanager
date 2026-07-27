@@ -2216,6 +2216,24 @@ see 10.1a. The checks below still need a real browser/account pass by
   `criteria[n][field]=9403`-style entry gone, everything else intact.
 - [ ] Pass
 
+### 15.1d Session-persisted stale search criteria no longer recur (0.10.1)
+- **Requirement verified:** `HookHandler::scrubStaleSearchSessionCriteria()`
+  (`Hooks::POST_INIT`) strips a stale `criteria`/`sort` reference to
+  Supplier `9401` or Domain `9402`/`9403` from
+  `$_SESSION['glpisearch']` on every page load — the companion fix to
+  15.1c above for the case where the stale ID lives purely in session,
+  not in a persisted `glpi_savedsearches` row.
+- **Steps:** with `glpi_savedsearches`/`glpi_savedsearches_users` empty
+  (confirmed, not just assumed — e.g. via `SELECT * FROM
+  glpi_savedsearches`), reproduce a session that has picked up field
+  `9403` in `$_SESSION['glpisearch']['Domain']['criteria']` (however it
+  was originally seeded), then load the Domain list again.
+- **Expected:** no `Attempted to use invalid search options...` warning
+  (dev/debug mode) on this or any subsequent request; the Domain list
+  renders with that criterion silently dropped, not reintroduced on the
+  next reload.
+- [ ] Pass
+
 ### 15.3 DomainRecord-level "Managed" field unaffected (audit, no fix needed)
 - **Requirement verified:** `PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_MANAGED`
   already correctly targets `ImportedRecord::getTable()` /

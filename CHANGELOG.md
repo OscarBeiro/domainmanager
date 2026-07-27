@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-07-27
+### Fixed
+- **`Attempted to use invalid search options from itemtype: "Domain" with IDs 9403` warning still recurred after 0.10.0's `Installer::pruneStaleSearchOptionCriteria()`**: live testing confirmed `glpi_savedsearches`/`glpi_savedsearches_users` were already empty on the affected instance, so the stale reference wasn't a persisted saved search at all — `QueryBuilder::manageParams()` writes whatever criteria a request used back into `$_SESSION['glpisearch']` on every request (including its own first-touch default), a source no one-time DB migration can reach. Added `HookHandler::scrubStaleSearchSessionCriteria()` on `Hooks::POST_INIT` (fires on every page load, early enough to run before any `front/*.php` reads the session) to strip a stale `criteria`/`sort` reference to Supplier `9401` or Domain `9402`/`9403` from session on every request — a permanent, self-healing companion to the 0.10.0 migration, regardless of exactly which request first seeded the stale value into that session.
+
 ## [0.10.0] - 2026-07-27
 ### Added
 - **Registrar (`suppliers_id`) is now lock-protected once a domain has a confirmed working registrar match** (Phase 14): previously this field had no server-side protection at all, only a read-only UI hint. A new "Unlink registrar" button/action (`DomainRegistrarUnlinkController`) clears it without requiring the unlock right, mirroring the existing "Reassign registrar" action's own narrower auth scope.

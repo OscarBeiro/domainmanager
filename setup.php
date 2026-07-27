@@ -39,7 +39,7 @@ use GlpiPlugin\Domainmanager\LockEnforcer;
 use GlpiPlugin\Domainmanager\Profile as DomainmanagerProfile;
 use GlpiPlugin\Domainmanager\SupplierTab;
 
-define('PLUGIN_DOMAINMANAGER_VERSION', '0.10.0');
+define('PLUGIN_DOMAINMANAGER_VERSION', '0.10.1');
 define('PLUGIN_DOMAINMANAGER_MIN_GLPI', '11.0.0');
 define('PLUGIN_DOMAINMANAGER_MAX_GLPI', '11.0.99');
 define('PLUGIN_DOMAINMANAGER_REPOSITORY_URL', 'https://github.com/TICGAL-GLPI-Plugins/domainmanager');
@@ -296,5 +296,21 @@ function plugin_init_domainmanager(): void
         // Resolves to /plugins/domainmanager/Config, which redirects to the
         // Setup > General tab registered just above (§9 Phase 12).
         $PLUGIN_HOOKS[Hooks::CONFIG_PAGE]['domainmanager'] = 'Config';
+
+        // §9 Phase 15 addendum: belt-and-suspenders companion to
+        // Installer::pruneStaleSearchOptionCriteria() (which only rewrites
+        // *persisted* glpi_savedsearches rows at install/upgrade time). Live
+        // testing kept reproducing "Attempted to use invalid search options
+        // from itemtype: Domain with IDs 9403" even with glpi_savedsearches
+        // and glpi_savedsearches_users confirmed empty on the instance,
+        // meaning the stale field reference was being carried purely via
+        // $_SESSION['glpisearch'] (QueryBuilder::manageParams() persists
+        // whatever criteria a request used back into session on every
+        // request, including a first-touch default) — a source no one-time
+        // migration can reach, since it isn't in the database at all.
+        // Hooks::POST_INIT fires on every page load, early enough (session
+        // is initialized, but front/*.php hasn't yet called
+        // QueryBuilder::manageParams()) to strip it before it's read.
+        $PLUGIN_HOOKS[Hooks::POST_INIT]['domainmanager'] = [HookHandler::class, 'scrubStaleSearchSessionCriteria'];
     }
 }

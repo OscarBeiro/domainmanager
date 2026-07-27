@@ -222,4 +222,58 @@ class HookHandler
         $DB->delete(ImportedRecord::getTable(), ['domainrecords_id' => $records_id]);
         ImportLock::deleteForItem(DomainRecord::class, $records_id);
     }
+
+    /**
+     * Hooks::POST_INIT callback (§9 Phase 15 addendum). Strips any
+     * `$_SESSION['glpisearch'][<itemtype>]['criteria']`/`['sort']` entry
+     * still referencing one of the three dummy/duplicate search-option IDs
+     * dropped in the Phase 14 addendum "Search UI cleanup" (Supplier 9401,
+     * Domain 9402/9403) — `Installer::pruneStaleSearchOptionCriteria()`
+     * only rewrites *persisted* `glpi_savedsearches` rows at install/upgrade
+     * time, which can't reach a reference living purely in
+     * `$_SESSION['glpisearch']` (`QueryBuilder::manageParams()` writes
+     * whatever criteria a request used back into session on every request,
+     * including its own first-touch default), and that's what live testing
+     * confirmed the actual source was (`glpi_savedsearches`/
+     * `glpi_savedsearches_users` were already empty). Runs on every page
+     * load, early enough (session initialized, but before any
+     * `front/*.php` calls `QueryBuilder::manageParams()`) to be effective;
+     * a no-op once no session carries a stale ID anymore.
+     *
+     * @return void
+     */
+    public static function scrubStaleSearchSessionCriteria(): void
+    {
+        if (!isset($_SESSION['glpisearch']) || !is_array($_SESSION['glpisearch'])) {
+            return;
+        }
+
+        $stale_ids_by_itemtype = [
+            'Supplier' => [9401],
+            'Domain'   => [9402, 9403],
+        ];
+
+        foreach ($stale_ids_by_itemtype as $itemtype => $stale_ids) {
+            if (!isset($_SESSION['glpisearch'][$itemtype]) || !is_array($_SESSION['glpisearch'][$itemtype])) {
+                continue;
+            }
+
+            $state = &$_SESSION['glpisearch'][$itemtype];
+
+            if (isset($state['criteria']) && is_array($state['criteria'])) {
+                foreach ($state['criteria'] as $key => $criterion) {
+                    if (isset($criterion['field']) && in_array((int) $criterion['field'], $stale_ids, true)) {
+                        unset($state['criteria'][$key]);
+                    }
+                }
+                $state['criteria'] = array_values($state['criteria']);
+            }
+
+            if (isset($state['sort']) && in_array((int) $state['sort'], $stale_ids, true)) {
+                $state['sort'] = 0;
+            }
+
+            unset($state);
+        }
+    }
 }
