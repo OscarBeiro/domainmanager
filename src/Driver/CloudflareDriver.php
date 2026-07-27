@@ -34,8 +34,10 @@ namespace GlpiPlugin\Domainmanager\Driver;
 use DateTimeImmutable;
 use GlpiPlugin\Domainmanager\Contract\ConnectionTestableInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsPipelineInterface;
+use GlpiPlugin\Domainmanager\Contract\DomainDiscoveryInterface;
 use GlpiPlugin\Domainmanager\Contract\RegistrarDriverInterface;
 use GlpiPlugin\Domainmanager\Dto\ConnectionTestResult;
+use GlpiPlugin\Domainmanager\Dto\DiscoveredDomain;
 use GlpiPlugin\Domainmanager\Dto\DomainLifecycle;
 use GlpiPlugin\Domainmanager\Dto\LifecycleStatus;
 use GlpiPlugin\Domainmanager\Dto\ZoneRecord;
@@ -78,7 +80,7 @@ use Toolbox;
  *   segment for the Registrar API, instead of the previous approach of
  *   reading `account.id` back out of the zone lookup's own response.
  */
-class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface, ConnectionTestableInterface
+class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface, ConnectionTestableInterface, DomainDiscoveryInterface
 {
     private const BASE_URI = 'https://api.cloudflare.com/client/v4/';
 
@@ -87,6 +89,11 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
     private const TEST_TIMEOUT = 9;
 
     private const PER_PAGE = 100;
+
+    // The Registrations list endpoint's `per_page` is capped at 50 (confirmed
+    // in the live spec), unlike the DNS records endpoint's 100 (PER_PAGE
+    // above) — a genuinely different limit, not reused.
+    private const REGISTRATIONS_PER_PAGE = 50;
 
     private const MAX_PAGES = 50;
 
@@ -208,21 +215,29 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
         $domain    = self::normalizeDomain($domain);
         $accountId = $this->requireAccountId();
 
-        // No zone lookup needed here anymore: the account id now comes
-        // directly from stored config (was previously only reachable by
-        // reading it back out of a zone lookup's response) — and
-        // Registrar/DNS are independent Cloudflare products, so requiring
-        // a DNS zone to exist before a registrar lookup was an incidental
-        // coupling, not a real requirement. request() below already
-        // reports a clear "not managed" error if this account has no such
-        // registrar domain.
+        // Uses the newer `/registrar/registrations` API, not
+        // `/registrar/domains` (which this method used until 2026-07-27):
+        // confirmed against Cloudflare's current, live OpenAPI spec that
+        // the older Registrar Domains endpoints (list + get) are marked
+        // `deprecated: true` with an EOL of 2026-09-27 and an explicit
+        // `x-stainless-deprecation-message` pointing at
+        // domain-search/domain-check/registrations as the replacement —
+        // migrated ahead of that date rather than waiting for it to break.
+        // No zone lookup needed here: the account id comes directly from
+        // stored config, and Registrar/DNS are independent Cloudflare
+        // products, so requiring a DNS zone to exist before a registrar
+        // lookup was an incidental coupling, not a real requirement.
+        // A 4XX "Domain not found" response is surfaced by request()
+        // itself (it throws on `success !== true`, using the API's own
+        // error message) — no separate empty-result check needed, unlike
+        // the old endpoint's shape.
         $data = $this->request(
             'GET',
-            'accounts/' . rawurlencode($accountId) . '/registrar/domains/' . rawurlencode($domain)
+            'accounts/' . rawurlencode($accountId) . '/registrar/registrations/' . rawurlencode($domain)
         );
 
         $result = $data['result'] ?? null;
-        if (!is_array($result) || $result === []) {
+        if (!is_array($result)) {
             throw new DriverException(
                 __('Domain is not managed by Cloudflare Registrar on this account', 'domainmanager')
             );
@@ -231,28 +246,79 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
         $registration = self::parseDate($result['created_at'] ?? null);
         $expiration   = self::parseDate($result['expires_at'] ?? null);
 
+        // `privacy_mode` (confirmed enum: `false` (literal boolean) or the
+        // string `"redaction"`) replaces the old endpoint's plain `privacy`
+        // bool — normalized to the same bool-or-null shape this DTO expects.
+        $privacyMode = $result['privacy_mode'] ?? null;
+        $privacy     = $privacyMode === null ? null : ($privacyMode === 'redaction' || $privacyMode === true);
+
         return new DomainLifecycle(
             $registration,
             $expiration,
-            self::mapStatus($result, $expiration),
-            // §9 Phase 7: confirmed live against Cloudflare's current
-            // Registrar API OpenAPI spec (`registrar-api_domain_properties`,
-            // 2026-07-21) — `authInfo`/`domainLock`/`domainType`/
-            // `dnsSecEnabled` are genuinely absent from this schema, not
-            // merely undocumented (same "confirmed absent" bar already
-            // applied to IONOS's missing registrationDate), so they stay
-            // null for this driver. `locked` is the *only* lock concept
-            // Cloudflare's Registrar API exposes — no separate
-            // general-edit-lock field distinct from transfer protection —
-            // so it maps to `transferLock`, never `domainLock`.
+            self::mapStatus($result),
+            // §9 Phase 7 (still true on the new schema, re-confirmed
+            // 2026-07-27): `authInfo`/`domainLock`/`domainType`/
+            // `dnsSecEnabled` remain genuinely absent — `locked` is still
+            // the only lock concept exposed, so it still maps to
+            // `transferLock`, never `domainLock`.
             null,
-            isset($result['privacy']) ? (bool) $result['privacy'] : null,
+            $privacy,
             null,
             isset($result['locked']) ? (bool) $result['locked'] : null,
             isset($result['auto_renew']) ? (bool) $result['auto_renew'] : null,
             null,
             null
         );
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * §9 Phase 8 addendum (2026-07-27): uses the same `/registrar/registrations`
+     * list endpoint fetchLifecycle() was just migrated to — cursor-paginated
+     * (confirmed live spec: `result_info.cursor`, empty string = last page),
+     * unlike IONOS/Dinahosting's offset/flat pagination. `previewStatus`
+     * mirrors Dinahosting's pattern (a free, genuinely useful preview field
+     * this API happens to include) rather than IONOS's left-null gap.
+     */
+    public function listAccountDomains(): array
+    {
+        $accountId = $this->requireAccountId();
+        $domains   = [];
+        $cursor    = '';
+
+        for ($page = 0; $page < self::MAX_PAGES; $page++) {
+            $query = ['per_page' => self::REGISTRATIONS_PER_PAGE];
+            if ($cursor !== '') {
+                $query['cursor'] = $cursor;
+            }
+
+            $data = $this->request(
+                'GET',
+                'accounts/' . rawurlencode($accountId) . '/registrar/registrations',
+                $query
+            );
+
+            foreach ($data['result'] ?? [] as $row) {
+                if (!is_array($row) || empty($row['domain_name'])) {
+                    continue;
+                }
+
+                $expiresAt      = trim((string) ($row['expires_at'] ?? ''));
+                $previewStatus  = $expiresAt !== ''
+                    ? sprintf(__('Expires %s', 'domainmanager'), $expiresAt)
+                    : null;
+
+                $domains[] = new DiscoveredDomain((string) $row['domain_name'], $previewStatus);
+            }
+
+            $cursor = (string) ($data['result_info']['cursor'] ?? '');
+            if ($cursor === '') {
+                break;
+            }
+        }
+
+        return $domains;
     }
 
     /**
@@ -489,30 +555,26 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
     }
 
     /**
-     * Map registrar payload to the lifecycle status enum:
-     * hold statuses → Suspended, past expiration → Expired, else OK
+     * Map the new Registrations API's `status` enum (confirmed exhaustive
+     * in the live spec: active | registration_pending | expired | suspended
+     * | redemption_period | pending_delete) to the plugin's lifecycle enum.
+     * Replaces the old endpoint's free-text `registry_statuses` substring
+     * match ("contains 'hold'") — this API reports the state directly,
+     * no guessing needed. `redemption_period`/`pending_delete` are both
+     * post-expiration registry states, mapped to Expired same as `expired`
+     * itself; there's no existing case finer-grained than that.
      *
-     * @param  array                  $result
-     * @param  DateTimeImmutable|null $expiration
+     * @param  array $result
      * @return LifecycleStatus
      */
-    private static function mapStatus(array $result, ?DateTimeImmutable $expiration): LifecycleStatus
+    private static function mapStatus(array $result): LifecycleStatus
     {
-        $statuses = $result['registry_statuses'] ?? '';
-        if (is_array($statuses)) {
-            $statuses = implode(',', array_map('strval', $statuses));
-        }
-        $statuses = strtolower((string) $statuses);
-
-        if (str_contains($statuses, 'hold')) {
-            return LifecycleStatus::Suspended;
-        }
-
-        if ($expiration !== null && $expiration < new DateTimeImmutable('now')) {
-            return LifecycleStatus::Expired;
-        }
-
-        return LifecycleStatus::Ok;
+        return match ((string) ($result['status'] ?? '')) {
+            'suspended'                            => LifecycleStatus::Suspended,
+            'expired', 'redemption_period', 'pending_delete' => LifecycleStatus::Expired,
+            'registration_pending'                 => LifecycleStatus::Pending,
+            default                                => LifecycleStatus::Ok,
+        };
     }
 
     /**
