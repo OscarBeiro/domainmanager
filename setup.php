@@ -39,7 +39,7 @@ use GlpiPlugin\Domainmanager\LockEnforcer;
 use GlpiPlugin\Domainmanager\Profile as DomainmanagerProfile;
 use GlpiPlugin\Domainmanager\SupplierTab;
 
-define('PLUGIN_DOMAINMANAGER_VERSION', '0.10.1');
+define('PLUGIN_DOMAINMANAGER_VERSION', '0.11.0');
 define('PLUGIN_DOMAINMANAGER_MIN_GLPI', '11.0.0');
 define('PLUGIN_DOMAINMANAGER_MAX_GLPI', '11.0.99');
 define('PLUGIN_DOMAINMANAGER_REPOSITORY_URL', 'https://github.com/TICGAL-GLPI-Plugins/domainmanager');
@@ -73,6 +73,15 @@ define('PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_PROXY', 9405);
 // Real, filterable search option on Domain (§9 Phase 14 "Domain-level
 // Managed field") — see its own registration below.
 define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_MANAGED', 9406);
+// Real, filterable search options on Domain (§9 Phase 15 addendum
+// "Searchable fields") — see their own registration below. Reserved block
+// widened 9400-9409 -> 9400-9429 (search-options-registry.json) to leave
+// room for the remaining states-table fields (registrar metadata columns)
+// a future phase will expose the same way.
+define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_NS_PROVIDER', 9407);
+define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR_STATUS', 9408);
+define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_STATUS', 9409);
+define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_LAST_SYNC', 9410);
 
 /**
  * Plugin_Version_Domainmanager
@@ -152,6 +161,81 @@ function plugin_domainmanager_getAddSearchOptionsNew($itemtype): array
             'linkfield'     => 'domains_id',
             'name'          => __('Managed', 'domainmanager'),
             'datatype'      => 'bool',
+            'massiveaction' => false,
+            'joinparams'    => [
+                'jointype' => 'child',
+            ],
+        ];
+
+        // §9 Phase 15 addendum "Searchable fields": same single-hop 'child'
+        // join shape/table as PLUGIN_DOMAINMANAGER_SO_DOMAIN_MANAGED above
+        // (one states row per Domain already exists). All four use
+        // 'datatype' => 'specific' so the criteria's value input renders as
+        // a dropdown wherever the underlying values form a real, bounded
+        // set — `DomainState::getSpecificValueToSelect()`/
+        // `getSpecificValueToDisplay()` are the ones actually called for
+        // these (not `Domain`'s), since `SQLProvider` dispatches from the
+        // search option's own `table`/`'itemtype'`, not from the itemtype
+        // under search — `'itemtype'` is set explicitly below rather than
+        // relying on `getItemTypeForTable()` to guess it correctly from a
+        // table name that doesn't follow the plain naming-convention
+        // class<->table mapping (`DomainState::getTable()` is an explicit
+        // override, not derived from the class name).
+        $options[] = [
+            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN_NS_PROVIDER,
+            'itemtype'      => DomainState::class,
+            'table'         => DomainState::getTable(),
+            'field'         => 'detected_provider',
+            'linkfield'     => 'domains_id',
+            'name'          => __('NS Provider', 'domainmanager'),
+            'datatype'      => 'specific',
+            'searchtype'    => ['equals', 'notequals'],
+            'massiveaction' => false,
+            'joinparams'    => [
+                'jointype' => 'child',
+            ],
+        ];
+        $options[] = [
+            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR_STATUS,
+            'itemtype'      => DomainState::class,
+            'table'         => DomainState::getTable(),
+            'field'         => 'registrar_status',
+            'linkfield'     => 'domains_id',
+            'name'          => __('Registrar sync status', 'domainmanager'),
+            'datatype'      => 'specific',
+            'searchtype'    => ['equals', 'notequals'],
+            'massiveaction' => false,
+            'joinparams'    => [
+                'jointype' => 'child',
+            ],
+        ];
+        $options[] = [
+            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_STATUS,
+            'itemtype'      => DomainState::class,
+            'table'         => DomainState::getTable(),
+            'field'         => 'dns_status',
+            'linkfield'     => 'domains_id',
+            'name'          => __('DNS sync status', 'domainmanager'),
+            'datatype'      => 'specific',
+            'searchtype'    => ['equals', 'notequals'],
+            'massiveaction' => false,
+            'joinparams'    => [
+                'jointype' => 'child',
+            ],
+        ];
+        // A plain native 'datetime' datatype — last_sync_date's values
+        // aren't a bounded enum, so a dropdown doesn't apply here; GLPI's
+        // built-in datetime criteria (equals/before/after/empty) already
+        // cover "sort and check validity" (e.g. find domains whose last
+        // sync is older than a given date, or that have never synced at
+        // all via "is empty") without any custom display/select code.
+        $options[] = [
+            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN_LAST_SYNC,
+            'table'         => DomainState::getTable(),
+            'field'         => 'last_sync_date',
+            'linkfield'     => 'domains_id',
+            'name'          => __('Last sync', 'domainmanager'),
+            'datatype'      => 'datetime',
             'massiveaction' => false,
             'joinparams'    => [
                 'jointype' => 'child',

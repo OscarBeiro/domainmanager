@@ -2245,3 +2245,64 @@ see 10.1a. The checks below still need a real browser/account pass by
 - **Expected:** correct results, no SQL error — confirms no regression
   and no latent version-bump gap for this option.
 - [ ] Pass
+
+## 16. Phase 15 addendum: new Domain search options ("Searchable fields")
+
+### 16.1 "NS Provider" filters via a real dropdown, not free text
+- **Requirement verified:** `PLUGIN_DOMAINMANAGER_SO_DOMAIN_NS_PROVIDER`
+  (id `9407`) renders its search criteria value as a `<select>`
+  (`DomainState::getSpecificValueToSelect()`), populated live from
+  `NsProviderRegistry::getProviders()` plus "Unknown".
+- **Steps:** on Domain's native search, add a criterion for "NS Provider"
+  (under the "Domain Manager" category). Open its value dropdown.
+- **Expected:** a `<select>`, not a text box, listing every provider
+  currently in `resources/ns-providers.json` plus "Unknown" — no
+  "invalid search option" warning. Filtering by a real provider name
+  returns exactly the domains whose last NS lookup matched it; filtering
+  by "Unknown" returns domains whose NS hosts didn't match any registry
+  entry.
+- [ ] Pass
+
+### 16.2 "Registrar sync status" / "DNS sync status" filter via a real dropdown
+- **Requirement verified:** `PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR_STATUS`
+  (id `9408`) / `PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_STATUS` (id `9409`)
+  render as a `<select>` populated from `DomainState::getStatusLabels()`.
+- **Steps:** add both criteria on Domain's native search; open each value
+  dropdown; pick "OK", then "Error", then "Not configured".
+- **Expected:** the dropdown lists all 8 status labels (Never
+  synchronized, OK, Error, Not configured, Provider not supported,
+  Provider unknown, Supplier inactive, Registrar changed/not yet
+  verified); each choice returns exactly the domains whose
+  `registrar_status`/`dns_status` matches; the displayed column shows
+  the same human label, not the raw enum string.
+- [ ] Pass
+
+### 16.3 Domain form panel's status badge still matches the search dropdown's labels
+- **Requirement verified:** `DomainForm` now delegates to
+  `DomainState::getStatusLabels()`/`getStatusClasses()` instead of
+  keeping its own copies — the two can't drift apart.
+- **Steps:** open a domain with a non-"Never synchronized" status; note
+  its badge text. Compare against the label shown for the same domain's
+  row when filtering "Registrar sync status"/"DNS sync status" in
+  search.
+- **Expected:** identical wording in both places.
+- [ ] Pass
+
+### 16.4 "Last sync" sorts and filters by date, including "never synced"
+- **Requirement verified:** `PLUGIN_DOMAINMANAGER_SO_DOMAIN_LAST_SYNC`
+  (id `9410`), a native `datetime` search option — sortable, and
+  filterable via GLPI's built-in date criteria.
+- **Steps:** sort Domain's native search by "Last sync" ascending and
+  descending. Add a "Last sync" criterion with searchtype "before" a
+  recent date, then with "is empty".
+- **Expected:** sort order is chronological (domains with no state row
+  at all sort as empty/lowest); "before" returns domains last synced
+  before that date; "is empty" returns domains that have never synced.
+- [ ] Pass
+
+### 16.5 No SQL errors / invalid-search-option warnings on any of the four
+- **Steps:** with all four new criteria added simultaneously on the same
+  search, reload the Domain list several times.
+- **Expected:** no `Unknown column`/`invalid search option` warnings; all
+  four columns/criteria continue to work together (AND/OR combinations).
+- [ ] Pass

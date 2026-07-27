@@ -112,8 +112,8 @@ class DomainForm
             'registrar_supplier' => $registrar_supplier,
             'dns_supplier'       => $dns_supplier,
             'punycode'           => $punycode,
-            'status_labels'      => self::getStatusLabels(),
-            'status_classes'     => self::getStatusClasses(),
+            'status_labels'      => DomainState::getStatusLabels(),
+            'status_classes'     => DomainState::getStatusClasses(),
             'domains_id'         => $domains_id,
             'infocom_tab_url'    => $is_new ? '' : (Domain::getFormURLWithID($domains_id) . '&forcetab=Infocom$1'),
             'repository_url'     => PLUGIN_DOMAINMANAGER_REPOSITORY_URL,
@@ -121,23 +121,6 @@ class DomainForm
             'provider_unknown'   => NsProviderRegistry::PROVIDER_UNKNOWN,
             'domain_type_labels' => self::getDomainTypeLabels(),
         ]);
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    private static function getStatusLabels(): array
-    {
-        return [
-            DomainState::STATUS_NEVER        => __('Never synchronized', 'domainmanager'),
-            DomainState::STATUS_OK           => __('OK', 'domainmanager'),
-            DomainState::STATUS_ERROR        => __('Error', 'domainmanager'),
-            DomainState::STATUS_UNCONFIGURED      => __('Not configured', 'domainmanager'),
-            DomainState::STATUS_UNSUPPORTED       => __('Provider not supported', 'domainmanager'),
-            DomainState::STATUS_UNKNOWN           => __('Provider unknown', 'domainmanager'),
-            DomainState::STATUS_SUPPLIER_INACTIVE => __('Supplier inactive', 'domainmanager'),
-            DomainState::STATUS_REASSIGNED        => __('Registrar changed, not yet verified', 'domainmanager'),
-        ];
     }
 
     /**
@@ -163,28 +146,4 @@ class DomainForm
         return $labels;
     }
 
-    /**
-     * Badge CSS class per status
-     *
-     * @return array<string, string>
-     */
-    private static function getStatusClasses(): array
-    {
-        return [
-            DomainState::STATUS_NEVER        => 'text-bg-secondary',
-            DomainState::STATUS_OK           => 'text-bg-success',
-            DomainState::STATUS_ERROR        => 'text-bg-danger',
-            DomainState::STATUS_UNCONFIGURED      => 'text-bg-secondary',
-            DomainState::STATUS_UNSUPPORTED       => 'text-bg-warning',
-            DomainState::STATUS_UNKNOWN           => 'text-bg-warning',
-            DomainState::STATUS_SUPPLIER_INACTIVE => 'text-bg-secondary',
-            // Distinct from STATUS_ERROR (text-bg-danger, a failed API
-            // call) and STATUS_SUPPLIER_INACTIVE (text-bg-secondary, an
-            // intentional, calm state) — this reflects genuinely
-            // incorrect/outdated stored data that needs a fresh sync,
-            // without implying anything actually failed (§9 Phase 8
-            // addendum).
-            DomainState::STATUS_REASSIGNED        => 'text-bg-info',
-        ];
-    }
 }

@@ -3,7 +3,7 @@
   "plugins": {
     "domainmanager": {
       "repository": "https://github.com/TICGAL-GLPI-Plugins/domainmanager",
-      "reserved_block": "9400-9409",
+      "reserved_block": "9400-9429",
       "registered_in": "setup.php::plugin_domainmanager_getAddSearchOptionsNew()",
       "search_options": [
         {
@@ -33,6 +33,42 @@
           "table": "glpi_plugin_domainmanager_states",
           "field": "is_managed",
           "purpose": "Real, filterable bool search option: true iff either role (Registrar or DNS) currently resolves to a real, driver-backed, active supplier, independent of last sync success/failure (ARCHITECTURE.md §2, §9 Phase 14 \"Domain-level Managed field\") — joined via 'jointype' => 'child' since glpi_plugin_domainmanager_states has a direct, non-polymorphic domains_id FK back to Domain's own id",
+          "verified_collision_free": false
+        },
+        {
+          "itemtype": "Domain",
+          "id": 9407,
+          "name": "NS Provider",
+          "table": "glpi_plugin_domainmanager_states",
+          "field": "detected_provider",
+          "purpose": "Real, filterable search option for the NS-detected DNS provider (ARCHITECTURE.md §9 Phase 15 addendum \"Searchable fields\") — 'datatype' => 'specific' with a dropdown built from NsProviderRegistry::getProviders() (DomainState::getSpecificValueToSelect()), same 'child' join shape as 9406",
+          "verified_collision_free": false
+        },
+        {
+          "itemtype": "Domain",
+          "id": 9408,
+          "name": "Registrar sync status",
+          "table": "glpi_plugin_domainmanager_states",
+          "field": "registrar_status",
+          "purpose": "Real, filterable search option for the registrar leg's last sync outcome (ARCHITECTURE.md §9 Phase 15 addendum \"Searchable fields\") — 'datatype' => 'specific' with a dropdown from DomainState::getStatusLabels() (DomainState::getSpecificValueToSelect()), same 'child' join shape as 9406",
+          "verified_collision_free": false
+        },
+        {
+          "itemtype": "Domain",
+          "id": 9409,
+          "name": "DNS sync status",
+          "table": "glpi_plugin_domainmanager_states",
+          "field": "dns_status",
+          "purpose": "Same as 9408, for the DNS leg.",
+          "verified_collision_free": false
+        },
+        {
+          "itemtype": "Domain",
+          "id": 9410,
+          "name": "Last sync",
+          "table": "glpi_plugin_domainmanager_states",
+          "field": "last_sync_date",
+          "purpose": "Real, filterable/sortable native 'datetime' search option (ARCHITECTURE.md §9 Phase 15 addendum \"Searchable fields\") — no custom display/select needed, same 'child' join shape as 9406",
           "verified_collision_free": false
         }
       ],
