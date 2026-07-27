@@ -53,6 +53,17 @@ class DomainState extends CommonDBTM
     // (an API call was attempted and failed): nothing was attempted here,
     // on purpose (§addendum "Skip Inactive Suppliers").
     public const STATUS_SUPPLIER_INACTIVE = 'supplier_inactive';
+    // The registrar (Infocom's Supplier) was just reassigned to a
+    // *different*, already-known supplier, but no sync has run against
+    // the new assignment yet — `registrar_message` (and whatever
+    // `registrar_status` held before) described the *previous* supplier,
+    // so showing it unchanged next to the new supplier's name would be
+    // genuinely incorrect, not merely stale (§9 Phase 8 addendum, the
+    // deferred "Domain form panel mismatch treatment"). Deliberately its
+    // own status rather than reusing STATUS_NEVER: unlike a domain that
+    // was never assigned a registrar at all, this domain *does* have
+    // sync history — it's just history for the wrong supplier now.
+    public const STATUS_REASSIGNED        = 'reassigned';
 
     /**
      * {@inheritDoc}

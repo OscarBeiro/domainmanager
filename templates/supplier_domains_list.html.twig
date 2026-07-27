@@ -32,12 +32,14 @@
     'ok': __('OK', 'domainmanager'),
     'error': __('Error', 'domainmanager'),
     'unconfigured': __('Not configured', 'domainmanager'),
+    'reassigned': __('Registrar changed, not yet verified', 'domainmanager'),
 } %}
 {% set registrar_status_classes = {
     'never': 'text-bg-secondary',
     'ok': 'text-bg-success',
     'error': 'text-bg-danger',
     'unconfigured': 'text-bg-secondary',
+    'reassigned': 'text-bg-info',
 } %}
 {% set dns_kind_labels = {
     'managed': __('Plugin managed', 'domainmanager'),

@@ -107,10 +107,29 @@ class HookHandler
         if ($state !== null) {
             $old_suppliers_id = (int) $state->fields['registrar_suppliers_id'];
             if ($old_suppliers_id !== $suppliers_id) {
-                $state->update([
+                $update = [
                     'id'                     => $state->getID(),
                     'registrar_suppliers_id' => $suppliers_id,
-                ]);
+                ];
+                // Whatever registrar_status/registrar_message the state row
+                // already held describes the *old* supplier (or no
+                // supplier). Leaving it in place would show it, unchanged,
+                // right next to the newly-assigned supplier's name — a
+                // real "OK"/"Error" that's actually about someone else.
+                // Reset it to a status honestly describing the new
+                // assignment instead of trusting the sync engine to catch
+                // up eventually.
+                if ($suppliers_id <= 0) {
+                    $update['registrar_status']  = DomainState::STATUS_UNCONFIGURED;
+                    $update['registrar_message'] = null;
+                } elseif ($old_suppliers_id <= 0) {
+                    $update['registrar_status']  = DomainState::STATUS_NEVER;
+                    $update['registrar_message'] = null;
+                } else {
+                    $update['registrar_status']  = DomainState::STATUS_REASSIGNED;
+                    $update['registrar_message'] = null;
+                }
+                $state->update($update);
                 self::logRegistrarChange($domains_id, $old_suppliers_id, $suppliers_id);
             }
         } elseif ($suppliers_id > 0) {

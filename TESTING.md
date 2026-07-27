@@ -1629,6 +1629,53 @@ search-option registration itself and the migration.
 - [ ] Pass
 - [ ] Pass
 
+### 8.12 Reassigning a domain's registrar shows "Registrar changed, not yet verified" instead of a stale status (Phase 8 addendum, 2026-07-27)
+- **Steps:** pick a domain whose registrar sync currently shows "OK" (a
+  real successful sync against its current Supplier). Change its
+  registrar to a *different*, already-known Supplier — either via the
+  Domain's own Infocom ("Financial and administrative information") tab
+  directly, or via the Import modal's "Reassign registrar to X" action.
+  Do **not** click Update Now yet. Open the Domain form's Domain Manager
+  panel and the new registrar's Supplier tab "Domains" list.
+- **Expected:** the Registrar column immediately shows the new Supplier
+  (hyperlinked), but the Registrar sync badge shows a new, distinct
+  **"Registrar changed, not yet verified"** badge (`text-bg-info`,
+  visually distinct from the green "OK", red "Error", and grey "Not
+  configured"/"Supplier inactive" badges) — not the old Supplier's stale
+  "OK". The old registrar_message is gone (not shown stapled to the new
+  Supplier's name). The same badge appears in the new Supplier's own
+  "Domains" list row for this domain.
+- [ ] Pass
+
+### 8.13 The "Registrar changed" badge clears on the next sync
+- **Steps:** immediately after 8.12, click "Update Now" on that same
+  domain (or wait for the next cron cycle).
+- **Expected:** the badge reverts to a real, freshly-computed status
+  ("OK" or "Error", per what the new Supplier's actual API call
+  returns) — "Registrar changed, not yet verified" never persists past
+  the domain's next sync.
+- [ ] Pass
+
+### 8.14 Clearing a registrar (no reassignment) still shows "Not configured", not the new badge
+- **Steps:** on a domain with a registrar assigned and a successful past
+  sync, clear the Supplier field on its Infocom tab entirely (set to
+  none).
+- **Expected:** Registrar sync badge shows "Not configured"
+  (`STATUS_UNCONFIGURED`), not "Registrar changed, not yet verified" —
+  the new badge is reserved for a real hand-off between two known
+  suppliers, not for "no registrar at all".
+- [ ] Pass
+
+### 8.15 A domain's *first-ever* registrar assignment shows "Not yet checked", not "Registrar changed"
+- **Steps:** on a domain that has never had a registrar assigned (no
+  Infocom Supplier set, no prior sync), assign a Supplier for the first
+  time.
+- **Expected:** Registrar sync badge shows "Never synchronized"/"Not yet
+  checked" (`STATUS_NEVER`), same as any domain that's never been
+  synced — not the "Registrar changed" badge, since there's no previous
+  supplier's stale status this could ever be confused with.
+- [ ] Pass
+
 ## Phase 9 addendum — Design/UX polish (§9)
 
 Cosmetic-only: "Update Now" relocated into the Domain form's own button
