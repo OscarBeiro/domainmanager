@@ -434,6 +434,7 @@ class SupplierConfig extends CommonDBTM
     /**
      * {@inheritDoc}
      */
+    // phpcs:ignore PSR1.Methods.CamelCapsMethodName.NotCamelCaps -- overrides CommonDBTM's own snake_case hook name
     public function post_addItem()
     {
         parent::post_addItem();
@@ -443,6 +444,7 @@ class SupplierConfig extends CommonDBTM
     /**
      * {@inheritDoc}
      */
+    // phpcs:ignore PSR1.Methods.CamelCapsMethodName.NotCamelCaps -- overrides CommonDBTM's own snake_case hook name
     public function post_updateItem($history = true)
     {
         parent::post_updateItem($history);
@@ -452,6 +454,7 @@ class SupplierConfig extends CommonDBTM
     /**
      * {@inheritDoc}
      */
+    // phpcs:ignore PSR1.Methods.CamelCapsMethodName.NotCamelCaps -- overrides CommonDBTM's own snake_case hook name
     public function post_purgeItem()
     {
         $driver       = (string) ($this->fields['api_driver'] ?? DriverRegistry::DRIVER_NONE);
