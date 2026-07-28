@@ -534,6 +534,14 @@ class Installer
         // above but via the same idempotent `addField()`, so it lands on
         // both fresh installs and existing ones upgrading past this version.
         $migration->addField($table, 'rdap_transfer_date', 'datetime', ['value' => null]);
+
+        // §9 Phase 26: dual-source fallback for Transfer lock/Domain lock,
+        // same "driver's own value wins, RDAP fills the gap otherwise"
+        // treatment already given to DNSSEC (`registrar_dnssec_enabled`/
+        // `rdap_dnssec_signed`) — these were parsed by `RdapClient` since
+        // Phase 21 but never actually stored or surfaced anywhere.
+        $migration->addField($table, 'rdap_transfer_lock', 'tinyint NULL DEFAULT NULL');
+        $migration->addField($table, 'rdap_domain_lock', 'tinyint NULL DEFAULT NULL');
     }
 
     /**

@@ -59,6 +59,8 @@ class RdapGapChecker
     public const GAP_PENDING_DELETE    = 'pending_delete';
     public const GAP_PENDING_TRANSFER  = 'pending_transfer';
     public const GAP_DNSSEC            = 'dnssec';
+    public const GAP_TRANSFER_LOCK     = 'transfer_lock';
+    public const GAP_DOMAIN_LOCK       = 'domain_lock';
 
     /**
      * @param  int $domains_id
@@ -110,6 +112,20 @@ class RdapGapChecker
         $rdapHasDnssec       = $state !== null && $state->fields['rdap_dnssec_signed'] !== null;
         if (!$driverReportsDnssec && !$rdapHasDnssec) {
             $gaps[] = self::GAP_DNSSEC;
+        }
+
+        // §9 Phase 26: same dual-source rule as DNSSEC above, for
+        // Transfer lock/Domain lock.
+        $driverReportsTransferLock = $state !== null && $state->fields['registrar_transfer_lock'] !== null;
+        $rdapHasTransferLock       = $state !== null && $state->fields['rdap_transfer_lock'] !== null;
+        if (!$driverReportsTransferLock && !$rdapHasTransferLock) {
+            $gaps[] = self::GAP_TRANSFER_LOCK;
+        }
+
+        $driverReportsDomainLock = $state !== null && $state->fields['registrar_domain_lock'] !== null;
+        $rdapHasDomainLock       = $state !== null && $state->fields['rdap_domain_lock'] !== null;
+        if (!$driverReportsDomainLock && !$rdapHasDomainLock) {
+            $gaps[] = self::GAP_DOMAIN_LOCK;
         }
 
         return $gaps;

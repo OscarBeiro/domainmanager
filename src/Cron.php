@@ -364,6 +364,12 @@ class Cron
         if (in_array(RdapGapChecker::GAP_DNSSEC, $gaps, true) && $result->dnssecSigned !== null) {
             $state_input['rdap_dnssec_signed'] = (int) $result->dnssecSigned;
         }
+        if (in_array(RdapGapChecker::GAP_TRANSFER_LOCK, $gaps, true) && $result->transferLock !== null) {
+            $state_input['rdap_transfer_lock'] = (int) $result->transferLock;
+        }
+        if (in_array(RdapGapChecker::GAP_DOMAIN_LOCK, $gaps, true) && $result->domainLock !== null) {
+            $state_input['rdap_domain_lock'] = (int) $result->domainLock;
+        }
 
         // §9 Phase 22 "Registrar-of-record and nameserver fields are
         // populated unconditionally" — never gap-gated (no driver reports

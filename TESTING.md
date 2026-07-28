@@ -2565,17 +2565,17 @@ diagnose the original bug).
   on either a fresh install or an upgrade of an already-migrated instance.
 - [ ] Pass
 
-### 25.2 "Last changed (RDAP)" and "Last transfer (RDAP)" columns appear between "DNS sync" and "Last sync"
+### 25.2 "Last changed" and "Last transfer" columns appear between "DNS sync" and "Last sync"
 - **Steps:** open the Domain form for any domain.
 - **Expected:** the main status table header row reads Registrar | DNS
-  Provider | Registrar sync | DNS sync | Last changed (RDAP) | Last
-  transfer (RDAP) | Last sync, in that order.
+  Provider | Registrar sync | DNS sync | Last changed | Last transfer |
+  Last sync, in that order — no "(RDAP)" suffix in the visible header.
 - [ ] Pass
 
 ### 25.3 Both columns show "—" before RDAP has ever reported a value
 - **Steps:** open the Domain form for a domain never RDAP-checked, and
   for one RDAP-checked but never transferred.
-- **Expected:** "Last changed (RDAP)" and "Last transfer (RDAP)" both show
+- **Expected:** "Last changed" and "Last transfer" both show
   a muted "—" with an explanatory tooltip; not gated on `rstatus`/`dstatus`
   (shown even if the registrar/DNS sync itself errored).
 - [ ] Pass
@@ -2585,7 +2585,7 @@ diagnose the original bug).
   includes a `transfer` event (a domain that has actually been
   transferred between registrars).
 - **Expected:** `rdap_transfer_date` is set to that event's date; the
-  Domain form's "Last transfer (RDAP)" column shows it.
+  Domain form's "Last transfer" column shows it.
 - [ ] Pass
 
 ### 25.5 No new PHP warnings/notices from this phase
@@ -2595,4 +2595,48 @@ diagnose the original bug).
   every touched file (`src/Installer.php`, `src/Dto/RdapLookupResult.php`,
   `src/Service/RdapClient.php`, `src/Service/RdapGapChecker.php`,
   `src/Cron.php`).
+- [ ] Pass
+
+## Phase 26 (implemented 2026-07-28) — Transfer/Domain lock RDAP gap-fill, RDAP fields searchable (§9)
+
+### 26.1 Transfer lock/Domain lock fall back to RDAP's value when the driver reports nothing
+- **Steps:** compare a domain whose driver reports `registrar_transfer_lock`/
+  `registrar_domain_lock` against one where the driver doesn't (both
+  RDAP-checked at least once).
+- **Expected:** the driver-reporting domain's cells are unaffected (no "via
+  RDAP" marker); the other domain's cells show the RDAP value with the
+  same "via RDAP" tooltip/icon already used for DNSSEC.
+- [ ] Pass
+
+### 26.2 A domain neither the driver nor RDAP reports still shows the muted dash
+- **Steps:** open the Domain form for a domain with no driver value and no
+  RDAP check yet for Transfer lock/Domain lock.
+- **Expected:** both cells show a muted "—" with "Not reported by this
+  driver" tooltip (unchanged from before this phase).
+- [ ] Pass
+
+### 26.3 New search options list and filter correctly
+- **Steps:** Domain search, add each of the 7 new criteria (ids
+  9423-9429: Last changed, Last transfer, Transfer lock (RDAP), Domain
+  lock (RDAP), Pending delete, Pending transfer, DNSSEC (RDAP)).
+- **Expected:** each appears under the "Domain Manager" search-option
+  group, filters/sorts correctly, and returns results independent of
+  whichever value the panel displays for the dual-source fields (e.g.
+  filtering "Transfer lock (RDAP) = Yes" still finds a domain whose panel
+  shows the *driver's* "No" for the plain "Transfer lock" column).
+- [ ] Pass
+
+### 26.4 Migration adds the two new columns on both fresh installs and upgrades
+- **Steps:** run the plugin's migration on a fresh install and on an
+  instance already migrated through Phase 25.
+- **Expected:** `rdap_transfer_lock`/`rdap_domain_lock` (tinyint, nullable)
+  exist on `glpi_plugin_domainmanager_states` in both cases; no error.
+- [ ] Pass
+
+### 26.5 No new PHP warnings/notices from this phase
+- **Steps:** after exercising 26.1-26.4, check `/var/glpi/logs/php-errors.log`
+  and `domainmanager-errors.log` for any new entries.
+- **Expected:** no new warnings/notices; `php -l` and `phpcs` clean on
+  every touched file (`setup.php`, `src/Installer.php`,
+  `src/Service/RdapGapChecker.php`, `src/Cron.php`).
 - [ ] Pass

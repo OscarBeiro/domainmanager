@@ -39,7 +39,7 @@ use GlpiPlugin\Domainmanager\LockEnforcer;
 use GlpiPlugin\Domainmanager\Profile as DomainmanagerProfile;
 use GlpiPlugin\Domainmanager\SupplierTab;
 
-define('PLUGIN_DOMAINMANAGER_VERSION', '1.1.0-beta1');
+define('PLUGIN_DOMAINMANAGER_VERSION', '1.1.0-beta2');
 define('PLUGIN_DOMAINMANAGER_MIN_GLPI', '11.0.0');
 define('PLUGIN_DOMAINMANAGER_MAX_GLPI', '11.0.99');
 define('PLUGIN_DOMAINMANAGER_REPOSITORY_URL', 'https://github.com/TICGAL-GLPI-Plugins/domainmanager');
@@ -108,6 +108,19 @@ define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_AUTH_CODE', 9419);
 define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_DOMAIN_LOCK', 9420);
 define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_AUTO_RENEW', 9421);
 define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNSSEC', 9422);
+// Real, filterable search options on Domain, one per RDAP-sourced column
+// added across §9 Phases 21-26 — fills out the 9400-9429 reserved block
+// exactly (7 slots, 7 fields). `rdap_registrar_name`/`rdap_registrar_iana_id`/
+// `rdap_nameservers` are deliberately not exposed here: they're read-only
+// diagnostics, never a source of truth (§9 Phase 21 "Registrar-of-record
+// note"), and the nameserver list isn't a simple scalar to filter on anyway.
+define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_RDAP_LAST_CHANGED', 9423);
+define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_RDAP_TRANSFER_DATE', 9424);
+define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_RDAP_TRANSFER_LOCK', 9425);
+define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_RDAP_DOMAIN_LOCK', 9426);
+define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_RDAP_PENDING_DELETE', 9427);
+define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_RDAP_PENDING_TRANSFER', 9428);
+define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_RDAP_DNSSEC', 9429);
 
 /**
  * Plugin_Version_Domainmanager
@@ -347,6 +360,99 @@ function plugin_domainmanager_getAddSearchOptionsNew($itemtype): array
             'field'         => 'registrar_dnssec_enabled',
             'linkfield'     => 'domains_id',
             'name'          => __('DNSSEC', 'domainmanager'),
+            'datatype'      => 'bool',
+            'massiveaction' => false,
+            'joinparams'    => [
+                'jointype' => 'child',
+            ],
+        ];
+
+        // §9 Phase 26 "Make the new fields searchable": the RDAP-sourced
+        // columns (§9 Phases 21-26), same single-hop 'child' join shape as
+        // every other Domain-side option above. These search the raw
+        // `rdap_*` column directly — independent of whichever driver value
+        // (if any) the Registrar details panel prefers to display for the
+        // dual-source fields (Transfer lock/Domain lock/DNSSEC), so e.g.
+        // "find every domain RDAP itself reports as transfer-locked" stays
+        // answerable even when a driver's own value happens to win on screen.
+        $options[] = [
+            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN_RDAP_LAST_CHANGED,
+            'table'         => DomainState::getTable(),
+            'field'         => 'rdap_last_changed_date',
+            'linkfield'     => 'domains_id',
+            'name'          => __('Last changed (RDAP)', 'domainmanager'),
+            'datatype'      => 'datetime',
+            'massiveaction' => false,
+            'joinparams'    => [
+                'jointype' => 'child',
+            ],
+        ];
+        $options[] = [
+            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN_RDAP_TRANSFER_DATE,
+            'table'         => DomainState::getTable(),
+            'field'         => 'rdap_transfer_date',
+            'linkfield'     => 'domains_id',
+            'name'          => __('Last transfer (RDAP)', 'domainmanager'),
+            'datatype'      => 'datetime',
+            'massiveaction' => false,
+            'joinparams'    => [
+                'jointype' => 'child',
+            ],
+        ];
+        $options[] = [
+            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN_RDAP_TRANSFER_LOCK,
+            'table'         => DomainState::getTable(),
+            'field'         => 'rdap_transfer_lock',
+            'linkfield'     => 'domains_id',
+            'name'          => __('Transfer lock (RDAP)', 'domainmanager'),
+            'datatype'      => 'bool',
+            'massiveaction' => false,
+            'joinparams'    => [
+                'jointype' => 'child',
+            ],
+        ];
+        $options[] = [
+            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN_RDAP_DOMAIN_LOCK,
+            'table'         => DomainState::getTable(),
+            'field'         => 'rdap_domain_lock',
+            'linkfield'     => 'domains_id',
+            'name'          => __('Domain lock (RDAP)', 'domainmanager'),
+            'datatype'      => 'bool',
+            'massiveaction' => false,
+            'joinparams'    => [
+                'jointype' => 'child',
+            ],
+        ];
+        $options[] = [
+            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN_RDAP_PENDING_DELETE,
+            'table'         => DomainState::getTable(),
+            'field'         => 'rdap_pending_delete',
+            'linkfield'     => 'domains_id',
+            'name'          => __('Pending delete', 'domainmanager'),
+            'datatype'      => 'bool',
+            'massiveaction' => false,
+            'joinparams'    => [
+                'jointype' => 'child',
+            ],
+        ];
+        $options[] = [
+            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN_RDAP_PENDING_TRANSFER,
+            'table'         => DomainState::getTable(),
+            'field'         => 'rdap_pending_transfer',
+            'linkfield'     => 'domains_id',
+            'name'          => __('Pending transfer', 'domainmanager'),
+            'datatype'      => 'bool',
+            'massiveaction' => false,
+            'joinparams'    => [
+                'jointype' => 'child',
+            ],
+        ];
+        $options[] = [
+            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN_RDAP_DNSSEC,
+            'table'         => DomainState::getTable(),
+            'field'         => 'rdap_dnssec_signed',
+            'linkfield'     => 'domains_id',
+            'name'          => __('DNSSEC (RDAP)', 'domainmanager'),
             'datatype'      => 'bool',
             'massiveaction' => false,
             'joinparams'    => [
