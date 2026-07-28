@@ -143,6 +143,46 @@ class DomainDiscoveryMatcher
     }
 
     /**
+     * Every soft-deleted (trashed), non-template Domain in the whole
+     * instance, keyed by normalized name. Used by DomainImportController to
+     * restore a previously-trashed domain on reimport instead of creating a
+     * duplicate — which would silently orphan whatever tickets, contracts,
+     * infocom, etc. were still linked to the trashed item. When several
+     * trashed domains share a name (each reimport-then-delete cycle would
+     * otherwise pile up more), only the oldest (lowest id, i.e. the first
+     * ever created) is kept, per the plugin's "restore the first one"
+     * policy — the rest are left in the trash untouched.
+     *
+     * @return array<string, int> normalized name => domains_id
+     */
+    public static function loadTrashedDomains(): array
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $iterator = $DB->request([
+            'SELECT'  => ['id AS domains_id', 'name'],
+            'FROM'    => 'glpi_domains',
+            'WHERE'   => [
+                'is_deleted'  => 1,
+                'is_template' => 0,
+            ],
+            'ORDER'   => 'id ASC',
+        ]);
+
+        $trashed = [];
+        foreach ($iterator as $row) {
+            $key = self::normalize((string) $row['name']);
+            if ($key === '' || isset($trashed[$key])) {
+                continue;
+            }
+            $trashed[$key] = (int) $row['domains_id'];
+        }
+
+        return $trashed;
+    }
+
+    /**
      * Public: shared by DomainImportController so "already exists" checks
      * use the exact same normalization on both sides. Canonicalized to
      * Punycode/ACE, not left as raw Unicode (§9 Phase 10 point 2) — a

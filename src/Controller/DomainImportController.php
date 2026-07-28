@@ -105,8 +105,10 @@ class DomainImportController extends AbstractController
         // `domaintypes_id` key at all — identical to one created by hand.
         $domaintypes_id = Config::getDomainTypeId();
         $existing       = DomainDiscoveryMatcher::loadExistingDomains();
+        $trashed        = DomainDiscoveryMatcher::loadTrashedDomains();
 
         $created      = 0;
+        $restored     = 0;
         $skipped      = 0;
         $failed       = 0;
         $sync_failed  = 0;
@@ -118,30 +120,61 @@ class DomainImportController extends AbstractController
                 continue;
             }
 
-            $domain_data = [
-                'name'        => $name,
-                'entities_id' => $entities_id,
-            ];
-            if ($domaintypes_id > 0) {
-                $domain_data['domaintypes_id'] = $domaintypes_id;
-            }
-
             $domain = new Domain();
-            $domains_id = $domain->add($domain_data);
 
-            if (!$domains_id) {
-                $failed++;
-                PluginLogger::error("Failed to create Domain item for discovered domain '$name'");
-                continue;
+            // A previously-trashed domain (soft-deleted, not purged) still
+            // carries whatever tickets/contracts/infocom were linked to it
+            // — restore that same item rather than `add()`ing a duplicate
+            // that would leave all of that orphaned on the trashed one.
+            if (isset($trashed[$normalized])) {
+                $domains_id = $trashed[$normalized];
+                if (!$domain->getFromDB($domains_id)) {
+                    $failed++;
+                    PluginLogger::error("Failed to load trashed Domain item #$domains_id for reimported domain '$name'");
+                    continue;
+                }
+
+                $update_data = ['id' => $domains_id, 'is_deleted' => 0];
+                if ($domaintypes_id > 0) {
+                    $update_data['domaintypes_id'] = $domaintypes_id;
+                }
+                if (!$domain->update($update_data)) {
+                    $failed++;
+                    PluginLogger::error("Failed to restore trashed Domain item #$domains_id for reimported domain '$name'");
+                    continue;
+                }
+
+                $restored++;
+            } else {
+                $domain_data = [
+                    'name'        => $name,
+                    'entities_id' => $entities_id,
+                ];
+                if ($domaintypes_id > 0) {
+                    $domain_data['domaintypes_id'] = $domaintypes_id;
+                }
+
+                $domains_id = $domain->add($domain_data);
+
+                if (!$domains_id) {
+                    $failed++;
+                    PluginLogger::error("Failed to create Domain item for discovered domain '$name'");
+                    continue;
+                }
+
+                $created++;
             }
 
-            $created++;
-
-            (new Infocom())->add([
-                'itemtype'     => Domain::class,
-                'items_id'     => $domains_id,
-                'suppliers_id' => $suppliers_id,
-            ]);
+            $infocom = new Infocom();
+            if ($infocom->getFromDBByCrit(['itemtype' => Domain::class, 'items_id' => $domains_id])) {
+                $infocom->update(['id' => $infocom->getID(), 'suppliers_id' => $suppliers_id]);
+            } else {
+                $infocom->add([
+                    'itemtype'     => Domain::class,
+                    'items_id'     => $domains_id,
+                    'suppliers_id' => $suppliers_id,
+                ]);
+            }
 
             try {
                 $engine->sync($domain);
@@ -155,9 +188,9 @@ class DomainImportController extends AbstractController
         }
 
         Session::addMessageAfterRedirect(
-            self::buildSummaryMessage($created, $skipped, $failed, $sync_failed),
+            self::buildSummaryMessage($created, $restored, $skipped, $failed, $sync_failed),
             false,
-            $created > 0 ? INFO : WARNING
+            ($created > 0 || $restored > 0) ? INFO : WARNING
         );
 
         return $this->redirectToSupplierTab($suppliers_id);
@@ -165,14 +198,19 @@ class DomainImportController extends AbstractController
 
     /**
      * @param  int $created
+     * @param  int $restored
      * @param  int $skipped
      * @param  int $failed
      * @param  int $sync_failed
      * @return string
      */
-    private static function buildSummaryMessage(int $created, int $skipped, int $failed, int $sync_failed): string
+    private static function buildSummaryMessage(int $created, int $restored, int $skipped, int $failed, int $sync_failed): string
     {
         $parts = [sprintf(_n('%d domain imported', '%d domains imported', $created, 'domainmanager'), $created)];
+
+        if ($restored > 0) {
+            $parts[] = sprintf(_n('%d restored from trash', '%d restored from trash', $restored, 'domainmanager'), $restored);
+        }
 
         if ($skipped > 0) {
             $parts[] = sprintf(_n('%d already existed', '%d already existed', $skipped, 'domainmanager'), $skipped);
