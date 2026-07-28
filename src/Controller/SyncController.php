@@ -29,54 +29,41 @@
  * -------------------------------------------------------------------------
  */
 
-use GlpiPlugin\Domainmanager\Installer;
-use GlpiPlugin\Domainmanager\MassiveActionHandler;
-use GlpiPlugin\Domainmanager\Service\PluginLogger;
+namespace GlpiPlugin\Domainmanager\Controller;
+
+use Domain;
+use Glpi\Controller\AbstractController;
+use GlpiPlugin\Domainmanager\Service\SyncEngine;
+use Session;
+use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Routing\Attribute\Route;
 
 /**
- * Install the plugin
- *
- * @return bool
+ * "Update Now" endpoint (§6.3): runs the sync synchronously for one domain.
+ * URL: POST /plugins/domainmanager/sync/{domains_id}
+ * CSRF is enforced by the core CheckCsrfListener (X-Glpi-Csrf-Token header).
  */
-function plugin_domainmanager_install(): bool
+class SyncController extends AbstractController
 {
-    return Installer::install(new Migration(PLUGIN_DOMAINMANAGER_VERSION));
-}
+    #[Route('/sync/{domains_id}', name: 'domainmanager_sync', methods: ['POST'], requirements: ['domains_id' => '\d+'])]
+    public function __invoke(int $domains_id): Response
+    {
+        if (!Session::haveRight('domain', UPDATE)) {
+            return new JsonResponse(['error' => __('You do not have permission to synchronize domains', 'domainmanager')], 403);
+        }
 
-/**
- * Called by GLPI core right after activation succeeds (Plugin::activate(),
- * by naming convention, no registration needed) — writes a deterministic
- * first line to both plugin log files so an admin sees them in Setup >
- * Logs immediately, without having to guess whether logging works before
- * the first sync or connection test runs
- *
- * @return void
- */
-function plugin_domainmanager_activate(): void
-{
-    PluginLogger::activity('Domain Manager activated, logging initialized');
-    PluginLogger::ensureErrorLogExists();
-}
+        $domain = new Domain();
+        if (!$domain->getFromDB($domains_id)) {
+            return new JsonResponse(['error' => __('Domain not found', 'domainmanager')], 404);
+        }
 
-/**
- * Uninstall the plugin
- *
- * @return bool
- */
-function plugin_domainmanager_uninstall(): bool
-{
-    return Installer::uninstall(new Migration(PLUGIN_DOMAINMANAGER_VERSION));
-}
+        if (!$domain->can($domains_id, UPDATE)) {
+            return new JsonResponse(['error' => __('You do not have permission to synchronize this domain', 'domainmanager')], 403);
+        }
 
-/**
- * Hooks::AUTO_MASSIVE_ACTIONS callback (only invoked because
- * Hooks::USE_MASSIVE_ACTION is set in setup.php) — see MassiveActionHandler
- * (§9 Phase 5.5) for the actual action/processor.
- *
- * @param  string $itemtype
- * @return array<string, string>
- */
-function plugin_domainmanager_MassiveActions(string $itemtype): array
-{
-    return MassiveActionHandler::getActions($itemtype);
+        $result = (new SyncEngine())->sync($domain);
+
+        return new JsonResponse($result);
+    }
 }

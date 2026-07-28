@@ -29,54 +29,33 @@
  * -------------------------------------------------------------------------
  */
 
-use GlpiPlugin\Domainmanager\Installer;
-use GlpiPlugin\Domainmanager\MassiveActionHandler;
-use GlpiPlugin\Domainmanager\Service\PluginLogger;
+namespace GlpiPlugin\Domainmanager\Dto;
+
+use DateTimeImmutable;
 
 /**
- * Install the plugin
- *
- * @return bool
+ * Immutable registrar lifecycle + administrative-metadata snapshot of one
+ * domain (§9 Phase 7). The metadata fields below are deliberately nullable
+ * per-driver: `null` means "this registrar's API does not report this",
+ * confirmed against each driver's real API (never guessed) — the exact
+ * same convention `registrationDate` already established for IONOS.
+ * `authInfo` (the EPP transfer/auth code) is intentionally never rendered
+ * in the Domain form UI even when populated — it is a transfer-enabling
+ * secret, not display data (§6.2).
  */
-function plugin_domainmanager_install(): bool
+final class DomainLifecycle
 {
-    return Installer::install(new Migration(PLUGIN_DOMAINMANAGER_VERSION));
-}
-
-/**
- * Called by GLPI core right after activation succeeds (Plugin::activate(),
- * by naming convention, no registration needed) — writes a deterministic
- * first line to both plugin log files so an admin sees them in Setup >
- * Logs immediately, without having to guess whether logging works before
- * the first sync or connection test runs
- *
- * @return void
- */
-function plugin_domainmanager_activate(): void
-{
-    PluginLogger::activity('Domain Manager activated, logging initialized');
-    PluginLogger::ensureErrorLogExists();
-}
-
-/**
- * Uninstall the plugin
- *
- * @return bool
- */
-function plugin_domainmanager_uninstall(): bool
-{
-    return Installer::uninstall(new Migration(PLUGIN_DOMAINMANAGER_VERSION));
-}
-
-/**
- * Hooks::AUTO_MASSIVE_ACTIONS callback (only invoked because
- * Hooks::USE_MASSIVE_ACTION is set in setup.php) — see MassiveActionHandler
- * (§9 Phase 5.5) for the actual action/processor.
- *
- * @param  string $itemtype
- * @return array<string, string>
- */
-function plugin_domainmanager_MassiveActions(string $itemtype): array
-{
-    return MassiveActionHandler::getActions($itemtype);
+    public function __construct(
+        public readonly ?DateTimeImmutable $registrationDate,
+        public readonly ?DateTimeImmutable $expirationDate,
+        public readonly LifecycleStatus $status,
+        public readonly ?string $authInfo = null,
+        public readonly ?bool $privacyEnabled = null,
+        public readonly ?bool $domainLock = null,
+        public readonly ?bool $transferLock = null,
+        public readonly ?bool $autoRenew = null,
+        public readonly ?string $domainType = null,
+        public readonly ?bool $dnsSecEnabled = null,
+    ) {
+    }
 }

@@ -1,0 +1,113 @@
+{#
+ # -------------------------------------------------------------------------
+ # Domain Manager plugin for GLPI
+ # Copyright (C) 2026 by the TICGAL Team.
+ # https://www.tic.gal
+ # -------------------------------------------------------------------------
+ # LICENSE
+ # This file is part of the Domain Manager plugin.
+ # Domain Manager plugin is free software; you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation; either version 3 of the License, or
+ # (at your option) any later version.
+ # Domain Manager plugin is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ # GNU General Public License for more details.
+ # You should have received a copy of the GNU General Public License
+ # along with Domain Manager. If not, see <http://www.gnu.org/licenses/>.
+ # -------------------------------------------------------------------------
+ # @package   domainmanager
+ # @author    the TICGAL team
+ # @copyright Copyright (c) 2026 TICGAL team
+ # @license   AGPL License 3.0 or (at your option) any later version
+ #            http://www.gnu.org/licenses/agpl-3.0-standalone.html
+ # @link      https://www.tic.gal
+ # @since     2026
+ # -------------------------------------------------------------------------
+ #}
+
+{% set dns_kind_labels = {
+    'managed': __('Plugin managed', 'domainmanager'),
+    'unmanaged': __('Known, unmanaged (yet)', 'domainmanager'),
+    'unknown': __('Unknown', 'domainmanager'),
+    'never': __('Not yet checked', 'domainmanager'),
+} %}
+{% set dns_kind_classes = {
+    'managed': 'text-bg-success',
+    'unmanaged': 'text-bg-warning',
+    'unknown': 'text-bg-secondary',
+    'never': 'text-bg-secondary',
+} %}
+
+<div class="card m-2 border-0 shadow-none" id="domainmanager-domains-list">
+    <div class="card-header">
+        <div class="ribbon ribbon-bookmark ribbon-top ribbon-start bg-blue s-1">
+            <i class="ti ti-world fa-2x"></i>
+        </div>
+        <h4 class="card-title ps-5">
+            {{ __('Domains', 'domainmanager') }}
+        </h4>
+    </div>
+    {% if never_synced_count > 0 %}
+        <div class="alert alert-info d-flex align-items-center justify-content-between m-2 mb-0" role="alert">
+            <div>
+                <i class="ti ti-info-circle me-1"></i>
+                {{ _n('%d domain linked to this supplier hasn\'t been checked yet — run a sync to detect its DNS provider and status.', '%d domains linked to this supplier haven\'t been checked yet — run a sync to detect their DNS provider and status.', never_synced_count, 'domainmanager')|format(never_synced_count) }}
+            </div>
+            <a href="{{ domains_search_url }}" class="btn btn-sm btn-outline-info ms-3 text-nowrap">
+                {{ __('Review and sync', 'domainmanager') }}
+            </a>
+        </div>
+    {% endif %}
+    <div class="card-body p-0">
+        {% if domains is empty %}
+            <div class="text-muted small p-3">
+                {{ __('No domain currently references this supplier as its registrar or DNS provider.', 'domainmanager') }}
+            </div>
+        {% else %}
+            <table class="table table-sm mb-0">
+                <thead>
+                    <tr>
+                        <th>{{ __('Domain', 'domainmanager') }}</th>
+                        <th>{{ __('Registrar', 'domainmanager') }}</th>
+                        <th>{{ __('DNS Provider', 'domainmanager') }}</th>
+                        <th>{{ _n('Entity', 'Entities', 1) }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for domain in domains %}
+                        <tr>
+                            <td>
+                                <a href="{{ domain.url }}">{{ domain.name }}</a>
+                            </td>
+                            <td>
+                                {% if domain.registrar %}
+                                    <a href="{{ domain.registrar.url }}">{{ domain.registrar.name }}</a>
+                                    <span class="badge {{ status_classes[domain.registrar_status]|default('text-bg-secondary') }} ms-1">
+                                        {{ status_labels[domain.registrar_status]|default(domain.registrar_status) }}
+                                    </span>
+                                {% else %}
+                                    <span class="text-muted">{{ __('None', 'domainmanager') }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if domain.dns.url %}
+                                    <a href="{{ domain.dns.url }}">{{ domain.dns.name }}</a>
+                                {% else %}
+                                    {{ domain.dns.name }}
+                                {% endif %}
+                                <span class="badge {{ (domain.dns.kind == 'managed' and domain.dns_status == 'error') ? 'text-bg-danger' : dns_kind_classes[domain.dns.kind]|default('text-bg-secondary') }} ms-1">
+                                    {{ dns_kind_labels[domain.dns.kind]|default(domain.dns.kind) }}
+                                </span>
+                            </td>
+                            <td>
+                                {{ domain.entity_html|raw }}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
+</div>

@@ -1,0 +1,205 @@
+{
+  "$schema-note": "TICGAL-wide GLPI plugin search-option ID registry. Search options are how a plugin gets a custom, non-blank 'field' label in a native GLPI Historical tab (Log::history()'s id_search_option resolves against SearchOption::getOptionsForItemtype()) — see the glpi-plugin-builder skill's 'History/audit-trail requirement' section and this plugin's ARCHITECTURE.md §3.7 for why these exist. This file exists to keep IDs collision-free BETWEEN TICGAL's OWN plugins (a mechanically checkable problem); it does NOT and cannot guarantee collision-freedom against third-party/public plugins — that can only be verified per-instance with tools/getsearchoptions.php --type=<Itemtype> against the actual target GLPI install before go-live. Workflow for adding a new option: (1) check no entry below already claims that id for the same itemtype; (2) run the collision check tool against a representative live instance; (3) add the entry here in the SAME change that registers it in code; (4) if this ever grows to cover multiple plugin repos, extract this file into a shared 'ticgal-glpi-conventions' repo and have each plugin vendor/submodule it instead of duplicating.",
+  "plugins": {
+    "domainmanager": {
+      "repository": "https://github.com/TICGAL-GLPI-Plugins/domainmanager",
+      "reserved_block": "9400-9429",
+      "registered_in": "setup.php::plugin_domainmanager_getAddSearchOptionsNew()",
+      "search_options": [
+        {
+          "itemtype": "DomainRecord",
+          "id": 9404,
+          "name": "Managed",
+          "table": "glpi_plugin_domainmanager_records",
+          "field": "is_managed",
+          "purpose": "Real, filterable bool search option showing whether a native DomainRecord was imported/is tracked by this plugin's sync (ARCHITECTURE.md §5.7, addendum \"Searchable 'Managed' Field on Domain Records\") — joined via 'jointype' => 'child' since glpi_plugin_domainmanager_records has a direct, non-polymorphic domainrecords_id FK back to DomainRecord's own id, confirmed against Glpi\\Search\\Provider\\SQLProvider::getLeftJoinCriteria() on the live 11.0.8 source",
+          "verified_collision_free": true,
+          "verified_collision_free_note": "Confirmed against DomainRecord::rawSearchOptions() read directly from the live 11.0.8 source (core options 2,3,4,6,7,8,9,10,80 — none near 9400+); not checked against any third-party plugin, since none besides this one is installed on the instance checked"
+        },
+        {
+          "itemtype": "DomainRecord",
+          "id": 9405,
+          "name": "Proxy status",
+          "table": "glpi_plugin_domainmanager_records",
+          "field": "is_proxied",
+          "purpose": "Real, filterable bool search option (same 'child' join shape as 9404) for CDN-proxied records (ARCHITECTURE.md §9 Phase 7 addendum \"Searchable 'Proxy Status' Field for CDN-Proxied Records\")",
+          "verified_collision_free": true,
+          "verified_collision_free_note": "Same join/table as 9404, checked in the same pass"
+        },
+        {
+          "itemtype": "Domain",
+          "id": 9406,
+          "name": "Managed",
+          "table": "glpi_plugin_domainmanager_states",
+          "field": "is_managed",
+          "purpose": "Real, filterable bool search option: true iff either role (Registrar or DNS) currently resolves to a real, driver-backed, active supplier, independent of last sync success/failure (ARCHITECTURE.md §2, §9 Phase 14 \"Domain-level Managed field\") — joined via 'jointype' => 'child' since glpi_plugin_domainmanager_states has a direct, non-polymorphic domains_id FK back to Domain's own id",
+          "verified_collision_free": false
+        },
+        {
+          "itemtype": "Domain",
+          "id": 9407,
+          "name": "NS Provider",
+          "table": "glpi_plugin_domainmanager_states",
+          "field": "detected_provider",
+          "purpose": "Real, filterable search option for the NS-detected DNS provider (ARCHITECTURE.md §9 Phase 15 addendum \"Searchable fields\") — 'datatype' => 'specific' with a dropdown built from NsProviderRegistry::getProviders() (DomainState::getSpecificValueToSelect()), same 'child' join shape as 9406",
+          "verified_collision_free": false
+        },
+        {
+          "itemtype": "Domain",
+          "id": 9408,
+          "name": "Registrar sync status",
+          "table": "glpi_plugin_domainmanager_states",
+          "field": "registrar_status",
+          "purpose": "Real, filterable search option for the registrar leg's last sync outcome (ARCHITECTURE.md §9 Phase 15 addendum \"Searchable fields\") — 'datatype' => 'specific' with a dropdown from DomainState::getStatusLabels() (DomainState::getSpecificValueToSelect()), same 'child' join shape as 9406",
+          "verified_collision_free": false
+        },
+        {
+          "itemtype": "Domain",
+          "id": 9409,
+          "name": "DNS sync status",
+          "table": "glpi_plugin_domainmanager_states",
+          "field": "dns_status",
+          "purpose": "Same as 9408, for the DNS leg.",
+          "verified_collision_free": false
+        },
+        {
+          "itemtype": "Domain",
+          "id": 9410,
+          "name": "Last sync",
+          "table": "glpi_plugin_domainmanager_states",
+          "field": "last_sync_date",
+          "purpose": "Real, filterable/sortable native 'datetime' search option (ARCHITECTURE.md §9 Phase 15 addendum \"Searchable fields\") — no custom display/select needed, same 'child' join shape as 9406",
+          "verified_collision_free": false
+        },
+        {
+          "itemtype": "Supplier",
+          "id": 9411,
+          "name": "Domains",
+          "table": "glpi_plugin_domainmanager_states",
+          "field": "id",
+          "purpose": "Real, filterable/sortable 'count' search option: number of domains where this Supplier is the registrar and/or the resolved DNS provider (ARCHITECTURE.md §9 Phase 16 \"Supplier-side searchable fields\") — reverse 'child' join (many states rows point back at one Supplier), 'linkfield' => 'registrar_suppliers_id' plus a joinparams 'condition' OR'ing in 'dns_suppliers_id' so both roles count once each without a second join",
+          "verified_collision_free": false
+        },
+        {
+          "itemtype": "Supplier",
+          "id": 9412,
+          "name": "Registrar",
+          "table": "glpi_domains",
+          "field": "name",
+          "purpose": "Real, filterable/sortable 'itemlink' search option: the actual clickable Domain names for which this Supplier is the live, native Infocom-linked registrar (ARCHITECTURE.md §9 Phase 16, revised) — two-hop join Supplier -> glpi_infocoms (child, default linkfield 'suppliers_id', condition restricts to itemtype='Domain' since Infocom is polymorphic) -> glpi_domains (default/'standard' join, explicit linkfield 'items_id' overriding the default 'domains_id' guess). Verified live: SQL built and executed correctly against the glpi-claude 11.0.8 dev instance via Search::getDatas()",
+          "verified_collision_free": false
+        },
+        {
+          "itemtype": "Supplier",
+          "id": 9413,
+          "name": "NS Provider",
+          "table": "glpi_domains",
+          "field": "name",
+          "purpose": "Real, filterable/sortable 'itemlink' search option: the actual clickable Domain names for which this Supplier is the resolved DNS provider (ARCHITECTURE.md §9 Phase 16, revised) — two-hop join Supplier -> glpi_plugin_domainmanager_states (child, explicit linkfield 'dns_suppliers_id') -> glpi_domains (default/'standard' join, linkfield 'domains_id'), sync-dependent by nature. Verified live against the glpi-claude 11.0.8 dev instance",
+          "verified_collision_free": false
+        },
+        {
+          "itemtype": "Supplier",
+          "id": 9414,
+          "name": "Number of domains (Registrar)",
+          "table": "glpi_infocoms",
+          "field": "id",
+          "purpose": "Real, filterable/sortable 'count' companion to id 9412's 'Registrar' itemlink list — single-hop reverse 'child' join to glpi_infocoms, 'linkfield' => 'suppliers_id', condition restricts to itemtype='Domain'. Same shape as the pre-revision 9412 (renamed/renumbered when 9412 itself became the itemlink list, mirroring core's Ticket-task 'Description' + 'Number of tasks' pairing)",
+          "verified_collision_free": false
+        },
+        {
+          "itemtype": "Supplier",
+          "id": 9415,
+          "name": "Number of domains (NS Provider)",
+          "table": "glpi_plugin_domainmanager_states",
+          "field": "id",
+          "purpose": "Real, filterable/sortable 'count' companion to id 9413's 'NS Provider' itemlink list — single-hop reverse 'child' join, 'linkfield' => 'dns_suppliers_id'. Same shape as the pre-revision 9413",
+          "verified_collision_free": false
+        },
+        {
+          "itemtype": "Domain",
+          "id": 9416,
+          "name": "Punycode name",
+          "table": "glpi_plugin_domainmanager_states",
+          "field": "name_ascii",
+          "purpose": "Real, filterable 'text' search option (§9 Phase 17 'Domain identity header') for the cached Punycode/ASCII form of the Domain's name (glpi_domains.name stores Unicode; MySQL has no IDN function so it can't match a pasted Punycode string itself) — same single-hop 'child' join shape as 9406-9410, kept in sync by HookHandler::domainSaved() on Domain item_add/item_update",
+          "verified_collision_free": false
+        },
+        {
+          "itemtype": "Domain",
+          "id": 9417,
+          "name": "WHOIS privacy",
+          "table": "glpi_plugin_domainmanager_states",
+          "field": "registrar_privacy_enabled",
+          "purpose": "Real, filterable bool search option for the registrar administrative-metadata column added by Installer::addRegistrarMetadataColumns() (§9 Phase 7) — same single-hop 'child' join shape as 9406-9410",
+          "verified_collision_free": false
+        },
+        {
+          "itemtype": "Domain",
+          "id": 9418,
+          "name": "Transfer lock",
+          "table": "glpi_plugin_domainmanager_states",
+          "field": "registrar_transfer_lock",
+          "purpose": "Same as 9417, for registrar_transfer_lock",
+          "verified_collision_free": false
+        },
+        {
+          "itemtype": "Domain",
+          "id": 9419,
+          "name": "Transfer / EPP auth code",
+          "table": "glpi_plugin_domainmanager_states",
+          "field": "registrar_auth_info",
+          "purpose": "Real, 'specific'-datatype search option restricted to 'searchtype' => ['empty'] only — the raw value is a live credential (domain_panel.html.twig's own 'On file'/'Not on file' badge), so this is filterable without ever exposing the value in a search results column or criteria input; DomainState::getSpecificValueToDisplay() masks it unconditionally",
+          "verified_collision_free": false
+        },
+        {
+          "itemtype": "Domain",
+          "id": 9420,
+          "name": "Domain lock",
+          "table": "glpi_plugin_domainmanager_states",
+          "field": "registrar_domain_lock",
+          "purpose": "Same as 9417, for registrar_domain_lock",
+          "verified_collision_free": false
+        },
+        {
+          "itemtype": "Domain",
+          "id": 9421,
+          "name": "Auto-renew",
+          "table": "glpi_plugin_domainmanager_states",
+          "field": "registrar_auto_renew",
+          "purpose": "Same as 9417, for registrar_auto_renew",
+          "verified_collision_free": false
+        },
+        {
+          "itemtype": "Domain",
+          "id": 9422,
+          "name": "DNSSEC",
+          "table": "glpi_plugin_domainmanager_states",
+          "field": "registrar_dnssec_enabled",
+          "purpose": "Same as 9417, for registrar_dnssec_enabled",
+          "verified_collision_free": false
+        }
+      ],
+      "removed": [
+        {
+          "itemtype": "Supplier",
+          "id": 9401,
+          "removed_in": "§9 Phase 14 addendum \"Search UI cleanup\"",
+          "reason": "Dummy placeholder bound to glpi_suppliers.name, used only to label Log::history()'s id_search_option \"Domain Manager\" — cluttered the Search UI's generic \"Plugins\" category with no real filtering value. Log::history() call sites now pass id_search_option 0 (blank field) and prefix the message text with \"[Domain Manager] \" instead."
+        },
+        {
+          "itemtype": "Domain",
+          "id": 9402,
+          "removed_in": "§9 Phase 14 addendum \"Search UI cleanup\"",
+          "reason": "Same as 9401, for Domain."
+        },
+        {
+          "itemtype": "Domain",
+          "id": 9403,
+          "removed_in": "§9 Phase 14 addendum \"Search UI cleanup\"",
+          "reason": "Duplicated native search option id 53 (glpi_suppliers.name under \"Financial and administrative information\", Infocom::rawSearchOptionsToAdd(), confirmed live) — an earlier verification pass had incorrectly concluded core never exposes this. SupplierTab::getDomainsSearchUrl() now links to native id 53 instead."
+        }
+      ]
+    }
+  }
+}

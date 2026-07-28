@@ -29,54 +29,25 @@
  * -------------------------------------------------------------------------
  */
 
-use GlpiPlugin\Domainmanager\Installer;
-use GlpiPlugin\Domainmanager\MassiveActionHandler;
-use GlpiPlugin\Domainmanager\Service\PluginLogger;
+namespace GlpiPlugin\Domainmanager\Dto;
 
 /**
- * Install the plugin
- *
- * @return bool
+ * Outcome of a single connection-test attempt against a provider API (§3.5)
  */
-function plugin_domainmanager_install(): bool
+enum ConnectionTestStatus: string
 {
-    return Installer::install(new Migration(PLUGIN_DOMAINMANAGER_VERSION));
-}
-
-/**
- * Called by GLPI core right after activation succeeds (Plugin::activate(),
- * by naming convention, no registration needed) — writes a deterministic
- * first line to both plugin log files so an admin sees them in Setup >
- * Logs immediately, without having to guess whether logging works before
- * the first sync or connection test runs
- *
- * @return void
- */
-function plugin_domainmanager_activate(): void
-{
-    PluginLogger::activity('Domain Manager activated, logging initialized');
-    PluginLogger::ensureErrorLogExists();
-}
-
-/**
- * Uninstall the plugin
- *
- * @return bool
- */
-function plugin_domainmanager_uninstall(): bool
-{
-    return Installer::uninstall(new Migration(PLUGIN_DOMAINMANAGER_VERSION));
-}
-
-/**
- * Hooks::AUTO_MASSIVE_ACTIONS callback (only invoked because
- * Hooks::USE_MASSIVE_ACTION is set in setup.php) — see MassiveActionHandler
- * (§9 Phase 5.5) for the actual action/processor.
- *
- * @param  string $itemtype
- * @return array<string, string>
- */
-function plugin_domainmanager_MassiveActions(string $itemtype): array
-{
-    return MassiveActionHandler::getActions($itemtype);
+    case Success       = 'success';
+    case AuthFailed    = 'auth_failed';
+    case Forbidden     = 'forbidden';
+    case NotFound      = 'not_found';
+    case RateLimited   = 'rate_limited';
+    case UpstreamError = 'upstream_error';
+    case NetworkError  = 'network_error';
+    case Timeout       = 'timeout';
+    case UnknownError  = 'unknown_error';
+    // Required driver configuration is missing (e.g. Cloudflare's Account
+    // ID) — no call was attempted at all, so this must never look like an
+    // auth/API failure (§addendum "Switch Cloudflare Driver to
+    // Account-Scoped API Tokens").
+    case NotConfigured = 'not_configured';
 }

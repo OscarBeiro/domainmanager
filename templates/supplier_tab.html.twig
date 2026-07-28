@@ -1,0 +1,295 @@
+{#
+ # -------------------------------------------------------------------------
+ # Domain Manager plugin for GLPI
+ # Copyright (C) 2026 by the TICGAL Team.
+ # https://www.tic.gal
+ # -------------------------------------------------------------------------
+ # LICENSE
+ # This file is part of the Domain Manager plugin.
+ # Domain Manager plugin is free software; you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation; either version 3 of the License, or
+ # (at your option) any later version.
+ # Domain Manager plugin is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ # GNU General Public License for more details.
+ # You should have received a copy of the GNU General Public License
+ # along with Domain Manager. If not, see <http://www.gnu.org/licenses/>.
+ # -------------------------------------------------------------------------
+ # @package   domainmanager
+ # @author    the TICGAL team
+ # @copyright Copyright (c) 2026 TICGAL team
+ # @license   AGPL License 3.0 or (at your option) any later version
+ #            http://www.gnu.org/licenses/agpl-3.0-standalone.html
+ # @link      https://www.tic.gal
+ # @since     2026
+ # -------------------------------------------------------------------------
+ #}
+
+<div class="row">
+<div class="col-12 col-xl-6">
+<div class="card m-2 border-0 shadow-none">
+    <div class="card-header">
+        <div class="ribbon ribbon-bookmark ribbon-top ribbon-start bg-blue s-1">
+            <i class="ti ti-world-cog fa-2x"></i>
+        </div>
+        <h4 class="card-title ps-5">
+            {{ __('Domain Manager API access', 'domainmanager') }}
+        </h4>
+    </div>
+
+    {% if can_edit %}
+        <form method="post" action="{{ form_url }}" autocomplete="off">
+            <div class="card-body">
+                {% if cloudflare_missing_account_id %}
+                    <div class="alert alert-warning">
+                        <i class="ti ti-alert-triangle me-1"></i>
+                        {{ __('This Cloudflare configuration is missing an Account ID. Add it below and reissue this token as an Account API Token to continue using Cloudflare sync.', 'domainmanager') }}
+                    </div>
+                {% endif %}
+                <div class="mb-3 row">
+                    <label class="col-4 col-form-label" for="domainmanager-driver">
+                        {{ __('API driver', 'domainmanager') }}
+                    </label>
+                    <div class="col-8">
+                        <select class="form-select" id="domainmanager-driver" name="api_driver">
+                            {% for driver, label in driver_labels %}
+                                <option value="{{ driver }}" {{ driver == current_driver ? 'selected' : '' }}>
+                                    {{ label }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+
+                {% for driver, fields in credential_fields %}
+                    {% if fields is not empty %}
+                        <div class="domainmanager-driver-fields" data-driver="{{ driver }}"
+                             {{ driver != current_driver ? 'hidden' : '' }}>
+                            {% for name, meta in fields %}
+                                <div class="mb-3 row">
+                                    <label class="col-4 col-form-label"
+                                           for="domainmanager-cred-{{ driver }}-{{ name }}">
+                                        {{ meta.label }}
+                                    </label>
+                                    <div class="col-8">
+                                        {% set is_current = (driver == current_driver) %}
+                                        <input type="{{ meta.secret ? 'password' : 'text' }}"
+                                               class="form-control"
+                                               id="domainmanager-cred-{{ driver }}-{{ name }}"
+                                               name="_credentials[{{ name }}]"
+                                               value="{{ is_current and not meta.secret ? values[name]|default('') : '' }}"
+                                               placeholder="{{ is_current and meta.secret and saved[name]|default(false) ? __('●●●●●●●● (saved, leave empty to keep)', 'domainmanager') : '' }}"
+                                               autocomplete="new-password"
+                                               {{ meta.required|default(false) ? 'required' : '' }}
+                                               {{ driver != current_driver ? 'disabled' : '' }} />
+                                    </div>
+                                </div>
+                            {% endfor %}
+                            {% if driver == 'cloudflare' %}
+                                <div class="form-text mb-3">
+                                    {{ __('Only Account API Tokens are supported — a personal/user token (My Profile → API Tokens) will fail authentication here even if otherwise valid. Create one under the Cloudflare dashboard\'s Manage Account → API Tokens (requires Super Administrator) with Zone:DNS:Read and Zone:Zone:Read permissions scoped to this account. The Account ID is shown on the account\'s Overview page (API section) or via "Copy account ID" from the account menu.', 'domainmanager') }}
+                                </div>
+                            {% endif %}
+                        </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+
+            <div class="card-footer text-end">
+                <input type="hidden" name="suppliers_id" value="{{ suppliers_id }}" />
+                <input type="hidden" name="_glpi_csrf_token" value="{{ csrf_token() }}" />
+                {% if current_driver != 'none' %}
+                    <button type="button" id="domainmanager-check-connection"
+                            class="btn btn-outline-secondary me-2"
+                            {{ supplier_active|default(true) ? '' : 'disabled' }}
+                            {% if not supplier_active|default(true) %}
+                                title="{{ __('This supplier is inactive. Activate it to test its Domain Manager credentials.', 'domainmanager') }}"
+                            {% endif %}>
+                        <i class="ti ti-plug-connected"></i>
+                        <span>{{ __('Check Connection', 'domainmanager') }}</span>
+                    </button>
+                {% endif %}
+                {% if discovery_supported|default(false) %}
+                    <button type="button" id="domainmanager-import-domains"
+                            class="btn btn-outline-secondary me-2"
+                            onclick="domainmanager_import_modal.show();"
+                            {{ supplier_active|default(true) ? '' : 'disabled' }}
+                            {% if not supplier_active|default(true) %}
+                                title="{{ __('This supplier is inactive. Activate it to import its domains.', 'domainmanager') }}"
+                            {% endif %}>
+                        <i class="ti ti-cloud-download"></i>
+                        <span>{{ __('Import Domains', 'domainmanager') }}</span>
+                    </button>
+                {% endif %}
+                {% if config_id > 0 %}
+                    <input type="hidden" name="id" value="{{ config_id }}" />
+                    <button type="submit" name="update" class="btn btn-primary">
+                        <i class="ti ti-device-floppy"></i>
+                        <span>{{ _x('button', 'Save') }}</span>
+                    </button>
+                {% else %}
+                    <button type="submit" name="add" class="btn btn-primary">
+                        <i class="ti ti-device-floppy"></i>
+                        <span>{{ _x('button', 'Save') }}</span>
+                    </button>
+                {% endif %}
+            </div>
+        </form>
+
+        <script>
+            (function () {
+                const select = document.getElementById('domainmanager-driver');
+                const allCapabilities = {{ all_testable_capabilities|json_encode|raw }};
+                const allPrimaryCapabilities = {{ all_primary_capabilities|json_encode|raw }};
+
+                const toggle = function () {
+                    document.querySelectorAll('.domainmanager-driver-fields').forEach(function (block) {
+                        const active = block.dataset.driver === select.value;
+                        block.hidden = !active;
+                        block.querySelectorAll('input').forEach(function (input) {
+                            input.disabled = !active;
+                        });
+                    });
+
+                    const capabilities = allCapabilities[select.value] || [];
+                    document.querySelectorAll('.domainmanager-test-capability').forEach(function (block) {
+                        block.hidden = capabilities.length === 0;
+                    });
+                    const none = document.getElementById('domainmanager-test-none');
+                    if (none) {
+                        none.classList.toggle('d-none', capabilities.length > 0);
+                    }
+
+                    const checkButton = document.getElementById('domainmanager-check-connection');
+                    if (checkButton) {
+                        checkButton.hidden = select.value === 'none';
+                    }
+                };
+                select.addEventListener('change', toggle);
+                toggle();
+
+                const checkButton = document.getElementById('domainmanager-check-connection');
+                if (checkButton) {
+                    checkButton.addEventListener('click', function () {
+                        const icon = checkButton.querySelector('i');
+                        checkButton.disabled = true;
+                        icon.classList.add('ti-spin');
+
+                        const driver = select.value;
+                        const body = new URLSearchParams();
+                        body.append('api_driver', driver);
+                        document.querySelectorAll('.domainmanager-driver-fields[data-driver="' + driver + '"] input').forEach(function (input) {
+                            const match = input.name.match(/^_credentials\[(.+)\]$/);
+                            if (match) {
+                                body.append('_credentials[' + match[1] + ']', input.value);
+                            }
+                        });
+
+                        const csrf = document.querySelector('meta[property="glpi:csrf_token"]');
+                        fetch({{ path('/plugins/domainmanager/connectiontest/' ~ suppliers_id)|json_encode|raw }}, {
+                            method: 'POST',
+                            headers: {
+                                'X-Glpi-Csrf-Token': csrf ? csrf.getAttribute('content') : '',
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                                'X-Requested-With': 'XMLHttpRequest'
+                            },
+                            body: body.toString()
+                        }).then(function (response) {
+                            return response.text().then(function (text) {
+                                var data = null;
+                                try {
+                                    data = text ? JSON.parse(text) : null;
+                                } catch (e) {
+                                    data = null;
+                                }
+                                return { status: response.status, ok: response.ok, data: data, raw: text };
+                            });
+                        }).then(function (result) {
+                            if (result.data === null) {
+                                throw new Error('HTTP ' + result.status + ' - ' + (result.raw ? result.raw.substring(0, 200) : 'empty response'));
+                            }
+                            if (!result.ok || result.data.ok !== true) {
+                                throw new Error('HTTP ' + result.status + ': ' + (result.data.message || result.data.error || 'unknown error'));
+                            }
+
+                            const primary = allPrimaryCapabilities[driver];
+                            const entry = primary ? result.data.results[primary] : null;
+
+                            if (entry) {
+                                const caption = {{ __('Connection', 'domainmanager')|json_encode|raw }};
+
+                                if (entry.status === 'success') {
+                                    glpi_toast_success(entry.user_message, caption);
+                                } else if (['rate_limited', 'upstream_error', 'timeout', 'not_configured'].indexOf(entry.status) !== -1) {
+                                    glpi_toast_warning(entry.user_message, caption);
+                                } else {
+                                    glpi_toast_error(entry.user_message, caption);
+                                }
+
+                                const badge = document.getElementById('domainmanager-test-badge');
+                                if (badge) {
+                                    badge.className = 'badge ' + (domainmanagerStatusClasses[entry.status] || 'text-bg-secondary');
+                                    badge.textContent = domainmanagerStatusLabels[entry.status] || entry.status;
+                                }
+
+                                const message = document.getElementById('domainmanager-test-message');
+                                if (message) {
+                                    message.textContent = entry.user_message;
+                                }
+
+                                const httpcode = document.getElementById('domainmanager-test-httpcode');
+                                if (httpcode) {
+                                    if (entry.http_status_code) {
+                                        httpcode.textContent = 'HTTP ' + entry.http_status_code;
+                                        httpcode.classList.remove('d-none');
+                                    } else {
+                                        httpcode.classList.add('d-none');
+                                    }
+                                }
+
+                                const date = document.getElementById('domainmanager-test-date');
+                                if (date) {
+                                    date.textContent = entry.checked_at;
+                                    date.title = entry.checked_at;
+                                }
+                            }
+                        }).catch(function (error) {
+                            glpi_toast_error({{ __('Connection test request failed:', 'domainmanager')|json_encode|raw }} + ' ' + error.message);
+                            if (window.console && console.error) {
+                                console.error('Domain Manager connection test failed:', error);
+                            }
+                        }).finally(function () {
+                            checkButton.disabled = false;
+                            icon.classList.remove('ti-spin');
+                        });
+                    });
+                }
+            })();
+        </script>
+    {% else %}
+        <div class="card-body">
+            <div class="mb-3 row">
+                <label class="col-4 col-form-label">{{ __('API driver', 'domainmanager') }}</label>
+                <div class="col-8">
+                    <span class="col-form-label">{{ driver_labels[current_driver] }}</span>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+</div>
+</div>
+
+<div class="col-12 col-xl-6">
+    {% include '@domainmanager/connection_test_panel.html.twig' %}
+</div>
+</div>
+
+<div class="row">
+<div class="col-12">
+    {% include '@domainmanager/supplier_domains_list.html.twig' %}
+</div>
+</div>
+
+{{ import_modal_script|raw }}

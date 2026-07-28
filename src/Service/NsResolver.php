@@ -29,54 +29,44 @@
  * -------------------------------------------------------------------------
  */
 
-use GlpiPlugin\Domainmanager\Installer;
-use GlpiPlugin\Domainmanager\MassiveActionHandler;
-use GlpiPlugin\Domainmanager\Service\PluginLogger;
+namespace GlpiPlugin\Domainmanager\Service;
+
+use GlpiPlugin\Domainmanager\IdnNormalizer;
 
 /**
- * Install the plugin
- *
- * @return bool
+ * Live NS lookup, isolated as a testable seam
  */
-function plugin_domainmanager_install(): bool
+class NsResolver
 {
-    return Installer::install(new Migration(PLUGIN_DOMAINMANAGER_VERSION));
-}
+    /**
+     * Nameserver hosts of a domain ([] = lookup failed / none found)
+     *
+     * @param  string $fqdn GLPI's stored (possibly Unicode/IDN) domain name
+     * @return string[]
+     */
+    public function getNameservers(string $fqdn): array
+    {
+        // dns_get_record() operates on the DNS wire form: a Unicode label
+        // (e.g. "viñamoraima.com") simply fails to resolve — must convert
+        // to Punycode/ACE first (§9 Phase 10).
+        $fqdn = IdnNormalizer::toAscii(strtolower(rtrim(trim($fqdn), '.')));
+        if ($fqdn === '' || !preg_match('/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?\.[a-z0-9-]{2,}$/', $fqdn)) {
+            return [];
+        }
 
-/**
- * Called by GLPI core right after activation succeeds (Plugin::activate(),
- * by naming convention, no registration needed) — writes a deterministic
- * first line to both plugin log files so an admin sees them in Setup >
- * Logs immediately, without having to guess whether logging works before
- * the first sync or connection test runs
- *
- * @return void
- */
-function plugin_domainmanager_activate(): void
-{
-    PluginLogger::activity('Domain Manager activated, logging initialized');
-    PluginLogger::ensureErrorLogExists();
-}
+        $records = @dns_get_record($fqdn, DNS_NS);
+        if (!is_array($records)) {
+            return [];
+        }
 
-/**
- * Uninstall the plugin
- *
- * @return bool
- */
-function plugin_domainmanager_uninstall(): bool
-{
-    return Installer::uninstall(new Migration(PLUGIN_DOMAINMANAGER_VERSION));
-}
+        $hosts = [];
+        foreach ($records as $record) {
+            $target = strtolower(rtrim((string) ($record['target'] ?? ''), '.'));
+            if ($target !== '') {
+                $hosts[] = $target;
+            }
+        }
 
-/**
- * Hooks::AUTO_MASSIVE_ACTIONS callback (only invoked because
- * Hooks::USE_MASSIVE_ACTION is set in setup.php) — see MassiveActionHandler
- * (§9 Phase 5.5) for the actual action/processor.
- *
- * @param  string $itemtype
- * @return array<string, string>
- */
-function plugin_domainmanager_MassiveActions(string $itemtype): array
-{
-    return MassiveActionHandler::getActions($itemtype);
+        return array_values(array_unique($hosts));
+    }
 }

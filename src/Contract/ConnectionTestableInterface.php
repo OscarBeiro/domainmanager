@@ -29,54 +29,25 @@
  * -------------------------------------------------------------------------
  */
 
-use GlpiPlugin\Domainmanager\Installer;
-use GlpiPlugin\Domainmanager\MassiveActionHandler;
-use GlpiPlugin\Domainmanager\Service\PluginLogger;
+namespace GlpiPlugin\Domainmanager\Contract;
+
+use GlpiPlugin\Domainmanager\Dto\ConnectionTestResult;
 
 /**
- * Install the plugin
- *
- * @return bool
+ * On-demand connection diagnostics (§3.5), independent of the sync pipelines.
+ * One flat method per driver class (not one class per capability) since
+ * every concrete driver in this plugin already implements multiple pipeline
+ * interfaces in a single class; the result set reflects only the capabilities
+ * actually meaningful to test for that driver (e.g. Cloudflare reports only
+ * 'dns' — see CloudflareDriver).
  */
-function plugin_domainmanager_install(): bool
+interface ConnectionTestableInterface
 {
-    return Installer::install(new Migration(PLUGIN_DOMAINMANAGER_VERSION));
-}
-
-/**
- * Called by GLPI core right after activation succeeds (Plugin::activate(),
- * by naming convention, no registration needed) — writes a deterministic
- * first line to both plugin log files so an admin sees them in Setup >
- * Logs immediately, without having to guess whether logging works before
- * the first sync or connection test runs
- *
- * @return void
- */
-function plugin_domainmanager_activate(): void
-{
-    PluginLogger::activity('Domain Manager activated, logging initialized');
-    PluginLogger::ensureErrorLogExists();
-}
-
-/**
- * Uninstall the plugin
- *
- * @return bool
- */
-function plugin_domainmanager_uninstall(): bool
-{
-    return Installer::uninstall(new Migration(PLUGIN_DOMAINMANAGER_VERSION));
-}
-
-/**
- * Hooks::AUTO_MASSIVE_ACTIONS callback (only invoked because
- * Hooks::USE_MASSIVE_ACTION is set in setup.php) — see MassiveActionHandler
- * (§9 Phase 5.5) for the actual action/processor.
- *
- * @param  string $itemtype
- * @return array<string, string>
- */
-function plugin_domainmanager_MassiveActions(string $itemtype): array
-{
-    return MassiveActionHandler::getActions($itemtype);
+    /**
+     * @param  array<string, string> $credentials Credential payload to test
+     *         (may be unsaved/live form values, not necessarily persisted)
+     * @return array<string, ConnectionTestResult> keyed by capability
+     *         ('registrar' and/or 'dns')
+     */
+    public function testConnection(array $credentials): array;
 }

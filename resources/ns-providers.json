@@ -1,0 +1,243 @@
+{
+    "$schema-note": "NS host -> DNS provider registry, maintained via pull requests. Matching: case-insensitive fnmatch-style wildcards against each NS host (trailing dot stripped). Entries are checked in file order; the first entry with a matching pattern wins. 'driver' is optional and must be one of the plugin's hardcoded drivers; entries without it render as detected-but-unsupported.",
+    "providers": [
+        {
+            "name": "Cloudflare",
+            "patterns": [
+                "*.ns.cloudflare.com",
+                "*.foundationdns.com",
+                "*.foundationdns.net",
+                "*.foundationdns.org"
+            ],
+            "driver": "cloudflare",
+            "source": "https://developers.cloudflare.com/dns/nameservers/nameserver-options/ (standard: <name>.ns.cloudflare.com); https://developers.cloudflare.com/dns/foundation-dns/advanced-nameservers/ (advanced: <color>.foundationdns.{com,net,org})"
+        },
+        {
+            "name": "IONOS",
+            "patterns": [
+                "ns[0-9]*.ui-dns.de",
+                "ns[0-9]*.ui-dns.com",
+                "ns[0-9]*.ui-dns.org",
+                "ns[0-9]*.ui-dns.biz"
+            ],
+            "driver": "ionos",
+            "source": "https://www.ionos.com/help/domains/general-information-about-dns-settings/default-dns-settings-for-11-ionos-domains/ (nsXXXX.ui-dns.{com,org,de,biz}). Narrowed from a bare `*.ui-dns.{tld}` domain-wide wildcard (2026-07-27) after adding Strato/Arsys below: `ui-dns.*` is a shared United Internet DNS platform, and the un-narrowed wildcard was matching every sibling brand's own hostname label (`ns-strato.`, `ns-arsys.`, `ns-1and1.`, `ns-fh.`) as false-positive IONOS, confirmed live via `dig NS` against each brand's own domain. IONOS's real default hostnames use a numeric `nsNNNN.` label per its own cited docs, so `ns[0-9]*.` scopes the match correctly without narrowing IONOS's own real coverage."
+        },
+        {
+            "name": "Dinahosting",
+            "patterns": [
+                "ns.dinahosting.com",
+                "ns2.dinahosting.com",
+                "ns3.dinahosting.com",
+                "ns4.dinahosting.com",
+                "*.dinahosting.com",
+                "ns.gestiondecuenta.com",
+                "ns2.gestiondecuenta.com",
+                "ns3.gestiondecuenta.com",
+                "ns4.gestiondecuenta.com",
+                "*.gestiondecuenta.com"
+            ],
+            "driver": "dinahosting",
+            "source": "https://dinahosting.com/ayuda/cuales-son-los-dns-de-dinahosting/ (ns.dinahosting.com, ns2-ns4.dinahosting.com); gestiondecuenta.com hostnames (ns/ns2/ns3/ns4.gestiondecuenta.com) confirmed live via real Dinahosting-hosted domain (2026-07-27) — Dinahosting's own customer control panel is branded/hosted at gestiondecuenta.com and it delegates NS there for at least some accounts, undocumented in the help article above."
+        },
+        {
+            "name": "AWS Route 53",
+            "patterns": [
+                "ns-*.awsdns-*.com",
+                "ns-*.awsdns-*.net",
+                "ns-*.awsdns-*.org",
+                "ns-*.awsdns-*.co.uk"
+            ],
+            "source": "https://docs.aws.amazon.com/Route53/latest/APIReference/API_GetHostedZone.html (delegation sets are 4 servers ns-<n>.awsdns-<nn>.{com,net,org,co.uk}, e.g. ns-2048.awsdns-64.com)"
+        },
+        {
+            "name": "Google Cloud DNS",
+            "patterns": [
+                "ns-cloud-*.googledomains.com"
+            ],
+            "source": "https://cloud.google.com/dns/docs/update-name-servers (ns-cloud-<shard><1-4>.googledomains.com, e.g. ns-cloud-a1.googledomains.com; keep the ns-cloud- prefix — ns1-ns4.googledomains.com is legacy Google Domains, not Cloud DNS)"
+        },
+        {
+            "name": "Azure DNS",
+            "patterns": [
+                "ns*.azure-dns.com",
+                "ns*.azure-dns.net",
+                "ns*.azure-dns.org",
+                "ns*.azure-dns.info"
+            ],
+            "source": "https://learn.microsoft.com/en-us/azure/dns/dns-delegate-domain-azure-dns (zones get ns1-<nn>.azure-dns.com, ns2-<nn>.azure-dns.net, ns3-<nn>.azure-dns.org, ns4-<nn>.azure-dns.info)"
+        },
+        {
+            "name": "GoDaddy",
+            "patterns": [
+                "ns*.domaincontrol.com"
+            ],
+            "source": "https://www.godaddy.com/resources/skills/how-to-check-dns-and-diagnose-common-issues (GoDaddy nameservers use domaincontrol.com; assigned in pairs ns<odd>/ns<even>.domaincontrol.com — no exhaustive official list published)"
+        },
+        {
+            "name": "OVHcloud",
+            "patterns": [
+                "ns*.ovh.net",
+                "dns*.ovh.net",
+                "ns*.ovh.ca",
+                "dns*.ovh.ca",
+                "ns200.anycast.me",
+                "dns200.anycast.me"
+            ],
+            "source": "https://docs.ovhcloud.com/en/guides/web-cloud/domains/dns-server-edit (paired ns<nn>/dns<nn>.ovh.net, .ovh.ca for Canada, ns200/dns200.anycast.me for Anycast); https://docs.ovhcloud.com/en/guides/web-cloud/domains/dns-ips-update (full dns1-dns113/ns1-ns113.ovh.net list incl. legacy digitless ns/dns.ovh.net)"
+        },
+        {
+            "name": "DigitalOcean",
+            "patterns": [
+                "ns[1-3].digitalocean.com"
+            ],
+            "source": "https://docs.digitalocean.com/products/networking/dns/getting-started/dns-registrars/ (exactly ns1/ns2/ns3.digitalocean.com)"
+        },
+        {
+            "name": "Linode (Akamai)",
+            "patterns": [
+                "ns[1-5].linode.com"
+            ],
+            "source": "https://techdocs.akamai.com/cloud-computing/docs/configure-your-domains-authoritative-name-servers (exactly ns1-ns5.linode.com, auto-created and immutable)"
+        },
+        {
+            "name": "Vercel",
+            "patterns": [
+                "ns1.vercel-dns.com",
+                "ns2.vercel-dns.com"
+            ],
+            "source": "https://vercel.com/docs/domains/working-with-nameservers (exactly ns1/ns2.vercel-dns.com)"
+        },
+        {
+            "name": "Gandi",
+            "patterns": [
+                "ns-*.gandi.net"
+            ],
+            "source": "https://docs.gandi.net/en/domain_names/advanced_users/vanity_nameservers.html (Gandi LiveDNS default nameservers follow the pattern ns-<number>-<letter>.gandi.net, e.g. ns-6-a.gandi.net, per Gandi's own docs)"
+        },
+        {
+            "name": "Namecheap",
+            "patterns": [
+                "dns1.registrar-servers.com",
+                "dns2.registrar-servers.com",
+                "dns1.namecheaphosting.com",
+                "dns2.namecheaphosting.com"
+            ],
+            "source": "https://www.namecheap.com/support/knowledgebase/article.aspx/767/10/how-to-change-dns-for-a-domain/ (BasicDNS default: dns1/dns2.registrar-servers.com); https://www.namecheap.com/support/knowledgebase/article.aspx/203/32/nameserver-setup-for-shared-packages/ (shared hosting plans: dns1/dns2.namecheaphosting.com)"
+        },
+        {
+            "name": "Hetzner",
+            "patterns": [
+                "hydrogen.ns.hetzner.com",
+                "oxygen.ns.hetzner.com",
+                "helium.ns.hetzner.de",
+                "ns1.first-ns.de",
+                "robotns2.second-ns.de",
+                "robotns3.second-ns.com"
+            ],
+            "source": "https://docs.hetzner.com/dns-console/dns/general/authoritative-name-servers/ (DNS Console: hydrogen/oxygen.ns.hetzner.com + helium.ns.hetzner.de; Robot secondary DNS: ns1.first-ns.de, robotns2.second-ns.de, robotns3.second-ns.com)"
+        },
+        {
+            "name": "Squarespace",
+            "patterns": [
+                "*.squarespacedns.com",
+                "*.systemdns.com"
+            ],
+            "source": "https://support.squarespace.com/hc/en-us/articles/4404183898125-Making-changes-to-nameservers (official: Squarespace default nameservers may end in squarespacedns.com or systemdns.com; the same page also lists googledomains.com and nsone.net as possible endings, deliberately excluded here since those domains are already claimed by Google Cloud DNS / NS1 entries in this registry and would cause first-match collisions)"
+        },
+        {
+            "name": "Wix",
+            "patterns": [
+                "ns*.wixdns.net"
+            ],
+            "source": "https://support.wix.com/en/article/connecting-a-domain-to-the-wix-name-servers (Wix nameservers are account-specific and shown on-screen per domain, not published as a fixed list; observed examples across Wix's own help articles span ns1/ns2/ns5/ns6/ns14/ns15.wixdns.net, hence the open-ended ns*.wixdns.net wildcard rather than a narrow numeric range)"
+        },
+        {
+            "name": "Hostinger",
+            "patterns": [
+                "*.dns-parking.com"
+            ],
+            "source": "https://www.hostinger.com/support/how-to-fix-dns-issue-at-hostinger/ (official: Hostinger-managed domains point to nameservers such as ns1.dns-parking.com; exact enumerable set not published, so the domain-wide wildcard is used)"
+        },
+        {
+            "name": "Porkbun",
+            "patterns": [
+                "curitiba.ns.porkbun.com",
+                "fortaleza.ns.porkbun.com",
+                "maceio.ns.porkbun.com",
+                "salvador.ns.porkbun.com"
+            ],
+            "source": "https://kb.porkbun.com/article/63-how-to-switch-to-porkbuns-nameservers (exactly these 4 fixed default nameservers)"
+        },
+        {
+            "name": "cdmon",
+            "patterns": [
+                "ns[1-3].cdmon.net",
+                "ns4.cdmondns-01.org",
+                "ns5.cdmondns-01.com"
+            ],
+            "source": "https://helpdesk.cdmon.com/portal/es/kb/articles/qu%C3%A9-es-el-servidor-dns-est%C3%A1tico-y-c%C3%B3mo-podemos-modificarlo (cdmon's own DNS servers: ns1-ns3.cdmon.net, ns4.cdmondns-01.org, ns5.cdmondns-01.com — note mixed TLDs, not all .com)"
+        },
+        {
+            "name": "one.com",
+            "patterns": [
+                "ns01.one.com",
+                "ns02.one.com"
+            ],
+            "source": "https://help.one.com/hc/en-us/articles/360000841638-How-do-I-change-the-name-servers (official: web hosting default nameservers are ns01.one.com / ns02.one.com — zero-padded form, confirmed via one.com's own support article)"
+        },
+        {
+            "name": "NS1 (IBM NS1 Connect)",
+            "patterns": [
+                "dns[1-4].p*.nsone.net"
+            ],
+            "source": "https://www.ibm.com/docs/en/ns1-connect?topic=nameservers-nameserver-assignments (zones are assigned dns1-dns4.p<NN>.nsone.net from a numbered pool, e.g. dns1.p03.nsone.net; NS1 was acquired by and is now documented under IBM)"
+        },
+        {
+            "name": "bunny.net (Bunny DNS)",
+            "patterns": [
+                "kiki.bunny.net",
+                "coco.bunny.net"
+            ],
+            "source": "https://docs.bunny.net/dns/nameservers (standard Bunny DNS nameservers: kiki.bunny.net, coco.bunny.net; a custom-nameserver option also exists but has no fixed enumerable hostnames, so it is not covered here). Detection-only: bunny.net is a CDN/DNS host, not a domain registrar, so no 'driver' is set."
+        },
+        {
+            "name": "Strato",
+            "patterns": [
+                "ns-strato.ui-dns.de",
+                "ns-strato.ui-dns.com",
+                "ns-strato.ui-dns.org",
+                "ns-strato.ui-dns.biz"
+            ],
+            "source": "No official Strato vendor page states these hostnames (older third-party/community pages instead cite a stale ns1-ns4.strato.de set). Confirmed live via authoritative `dig NS` against strato.de, strato.com, and strato-hosting.co.uk (all three currently resolve to exactly this 4-host ui-dns.* set), and cross-checked that the brand-specific `ns-strato.` label doesn't collide with sibling United Internet brands on the same shared ui-dns.* platform (1&1: ns-1and1.ui-dns.*; Fasthosts: ns-fh.ui-dns.*; Arsys: ns-arsys.ui-dns.* below) — each brand has its own distinct label, so the pattern is exact-hostname, not a wildcard on ui-dns.* itself."
+        },
+        {
+            "name": "Arsys",
+            "patterns": [
+                "ns-arsys.ui-dns.es",
+                "ns-arsys.ui-dns.com",
+                "ns-arsys.ui-dns.org",
+                "ns-arsys.ui-dns.biz"
+            ],
+            "source": "No official Arsys vendor page states these hostnames (older third-party/community pages instead cite unconfirmed ns1.arsystems.com-style guesses). Confirmed live via authoritative `dig NS` against arsys.es and arsys.net (both currently resolve to exactly this 4-host ui-dns.* set — the same United Internet shared DNS platform as Strato above, Arsys being United Internet's Spanish-market brand); brand label `ns-arsys.` confirmed distinct from sibling brands (see Strato entry's source note)."
+        },
+        {
+            "name": "RaiolaNetworks",
+            "patterns": [
+                "dns1.raiolanetworks.es",
+                "dns2.raiolanetworks.es",
+                "dns3.raiolanetworks.es"
+            ],
+            "source": "https://raiolanetworks.com/ayuda/cambiar-servidores-dns-dominio/ (official: Hosting SSD / Hosting Elástico default nameservers are dns1-dns3.raiolanetworks.es). The same page also documents distinct nameservers for other RaiolaNetworks products/brands (Hosting SEO: seo-dns1/2.raiolanetworks.es; Reseller/VPS, under the separate webcloud.es domain: net-dns1/2.webcloud.es, dns1/2.webcloud.es) — deliberately not added here to keep this entry scoped to the primary shared-hosting product actually confirmed live via public nameserver records (who.is/myip.ms show real domains delegated to dns1/dns3.raiolanetworks.es); the other products' hostnames can be added as their own follow-up entries if a domain using them is ever seen. Detection-only — no registrar/DNS API is documented anywhere for RaiolaNetworks, so no 'driver' is set."
+        },
+        {
+            "name": "LucusHost",
+            "patterns": [
+                "ns1.lucushost.com",
+                "ns2.lucushost.com",
+                "ns3.lucushost.com"
+            ],
+            "source": "No official LucusHost vendor page states these hostnames (only third-party sources — who.is, myip.ms — and LucusHost's own blog articles describing the ns1/ns2 convention generically without an exhaustive list). Confirmed live via authoritative `dig NS` against lucushost.com itself, which resolves to exactly this 3-host set (ns1/ns2/ns3.lucushost.com) — same live-DNS-observation exception already established for Strato/Arsys above. Detection-only — no registrar/DNS API is documented anywhere for LucusHost, so no 'driver' is set."
+        }
+    ]
+}

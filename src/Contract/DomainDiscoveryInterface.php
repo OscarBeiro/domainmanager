@@ -29,54 +29,24 @@
  * -------------------------------------------------------------------------
  */
 
-use GlpiPlugin\Domainmanager\Installer;
-use GlpiPlugin\Domainmanager\MassiveActionHandler;
-use GlpiPlugin\Domainmanager\Service\PluginLogger;
+namespace GlpiPlugin\Domainmanager\Contract;
+
+use GlpiPlugin\Domainmanager\Dto\DiscoveredDomain;
+use GlpiPlugin\Domainmanager\Exception\DriverException;
 
 /**
- * Install the plugin
- *
- * @return bool
+ * Bulk domain discovery (§9 Phase 8): lists every domain visible in a
+ * supplier's real registrar account, independent of whether a matching
+ * `Domain` item already exists in GLPI. Any driver may implement this —
+ * capability is checked structurally (`instanceof`), never via a per-driver
+ * allowlist, so the "Import Domains" UI (SupplierTab) appears automatically
+ * for whichever driver actually supports it.
  */
-function plugin_domainmanager_install(): bool
+interface DomainDiscoveryInterface
 {
-    return Installer::install(new Migration(PLUGIN_DOMAINMANAGER_VERSION));
-}
-
-/**
- * Called by GLPI core right after activation succeeds (Plugin::activate(),
- * by naming convention, no registration needed) — writes a deterministic
- * first line to both plugin log files so an admin sees them in Setup >
- * Logs immediately, without having to guess whether logging works before
- * the first sync or connection test runs
- *
- * @return void
- */
-function plugin_domainmanager_activate(): void
-{
-    PluginLogger::activity('Domain Manager activated, logging initialized');
-    PluginLogger::ensureErrorLogExists();
-}
-
-/**
- * Uninstall the plugin
- *
- * @return bool
- */
-function plugin_domainmanager_uninstall(): bool
-{
-    return Installer::uninstall(new Migration(PLUGIN_DOMAINMANAGER_VERSION));
-}
-
-/**
- * Hooks::AUTO_MASSIVE_ACTIONS callback (only invoked because
- * Hooks::USE_MASSIVE_ACTION is set in setup.php) — see MassiveActionHandler
- * (§9 Phase 5.5) for the actual action/processor.
- *
- * @param  string $itemtype
- * @return array<string, string>
- */
-function plugin_domainmanager_MassiveActions(string $itemtype): array
-{
-    return MassiveActionHandler::getActions($itemtype);
+    /**
+     * @return DiscoveredDomain[]
+     * @throws DriverException on any failure (message safe to persist/display)
+     */
+    public function listAccountDomains(): array;
 }

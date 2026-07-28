@@ -1,0 +1,420 @@
+{#
+ # -------------------------------------------------------------------------
+ # Domain Manager plugin for GLPI
+ # Copyright (C) 2026 by the TICGAL Team.
+ # https://www.tic.gal
+ # -------------------------------------------------------------------------
+ # LICENSE
+ # This file is part of the Domain Manager plugin.
+ # Domain Manager plugin is free software; you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation; either version 3 of the License, or
+ # (at your option) any later version.
+ # Domain Manager plugin is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ # GNU General Public License for more details.
+ # You should have received a copy of the GNU General Public License
+ # along with Domain Manager. If not, see <http://www.gnu.org/licenses/>.
+ # -------------------------------------------------------------------------
+ # @package   domainmanager
+ # @author    the TICGAL team
+ # @copyright Copyright (c) 2026 TICGAL team
+ # @license   AGPL License 3.0 or (at your option) any later version
+ #            http://www.gnu.org/licenses/agpl-3.0-standalone.html
+ # @link      https://www.tic.gal
+ # @since     2026
+ # -------------------------------------------------------------------------
+ #}
+
+{% set detected = state ? state.detected_provider : '' %}
+{% set rstatus = state ? state.registrar_status : 'never' %}
+{% set dstatus = state ? state.dns_status : 'never' %}
+{# Deep-link to a Supplier's own Domain Manager tab (verified against the
+   real tab identifier GLPI renders for this class, §6.2); falls back
+   gracefully to the Supplier's main record if this convention ever changes. #}
+{% set supplier_tab_forcetab = '&forcetab=GlpiPlugin%5CDomainmanager%5CSupplierTab%241' %}
+
+<div id="domainmanager-panel" class="card m-2 border-0 shadow-none">
+    <div class="card-header">
+        <div class="ribbon ribbon-bookmark ribbon-top ribbon-start bg-blue s-1">
+            <i class="ti ti-world-cog fa-2x"></i>
+        </div>
+        <h4 class="card-title ps-5">
+            {{ __('Domain Manager', 'domainmanager') }}
+        </h4>
+    </div>
+
+    {% if not is_new %}
+        <div class="card-body p-0">
+            {% set visit_target = punycode ?: domain_name %}
+            <div class="p-2 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <div style="font-size: 19px; font-weight: 500;">
+                        {{ domain_name }}
+                    </div>
+                    {% if punycode %}
+                        <div class="text-muted small">
+                            <code>{{ punycode }}</code>
+                            <button type="button" class="btn btn-sm btn-link p-0 ms-1"
+                                    data-glpi-clipboard-text="{{ punycode }}"
+                                    title="{{ __('Copy Punycode form', 'domainmanager') }}">
+                                <i class="ti ti-copy"></i>
+                            </button>
+                        </div>
+                    {% endif %}
+                </div>
+                <div class="d-flex gap-2">
+                    <a href="https://{{ visit_target }}" target="_blank" rel="noopener noreferrer"
+                       title="{{ domain_name }}" class="btn btn-sm btn-outline-secondary">
+                        <i class="ti ti-external-link me-1"></i>{{ __('Visit', 'domainmanager') }}
+                    </a>
+                    <a href="https://who.is/whois/{{ visit_target }}" target="_blank" rel="noopener noreferrer"
+                       class="btn btn-sm btn-outline-secondary">
+                        <i class="ti ti-search me-1"></i>{{ __('WHOIS', 'domainmanager') }}
+                    </a>
+                    {% if registrar_supplier and can_update %}
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="domainmanager-unlink-registrar" title="{{ __('Unlink registrar', 'domainmanager') }}">
+                            <i class="ti ti-unlink me-1"></i>{{ __('Unlink registrar', 'domainmanager') }}
+                        </button>
+                    {% endif %}
+                </div>
+            </div>
+            <table class="table table-sm mb-0">
+                <thead>
+                    <tr>
+                        <th>{{ __('Registrar', 'domainmanager') }}</th>
+                        <th>{{ __('DNS Provider', 'domainmanager') }}</th>
+                        <th>{{ __('Registrar sync', 'domainmanager') }}</th>
+                        <th>{{ __('DNS sync', 'domainmanager') }}</th>
+                        <th>{{ __('Last sync', 'domainmanager') }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>
+                            {% if registrar_supplier %}
+                                <a href="{{ registrar_supplier.getLinkURL() ~ supplier_tab_forcetab }}">{{ registrar_supplier.getName() }}</a>
+                            {% else %}
+                                <span class="text-muted">{{ __('No registrar supplier set', 'domainmanager') }}</span>
+                            {% endif %}
+                        </td>
+                        <td id="domainmanager-provider">
+                            {% if detected == '' %}
+                                <span class="text-muted">{{ __('Never synchronized', 'domainmanager') }}</span>
+                            {% elseif dns_supplier %}
+                                <a href="{{ dns_supplier.getLinkURL() ~ supplier_tab_forcetab }}">{{ detected }}</a>
+                            {% else %}
+                                {{ detected }}
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="badge {{ status_classes[rstatus]|default('text-bg-secondary') }}"
+                                  id="domainmanager-badge-registrar"
+                                  title="{{ state ? state.registrar_message : '' }}">
+                                {{ status_labels[rstatus]|default(rstatus) }}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="badge {{ status_classes[dstatus]|default('text-bg-secondary') }}"
+                                  id="domainmanager-badge-dns"
+                                  title="{{ state ? state.dns_message : '' }}">
+                                {{ status_labels[dstatus]|default(dstatus) }}
+                            </span>
+                        </td>
+                        <td id="domainmanager-lastsync">
+                            {{ state and state.last_sync_date ? state.last_sync_date : __('Never', 'domainmanager') }}
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="p-3">
+                {% if not registrar_supplier %}
+                    <div class="text-muted small lh-sm mb-1">
+                        <a href="{{ infocom_tab_url }}">{{ __('Set the Registrar via the Financial and administrative information tab', 'domainmanager') }}</a>
+                    </div>
+                {% endif %}
+
+                <div class="text-muted small lh-sm mb-1 {{ (state and (state.registrar_message or state.dns_message)) ? '' : 'd-none' }}" id="domainmanager-sync-line">
+                    <span id="domainmanager-msg-registrar-wrap" class="{{ state and state.registrar_message ? '' : 'd-none' }}">{{ __('Registrar', 'domainmanager') }}: <span id="domainmanager-msg-registrar">{{ state ? state.registrar_message : '' }}</span></span>
+                    <span id="domainmanager-sync-sep" class="mx-1 {{ (state and state.registrar_message and state.dns_message) ? '' : 'd-none' }}">&middot;</span>
+                    <span id="domainmanager-msg-dns-wrap" class="{{ state and state.dns_message ? '' : 'd-none' }}">{{ __('DNS', 'domainmanager') }}: <span id="domainmanager-msg-dns">{{ state ? state.dns_message : '' }}</span></span>
+                </div>
+
+                <div class="alert alert-warning mt-2 mb-0 {{ dstatus in ['unsupported', 'unknown'] ? '' : 'd-none' }}"
+                     id="domainmanager-provider-warning">
+                    <i class="ti ti-alert-triangle me-1"></i>
+                    <span id="domainmanager-provider-warning-text">
+                        {% if dstatus == 'unsupported' %}
+                            {{ __('API integration for %s is not currently supported.', 'domainmanager')|format(detected) }}
+                        {% elseif dstatus == 'unknown' %}
+                            {{ __('The DNS provider of this domain could not be identified.', 'domainmanager') }}
+                        {% endif %}
+                    </span>
+                    <a href="{{ repository_url }}" target="_blank" rel="noopener noreferrer">
+                        {{ __('Help us support this provider', 'domainmanager') }}
+                    </a>
+                </div>
+            </div>
+
+            {# §9 Phase 7: registrar administrative metadata. Only shown once
+               the most recent registrar sync actually succeeded — a field
+               left null here can mean either "this driver doesn't report
+               it" (§6.2 boolean/text fallback below) or "never synced",
+               and gating the whole block on rstatus == 'ok' avoids
+               presenting a bare wall of "—" for a domain that was never
+               synced at all. #}
+            {% if rstatus == 'ok' %}
+                <hr class="m-0">
+                <table class="table table-sm mb-0">
+                    <thead>
+                        <tr>
+                            <th>{{ __('WHOIS privacy', 'domainmanager') }}</th>
+                            <th>{{ __('Transfer lock', 'domainmanager') }}</th>
+                            <th>{{ __('Transfer / EPP auth code', 'domainmanager') }}</th>
+                            <th>{{ __('Domain lock', 'domainmanager') }}</th>
+                            <th>{{ __('Auto-renew', 'domainmanager') }}</th>
+                            <th>{{ __('DNSSEC', 'domainmanager') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>
+                                {% if state.registrar_privacy_enabled is null %}
+                                    <span class="text-muted" title="{{ __('Not reported by this driver', 'domainmanager') }}">&mdash;</span>
+                                {% elseif state.registrar_privacy_enabled %}
+                                    <span class="badge text-bg-success">{{ __('Yes', 'domainmanager') }}</span>
+                                {% else %}
+                                    <span class="badge text-bg-secondary">{{ __('No', 'domainmanager') }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if state.registrar_transfer_lock is null %}
+                                    <span class="text-muted" title="{{ __('Not reported by this driver', 'domainmanager') }}">&mdash;</span>
+                                {% elseif state.registrar_transfer_lock %}
+                                    <span class="badge text-bg-success">{{ __('Yes', 'domainmanager') }}</span>
+                                {% else %}
+                                    <span class="badge text-bg-secondary">{{ __('No', 'domainmanager') }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if state.registrar_auth_info %}
+                                    <span class="badge text-bg-secondary"><i class="ti ti-lock me-1"></i>{{ __('On file', 'domainmanager') }}</span>
+                                {% else %}
+                                    <span class="text-muted" title="{{ __('Not on file', 'domainmanager') }}">&mdash;</span>
+                                {% endif %}
+                            </td>
+                            {% for field in [
+                                'registrar_domain_lock',
+                                'registrar_auto_renew',
+                                'registrar_dnssec_enabled',
+                            ] %}
+                                <td>
+                                    {% if state[field] is null %}
+                                        <span class="text-muted" title="{{ __('Not reported by this driver', 'domainmanager') }}">&mdash;</span>
+                                    {% elseif state[field] %}
+                                        <span class="badge text-bg-success">{{ __('Yes', 'domainmanager') }}</span>
+                                    {% else %}
+                                        <span class="badge text-bg-secondary">{{ __('No', 'domainmanager') }}</span>
+                                    {% endif %}
+                                </td>
+                            {% endfor %}
+                        </tr>
+                    </tbody>
+                </table>
+            {% endif %}
+        </div>
+    {% else %}
+        <div class="card-body">
+            <div class="text-muted small">
+                {{ __('Registrar and DNS provider information is available after the domain is created.', 'domainmanager') }}
+            </div>
+        </div>
+    {% endif %}
+</div>
+
+{% if not is_new and can_update %}
+    {# Rendered here (hidden) and relocated by JS into the form's own
+       Save / Put in trashbin button row (`.form-button-separator`,
+       core's `templates/components/form/buttons.html.twig`) once that
+       row exists in the DOM — this hook fires *before* that row is
+       rendered, so the button can't be placed there directly. Styled
+       with the same `btn ... me-2` classes core itself uses for
+       plugin-contributed buttons in that row (see that template's
+       `addbuttons` handling), for consistent size/padding/border with
+       its "Save"/"Put in trashbin" neighbours. #}
+    <button type="button" class="btn btn-outline-secondary me-2 d-none" id="domainmanager-updatenow">
+        <i class="ti ti-refresh me-1"></i>
+        {{ __('Update Now', 'domainmanager') }}
+    </button>
+{% endif %}
+
+<script>
+(function () {
+    const updateNowButton = document.getElementById('domainmanager-updatenow');
+    if (updateNowButton) {
+        const relocateUpdateNowButton = function () {
+            const buttonRow = document.querySelector('.form-button-separator');
+            if (buttonRow) {
+                const saveButton = buttonRow.querySelector('button[name="update"]');
+                if (saveButton) {
+                    saveButton.insertAdjacentElement('afterend', updateNowButton);
+                } else {
+                    buttonRow.appendChild(updateNowButton);
+                }
+            }
+            updateNowButton.classList.remove('d-none');
+        };
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', relocateUpdateNowButton);
+        } else {
+            relocateUpdateNowButton();
+        }
+    }
+
+    // Cosmetic lock layer: disable synced fields for users without the
+    // unlock right (server-side enforcement is authoritative)
+    const lockedFields = {{ locked_fields|json_encode|raw }};
+    if (lockedFields.length) {
+        const form = document.querySelector('#domainmanager-panel').closest('form');
+        if (form) {
+            lockedFields.forEach(function (field) {
+                form.querySelectorAll('[name="' + field + '"]').forEach(function (input) {
+                    input.disabled = true;
+                    const label = form.querySelector('label[for="' + input.id + '"]');
+                    if (label && !label.querySelector('.domainmanager-lock')) {
+                        const icon = document.createElement('i');
+                        icon.className = 'ti ti-lock ms-1 domainmanager-lock';
+                        icon.title = {{ __('Locked by Domain Manager synchronization', 'domainmanager')|json_encode|raw }};
+                        label.appendChild(icon);
+                    }
+                });
+            });
+        }
+    }
+
+    // §9 Phase 14: unlink the registrar (clears Infocom's Supplier field),
+    // bypassing the suppliers_id lock without requiring the unlock right —
+    // same fetch/CSRF convention as Update Now and the reassign button.
+    const unlinkButton = document.getElementById('domainmanager-unlink-registrar');
+    if (unlinkButton) {
+        unlinkButton.addEventListener('click', function () {
+            if (!window.confirm({{ __('Unlink this domain\'s registrar?', 'domainmanager')|json_encode|raw }})) {
+                return;
+            }
+            const csrf = document.querySelector('meta[property="glpi:csrf_token"]');
+            unlinkButton.disabled = true;
+
+            fetch({{ path('/plugins/domainmanager/domainunlink/' ~ domains_id)|json_encode|raw }}, {
+                method: 'POST',
+                headers: {
+                    'X-Glpi-Csrf-Token': csrf ? csrf.getAttribute('content') : '',
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            }).then(function (response) {
+                return response.json().then(function (data) {
+                    return { ok: response.ok, data: data };
+                });
+            }).then(function (result) {
+                if (!result.ok || !result.data.ok) {
+                    throw new Error((result.data && result.data.message) || 'HTTP error');
+                }
+                window.location.reload();
+            }).catch(function (error) {
+                window.alert({{ __('Failed to unlink the registrar:', 'domainmanager')|json_encode|raw }} + ' ' + error.message);
+                unlinkButton.disabled = false;
+            });
+        });
+    }
+
+    const button = updateNowButton;
+    if (!button) {
+        return;
+    }
+
+    const labels  = {{ status_labels|json_encode|raw }};
+    const classes = {{ status_classes|json_encode|raw }};
+
+    function setBadge(id, status, message) {
+        const badge = document.getElementById(id);
+        if (!badge) {
+            return;
+        }
+        badge.className = 'badge ' + (classes[status] || 'text-bg-secondary');
+        badge.textContent = labels[status] || status;
+        badge.title = message || '';
+    }
+
+    button.addEventListener('click', function () {
+        const csrf = document.querySelector('meta[property="glpi:csrf_token"]');
+        button.disabled = true;
+        button.querySelector('i').classList.add('ti-spin');
+
+        fetch({{ path('/plugins/domainmanager/sync/' ~ domains_id)|json_encode|raw }}, {
+            method: 'POST',
+            headers: {
+                'X-Glpi-Csrf-Token': csrf ? csrf.getAttribute('content') : '',
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        }).then(function (response) {
+            return response.json().then(function (data) {
+                return { ok: response.ok, data: data };
+            });
+        }).then(function (result) {
+            if (!result.ok) {
+                throw new Error(result.data.error || 'HTTP error');
+            }
+            const data = result.data;
+            setBadge('domainmanager-badge-registrar', data.registrar_status, data.registrar_message);
+            setBadge('domainmanager-badge-dns', data.dns_status, data.dns_message);
+
+            const last = document.getElementById('domainmanager-lastsync');
+            if (last) {
+                last.textContent = data.last_sync_date;
+            }
+
+            const provider = document.getElementById('domainmanager-provider');
+            if (provider && data.detected_provider) {
+                provider.textContent = data.detected_provider;
+            }
+
+            ['registrar', 'dns'].forEach(function (leg) {
+                const span = document.getElementById('domainmanager-msg-' + leg);
+                if (span) {
+                    span.textContent = data[leg + '_message'] || '';
+                    document.getElementById('domainmanager-msg-' + leg + '-wrap')
+                        .classList.toggle('d-none', !data[leg + '_message']);
+                }
+            });
+
+            const syncLine = document.getElementById('domainmanager-sync-line');
+            if (syncLine) {
+                syncLine.classList.toggle('d-none', !data.registrar_message && !data.dns_message);
+            }
+            const syncSep = document.getElementById('domainmanager-sync-sep');
+            if (syncSep) {
+                syncSep.classList.toggle('d-none', !(data.registrar_message && data.dns_message));
+            }
+
+            const warning = document.getElementById('domainmanager-provider-warning');
+            if (warning) {
+                const text = document.getElementById('domainmanager-provider-warning-text');
+                if (data.dns_status === 'unsupported' || data.dns_status === 'unknown') {
+                    warning.classList.remove('d-none');
+                    if (text) {
+                        text.textContent = data.dns_message;
+                    }
+                } else {
+                    warning.classList.add('d-none');
+                }
+            }
+        }).catch(function (error) {
+            window.alert({{ __('Synchronization request failed:', 'domainmanager')|json_encode|raw }} + ' ' + error.message);
+        }).finally(function () {
+            button.disabled = false;
+            button.querySelector('i').classList.remove('ti-spin');
+        });
+    });
+})();
+</script>

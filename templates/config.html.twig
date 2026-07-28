@@ -1,0 +1,32 @@
+{#
+#}
+
+{% import 'components/form/fields_macros.html.twig' as fields %}
+
+<div class="col-12 col-xxl-8 mb-4">
+    {# TemplateRenderer's path() has no Symfony router, so route names don't
+       resolve here — it only prefixes a literal URL path with root_doc. #}
+    <form method="post" action="{{ path('/plugins/domainmanager/Config/Save') }}" data-submit-once>
+        {{ fields.csrfField() }}
+
+        {{ fields.dropdownField(
+            'DomainType',
+            'domaintypes_id',
+            domaintypes_id,
+            __('Domain type to apply to imported domains', 'domainmanager'),
+            {
+                'full_width': true,
+                'display_emptychoice': true,
+                'helper': __('Applied once, only when the plugin creates a new domain (bulk import). Left empty, imported domains get no type, same as one created by hand. Never changes an existing domain\'s type on a later sync.', 'domainmanager'),
+            }
+        ) }}
+
+        {% if can_edit %}
+            <div class="d-flex justify-content-end">
+                <button type="submit" name="update" class="btn btn-primary">
+                    <i class="ti ti-device-floppy me-1"></i>{{ __('Save') }}
+                </button>
+            </div>
+        {% endif %}
+    </form>
+</div>

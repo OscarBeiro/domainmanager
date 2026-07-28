@@ -1,0 +1,648 @@
+<?php
+
+/**
+ * -------------------------------------------------------------------------
+ * Domain Manager plugin for GLPI
+ * Copyright (C) 2026 by the TICGAL Team.
+ * https://www.tic.gal
+ * -------------------------------------------------------------------------
+ * LICENSE
+ * This file is part of the Domain Manager plugin.
+ * Domain Manager plugin is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or
+ * (at your option) any later version.
+ * Domain Manager plugin is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ * You should have received a copy of the GNU General Public License
+ * along with Domain Manager. If not, see <http://www.gnu.org/licenses/>.
+ * -------------------------------------------------------------------------
+ * @package   domainmanager
+ * @author    the TICGAL team
+ * @copyright Copyright (c) 2026 TICGAL team
+ * @license   AGPL License 3.0 or (at your option) any later version
+ *            http://www.gnu.org/licenses/agpl-3.0-standalone.html
+ * @link      https://www.tic.gal
+ * @since     2026
+ * -------------------------------------------------------------------------
+ */
+
+namespace GlpiPlugin\Domainmanager;
+
+use CronTask;
+use DBConnection;
+use DomainRecordType;
+use DomainType;
+use GlpiPlugin\Domainmanager\Config\Config;
+use Migration;
+use ProfileRight;
+
+class Installer
+{
+    public const DOMAIN_TYPE_NAME = 'Internet Domain';
+
+    public const RECORD_TYPE_NAMES = ['A', 'AAAA', 'CNAME', 'MX', 'NS', 'TXT'];
+
+    public const TABLES = [
+        'glpi_plugin_domainmanager_supplierconfigs',
+        'glpi_plugin_domainmanager_states',
+        'glpi_plugin_domainmanager_records',
+        'glpi_plugin_domainmanager_locks',
+    ];
+
+    /**
+     * Install or upgrade the plugin (idempotent)
+     *
+     * @param  Migration $migration
+     * @return bool
+     */
+    public static function install(Migration $migration): bool
+    {
+        self::createTables($migration);
+        self::addConnectionTestColumns($migration);
+        self::migrateRecordManagedColumn($migration);
+        self::addRegistrarMetadataColumns($migration);
+        self::addRecordProxiedColumn($migration);
+        self::addDomainManagedColumn($migration);
+        self::addNameAsciiColumn($migration);
+        self::clearDuplicateNameAscii();
+        self::pruneStaleSearchOptionCriteria();
+        self::seedDomainType();
+        self::seedRecordTypes();
+        self::registerRights($migration);
+        self::registerCronTasks();
+
+        $migration->executeMigration();
+
+        return true;
+    }
+
+    /**
+     * Uninstall the plugin, leaving no residue (native inventory data is kept)
+     *
+     * @param  Migration $migration
+     * @return bool
+     */
+    public static function uninstall(Migration $migration): bool
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        foreach (self::TABLES as $table) {
+            $migration->displayMessage("Dropping $table");
+            $migration->dropTable($table);
+        }
+
+        CronTask::unregister('domainmanager');
+
+        Config::uninstall();
+
+        ProfileRight::deleteProfileRights([Profile::UNLOCK_RIGHT]);
+
+        // Defensive: no plugin itemtype registers display preferences by default
+        $DB->delete(
+            'glpi_displaypreferences',
+            ['itemtype' => ['LIKE', 'GlpiPlugin\\\\Domainmanager\\\\%']]
+        );
+
+        $migration->executeMigration();
+
+        return true;
+    }
+
+    /**
+     * Create the plugin tables when missing
+     *
+     * Migration has no CREATE TABLE builder, so initial creation uses
+     * $DB->doQuery() with the GLPI default charset/collation/key-sign options.
+     *
+     * @param  Migration $migration
+     * @return void
+     */
+    private static function createTables(Migration $migration): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $charset   = DBConnection::getDefaultCharset();
+        $collation = DBConnection::getDefaultCollation();
+        $key_sign  = DBConnection::getDefaultPrimaryKeySignOption();
+
+        $schemas = [
+            'glpi_plugin_domainmanager_supplierconfigs' => <<<SQL
+                CREATE TABLE `glpi_plugin_domainmanager_supplierconfigs` (
+                    `id` int {$key_sign} NOT NULL AUTO_INCREMENT,
+                    `suppliers_id` int {$key_sign} NOT NULL DEFAULT '0',
+                    `api_driver` varchar(50) NOT NULL DEFAULT 'none',
+                    `api_credentials` text,
+                    `date_mod` timestamp NULL DEFAULT NULL,
+                    `date_creation` timestamp NULL DEFAULT NULL,
+                    PRIMARY KEY (`id`),
+                    UNIQUE KEY `suppliers_id` (`suppliers_id`),
+                    KEY `api_driver` (`api_driver`),
+                    KEY `date_mod` (`date_mod`),
+                    KEY `date_creation` (`date_creation`)
+                ) ENGINE=InnoDB DEFAULT CHARSET={$charset} COLLATE={$collation} ROW_FORMAT=DYNAMIC
+                SQL,
+            'glpi_plugin_domainmanager_states' => <<<SQL
+                CREATE TABLE `glpi_plugin_domainmanager_states` (
+                    `id` int {$key_sign} NOT NULL AUTO_INCREMENT,
+                    `domains_id` int {$key_sign} NOT NULL DEFAULT '0',
+                    `registrar_suppliers_id` int {$key_sign} NOT NULL DEFAULT '0',
+                    `dns_suppliers_id` int {$key_sign} NOT NULL DEFAULT '0',
+                    `detected_provider` varchar(255) NOT NULL DEFAULT '',
+                    `last_sync_date` timestamp NULL DEFAULT NULL,
+                    `registrar_status` varchar(50) NOT NULL DEFAULT 'never',
+                    `registrar_message` text,
+                    `dns_status` varchar(50) NOT NULL DEFAULT 'never',
+                    `dns_message` text,
+                    `is_managed` tinyint NOT NULL DEFAULT '0',
+                    `name_ascii` varchar(255) NOT NULL DEFAULT '',
+                    `date_mod` timestamp NULL DEFAULT NULL,
+                    `date_creation` timestamp NULL DEFAULT NULL,
+                    PRIMARY KEY (`id`),
+                    UNIQUE KEY `domains_id` (`domains_id`),
+                    KEY `registrar_suppliers_id` (`registrar_suppliers_id`),
+                    KEY `dns_suppliers_id` (`dns_suppliers_id`),
+                    KEY `last_sync_date` (`last_sync_date`),
+                    KEY `is_managed` (`is_managed`),
+                    KEY `name_ascii` (`name_ascii`),
+                    KEY `date_mod` (`date_mod`),
+                    KEY `date_creation` (`date_creation`)
+                ) ENGINE=InnoDB DEFAULT CHARSET={$charset} COLLATE={$collation} ROW_FORMAT=DYNAMIC
+                SQL,
+            'glpi_plugin_domainmanager_records' => <<<SQL
+                CREATE TABLE `glpi_plugin_domainmanager_records` (
+                    `id` int {$key_sign} NOT NULL AUTO_INCREMENT,
+                    `domainrecords_id` int {$key_sign} NOT NULL DEFAULT '0',
+                    `domains_id` int {$key_sign} NOT NULL DEFAULT '0',
+                    `remote_id` varchar(255) NOT NULL DEFAULT '',
+                    `record_hash` varchar(64) NOT NULL DEFAULT '',
+                    `last_seen` timestamp NULL DEFAULT NULL,
+                    `is_managed` tinyint NOT NULL DEFAULT '0',
+                    `is_proxied` tinyint NULL DEFAULT NULL,
+                    `date_mod` timestamp NULL DEFAULT NULL,
+                    `date_creation` timestamp NULL DEFAULT NULL,
+                    PRIMARY KEY (`id`),
+                    UNIQUE KEY `domainrecords_id` (`domainrecords_id`),
+                    KEY `domains_id` (`domains_id`),
+                    KEY `remote_id` (`remote_id`),
+                    KEY `record_hash` (`record_hash`),
+                    KEY `is_managed` (`is_managed`),
+                    KEY `is_proxied` (`is_proxied`)
+                ) ENGINE=InnoDB DEFAULT CHARSET={$charset} COLLATE={$collation} ROW_FORMAT=DYNAMIC
+                SQL,
+            'glpi_plugin_domainmanager_locks' => <<<SQL
+                CREATE TABLE `glpi_plugin_domainmanager_locks` (
+                    `id` int {$key_sign} NOT NULL AUTO_INCREMENT,
+                    `itemtype` varchar(100) NOT NULL,
+                    `items_id` int {$key_sign} NOT NULL DEFAULT '0',
+                    `field` varchar(50) NOT NULL,
+                    `value` varchar(255) DEFAULT NULL,
+                    `date_mod` timestamp NULL DEFAULT NULL,
+                    `date_creation` timestamp NULL DEFAULT NULL,
+                    PRIMARY KEY (`id`),
+                    UNIQUE KEY `unicity` (`itemtype`, `items_id`, `field`),
+                    KEY `items_id` (`items_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET={$charset} COLLATE={$collation} ROW_FORMAT=DYNAMIC
+                SQL,
+        ];
+
+        foreach ($schemas as $table => $create) {
+            if (!$DB->tableExists($table)) {
+                $migration->displayMessage("Creating $table");
+                $DB->doQuery($create);
+            }
+        }
+    }
+
+    /**
+     * Add the per-capability connection-test result columns to
+     * supplierconfigs (§3.5), idempotent via Migration::addField()
+     * (not the raw-CREATE-TABLE path used for initial creation, §0.6 does
+     * not apply to post-creation schema changes)
+     *
+     * @param  Migration $migration
+     * @return void
+     */
+    private static function addConnectionTestColumns(Migration $migration): void
+    {
+        $table = 'glpi_plugin_domainmanager_supplierconfigs';
+
+        foreach (['registrar', 'dns'] as $prefix) {
+            $migration->addField($table, "{$prefix}_test_status", 'string', ['value' => null]);
+            $migration->addField($table, "{$prefix}_test_message", 'text', ['value' => null]);
+            $migration->addField($table, "{$prefix}_test_http_code", 'INT NULL DEFAULT NULL');
+            $migration->addField($table, "{$prefix}_test_date", 'datetime', ['value' => null]);
+        }
+    }
+
+    /**
+     * Replaces `is_stale` (a plugin-invented "flagged removed" marker,
+     * superseded by native trash-bin soft-delete on DomainRecord itself —
+     * see RecordReconciler) with `is_managed`, the field backing the new
+     * "Managed" search option on DomainRecord (§addendum "Searchable
+     * 'Managed' Field on Domain Records"). Idempotent via
+     * `Migration::addField()`/`dropField()` (not the raw-CREATE-TABLE path
+     * used for initial creation, §0.6 does not apply to post-creation
+     * schema changes).
+     *
+     * Every pre-existing row in this table already represents a record the
+     * plugin has imported/tracked — `value => 1` sets the new column's
+     * `DEFAULT '1'`, which MySQL's `ADD COLUMN ... NOT NULL` also uses to
+     * backfill every existing row (no separate `update` UPDATE needed).
+     *
+     * @param  Migration $migration
+     * @return void
+     */
+    private static function migrateRecordManagedColumn(Migration $migration): void
+    {
+        $table = 'glpi_plugin_domainmanager_records';
+
+        $migration->addField($table, 'is_managed', 'bool', ['value' => 1]);
+        $migration->addKey($table, 'is_managed');
+        $migration->dropField($table, 'is_stale');
+    }
+
+    /**
+     * Every install between `addNameAsciiColumn()` shipping and this fix
+     * backfilled/wrote `name_ascii` unconditionally from
+     * `IdnNormalizer::toAscii()`, which Punycode-encodes a plain-ASCII
+     * domain to itself — so every non-IDN domain's `name_ascii` duplicated
+     * `glpi_domains.name`, making the "Punycode name" search option match
+     * (and therefore fail to *filter*) every domain rather than just real
+     * IDN ones (§9 Phase 17 addendum "Punycode name duplicates the domain
+     * name"). One-time cleanup, idempotent (a no-op once no row's
+     * `name_ascii` still equals its Domain's `name`): re-derives nothing,
+     * just blanks out the rows `addNameAsciiColumn()`/`HookHandler::
+     * domainSaved()` would no longer write that value for today.
+     *
+     * @return void
+     */
+    private static function clearDuplicateNameAscii(): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $table = 'glpi_plugin_domainmanager_states';
+        if (!$DB->fieldExists($table, 'name_ascii', false)) {
+            return;
+        }
+
+        $DB->update(
+            $table,
+            ['name_ascii' => ''],
+            [
+                'name_ascii' => new \QueryExpression(
+                    '(SELECT `name` FROM `glpi_domains` WHERE `glpi_domains`.`id` = `' . $table . '`.`domains_id`)'
+                ),
+            ]
+        );
+    }
+
+    /**
+     * Add the 7 registrar administrative-metadata columns to the states
+     * table (§9 Phase 7). These are plugin-only concepts with no native
+     * `glpi_domains` equivalent (unlike `date_domaincreation`/
+     * `date_expiration`/`is_active`, which already existed as native
+     * columns before this plugin — §0.2) — they live here, on the
+     * plugin's own read-only state table, exactly like `detected_provider`/
+     * `registrar_status` already do, and deliberately need no
+     * `ImportLock`/`LockEnforcer` treatment: nothing exposes them as an
+     * editable native Domain form field a user could otherwise touch, so
+     * there is nothing for a lock to protect (§9's own open question on
+     * lock-semantics parity, answered here rather than deferred).
+     * All 7 use a nullable raw type string (`Migration::addField()`'s
+     * `bool`/`string` shorthands always force `NOT NULL`, per precedent
+     * already noted for `registrar_test_http_code` above) — `null` means
+     * "this driver's API doesn't report it", a real, meaningful third
+     * state, not merely absent.
+     *
+     * @param  Migration $migration
+     * @return void
+     */
+    private static function addRegistrarMetadataColumns(Migration $migration): void
+    {
+        $table = 'glpi_plugin_domainmanager_states';
+
+        $migration->addField($table, 'registrar_auth_info', 'varchar(255) NULL DEFAULT NULL');
+        $migration->addField($table, 'registrar_privacy_enabled', 'tinyint NULL DEFAULT NULL');
+        $migration->addField($table, 'registrar_domain_lock', 'tinyint NULL DEFAULT NULL');
+        $migration->addField($table, 'registrar_transfer_lock', 'tinyint NULL DEFAULT NULL');
+        $migration->addField($table, 'registrar_auto_renew', 'tinyint NULL DEFAULT NULL');
+        $migration->addField($table, 'registrar_domain_type', 'varchar(50) NULL DEFAULT NULL');
+        $migration->addField($table, 'registrar_dnssec_enabled', 'tinyint NULL DEFAULT NULL');
+    }
+
+    /**
+     * Add `is_proxied` to the records table (§9 Phase 7 addendum "Searchable
+     * 'Proxy Status' Field for CDN-Proxied Records") — same table
+     * `is_managed` already lives on (§5.7), not a new one. Idempotent via
+     * `Migration::addField()` for upgrades; already present in
+     * `createTables()`'s raw CREATE TABLE for fresh installs, matching the
+     * existing `is_managed` precedent. A genuine tri-state, nullable
+     * tinyint: `NULL` on every pre-existing row (an upgrade must never
+     * backfill `0` — that would falsely claim "confirmed not proxied" for
+     * records nothing has re-synced under proxy-awareness yet), populated
+     * for real only the next time each record's domain is synced.
+     *
+     * @param  Migration $migration
+     * @return void
+     */
+    private static function addRecordProxiedColumn(Migration $migration): void
+    {
+        $table = 'glpi_plugin_domainmanager_records';
+
+        $migration->addField($table, 'is_proxied', 'tinyint NULL DEFAULT NULL');
+        $migration->addKey($table, 'is_proxied');
+    }
+
+    /**
+     * Add `is_managed` to the states table (§9 Phase 14 "Domain-level
+     * Managed field"), backing the new Domain-level "Managed" search
+     * option. Idempotent via `Migration::addField()`/`addKey()` for
+     * upgrades; already present in `createTables()`'s raw CREATE TABLE for
+     * fresh installs, same convention as `is_proxied`/`is_managed` on the
+     * records table.
+     *
+     * Unlike `is_proxied` (which must stay `NULL` on upgrade — nothing has
+     * re-synced under proxy-awareness yet), this table's existing rows
+     * already carry real, meaningful `registrar_status`/`dns_status`
+     * history from every prior sync/reassignment — defaulting them all to
+     * `0` would falsely report every already-managed domain as unmanaged
+     * until its next sync happens to run. So this migration also backfills
+     * every existing row from that history in the same definition
+     * `SyncEngine`/`HookHandler::infocomSaved()` use going forward: managed
+     * whenever either leg's last known status is one only reachable after
+     * that leg's pre-flight checks passed (`STATUS_OK`/`STATUS_ERROR`) —
+     * see `DomainState::resolvesToActiveDriver()`'s docblock for why those
+     * two values specifically mean "a real, driver-backed, active supplier
+     * was resolved", independent of whether the API call itself succeeded.
+     *
+     * @param  Migration $migration
+     * @return void
+     */
+    private static function addDomainManagedColumn(Migration $migration): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $table           = 'glpi_plugin_domainmanager_states';
+        $column_existed  = $DB->fieldExists($table, 'is_managed', false);
+
+        $migration->addField($table, 'is_managed', 'bool', ['value' => 0]);
+        $migration->addKey($table, 'is_managed');
+        // Migration::addField()/addKey() only queue the ALTER; flush it now
+        // so the backfill UPDATE below (raw $DB->update(), not queued) runs
+        // against a column that actually exists yet. executeMigration() is
+        // safe to call multiple times per migration (it flushes the current
+        // queue) and is also called once more at the end of install().
+        $migration->executeMigration();
+
+        if (!$column_existed) {
+            $resolved = [DomainState::STATUS_OK, DomainState::STATUS_ERROR];
+            $iterator = $DB->request([
+                'SELECT' => ['id', 'registrar_status', 'dns_status'],
+                'FROM'   => $table,
+            ]);
+            foreach ($iterator as $row) {
+                $is_managed = in_array($row['registrar_status'], $resolved, true)
+                    || in_array($row['dns_status'], $resolved, true);
+                if ($is_managed) {
+                    $DB->update($table, ['is_managed' => 1], ['id' => (int) $row['id']]);
+                }
+            }
+        }
+    }
+
+    /**
+     * Add `name_ascii` to the states table: a cached Punycode/ACE form of
+     * the Domain's own `glpi_domains.name` (§9 Phase 17 "Domain identity
+     * header"), kept in sync going forward by `HookHandler::domainSaved()`
+     * on Domain `item_add`/`item_update`. This exists purely to make the
+     * Punycode form searchable — `glpi_domains.name` stores the Unicode
+     * form (`IdnNormalizer` is the single conversion point, §9 Phase 10),
+     * and MySQL has no IDN function, so there is no way to match a
+     * pasted-in Punycode string against the stored Unicode name without a
+     * persisted ASCII column to search against instead.
+     *
+     * Backfilled from every non-deleted Domain on first install of this
+     * column, not just Domains that already have a state row — a Domain
+     * with no registrar/sync history yet must still be findable by
+     * Punycode, so this creates a state row for it when one doesn't
+     * already exist (mirroring `HookHandler::infocomSaved()`'s own
+     * create-if-missing branch), unlike `addDomainManagedColumn()` above
+     * which only ever updates rows that already exist.
+     *
+     * @param  Migration $migration
+     * @return void
+     */
+    private static function addNameAsciiColumn(Migration $migration): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $table          = 'glpi_plugin_domainmanager_states';
+        $column_existed = $DB->fieldExists($table, 'name_ascii', false);
+
+        $migration->addField($table, 'name_ascii', 'varchar(255) NOT NULL DEFAULT \'\'');
+        $migration->addKey($table, 'name_ascii');
+        // Flush now so the backfill below runs against a column that
+        // actually exists yet, same reasoning as addDomainManagedColumn().
+        $migration->executeMigration();
+
+        if ($column_existed) {
+            return;
+        }
+
+        $now      = date('Y-m-d H:i:s');
+        $iterator = $DB->request([
+            'SELECT' => ['id', 'name'],
+            'FROM'   => 'glpi_domains',
+            'WHERE'  => ['is_deleted' => 0],
+        ]);
+
+        foreach ($iterator as $row) {
+            $domains_id = (int) $row['id'];
+            $name       = (string) $row['name'];
+            $name_ascii = IdnNormalizer::toAscii($name);
+            // Same "distinct value only" rule as HookHandler::domainSaved()
+            // — a plain-ASCII domain Punycode-encodes to itself, so leave
+            // it empty rather than backfilling a duplicate of the name.
+            if ($name_ascii === $name) {
+                $name_ascii = '';
+            }
+
+            $state = DomainState::getForDomain($domains_id);
+            if ($state !== null) {
+                $DB->update($table, ['name_ascii' => $name_ascii], ['id' => $state->getID()]);
+            } else {
+                $DB->insert($table, [
+                    'domains_id'    => $domains_id,
+                    'name_ascii'    => $name_ascii,
+                    'date_creation' => $now,
+                    'date_mod'      => $now,
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Rewrite any pre-existing saved search / bookmark still referencing one
+     * of the three dummy/duplicate search-option IDs dropped in §9 Phase 14
+     * addendum "Search UI cleanup" (`search-options-registry.json`'s
+     * `removed` entries: Supplier 9401, Domain 9402/9403). GLPI's
+     * `QueryBuilder::validateFilters()` already silently discards any
+     * criterion referencing an option ID that no longer exists for that
+     * itemtype (`src/Glpi/Search/Input/QueryBuilder.php`) — safe, but it
+     * re-triggers a `E_USER_WARNING` ("Attempted to use invalid search
+     * options...") on every render of a saved/default search still carrying
+     * one of these IDs, indefinitely, since nothing ever rewrites the saved
+     * `query` string itself. `glpi_savedsearches.query` is a plain
+     * URL-encoded query string (`criteria[0][field]=9403&...`), not JSON —
+     * `parse_str()`/`http_build_query()` round-trip it losslessly for the
+     * one `criteria[n][field]` key this touches, leaving every other
+     * criterion/sort/display option in the saved search untouched. Idempotent:
+     * a row with none of these IDs is read and skipped without a write.
+     *
+     * @return void
+     */
+    private static function pruneStaleSearchOptionCriteria(): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $stale_ids_by_itemtype = [
+            'Supplier' => [9401],
+            'Domain'   => [9402, 9403],
+        ];
+
+        foreach ($stale_ids_by_itemtype as $itemtype => $stale_ids) {
+            $iterator = $DB->request([
+                'SELECT' => ['id', 'query'],
+                'FROM'   => 'glpi_savedsearches',
+                'WHERE'  => ['itemtype' => $itemtype],
+            ]);
+
+            foreach ($iterator as $row) {
+                parse_str((string) $row['query'], $params);
+
+                if (!isset($params['criteria']) || !is_array($params['criteria'])) {
+                    continue;
+                }
+
+                $changed = false;
+                foreach ($params['criteria'] as $key => $criterion) {
+                    if (isset($criterion['field']) && in_array((int) $criterion['field'], $stale_ids, true)) {
+                        unset($params['criteria'][$key]);
+                        $changed = true;
+                    }
+                }
+
+                if (!$changed) {
+                    continue;
+                }
+
+                $params['criteria'] = array_values($params['criteria']);
+                $DB->update(
+                    'glpi_savedsearches',
+                    ['query' => http_build_query($params)],
+                    ['id' => (int) $row['id']]
+                );
+            }
+        }
+    }
+
+    /**
+     * Seed the "Internet Domain" domain type (by-name idempotent check),
+     * always — it stays a convenient default option in the §9 Phase 12
+     * config dropdown regardless of whether it's actually applied.
+     *
+     * Also seeds the Phase 12 "domain type to apply to imported domains"
+     * config value, exactly once (`Config::seedDefault()` never overwrites
+     * an admin's later choice): if "Internet Domain" already existed
+     * *before* this call, this install/activation is an upgrade from a
+     * pre-Phase-12 version that force-assigned it to every imported domain
+     * — default the new setting to that same type so upgrading doesn't
+     * silently change behavior. A fresh install (the type didn't exist
+     * yet) has no prior behavior to preserve, so it defaults to unset/0
+     * (imported domains get no type, same as one created by hand).
+     *
+     * @return void
+     */
+    private static function seedDomainType(): void
+    {
+        $type    = new DomainType();
+        $existed = (bool) $type->getFromDBByCrit(['name' => self::DOMAIN_TYPE_NAME]);
+
+        if (!$existed) {
+            $type->add([
+                'name'         => self::DOMAIN_TYPE_NAME,
+                'entities_id'  => 0,
+                'is_recursive' => 1,
+                'comment'      => 'Created by the Domain Manager plugin',
+            ]);
+        }
+
+        Config::seedDefault($existed ? (int) $type->getID() : 0);
+    }
+
+    /**
+     * Ensure the record types handled by the sync exist
+     *
+     * GLPI ships them by default; they are re-created only if an
+     * administrator deleted them.
+     *
+     * @return void
+     */
+    private static function seedRecordTypes(): void
+    {
+        foreach (self::RECORD_TYPE_NAMES as $name) {
+            $type = new DomainRecordType();
+            if (!$type->getFromDBByCrit(['name' => $name])) {
+                $type->add([
+                    'name'         => $name,
+                    'entities_id'  => 0,
+                    'is_recursive' => 1,
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Register the plugin right, granted by default to profiles with config UPDATE
+     *
+     * @param  Migration $migration
+     * @return void
+     */
+    private static function registerRights(Migration $migration): void
+    {
+        $migration->addRight(Profile::UNLOCK_RIGHT, Profile::RIGHT_UNLOCK_IMPORTED, ['config' => UPDATE]);
+        // Migration::addRight() inserts rows directly: reset the rights cache
+        ProfileRight::cleanAllPossibleRights();
+    }
+
+    /**
+     * Register the daily sync automatic action (idempotent, tunable in Setup > Automatic actions)
+     *
+     * @return void
+     */
+    private static function registerCronTasks(): void
+    {
+        CronTask::register(
+            Cron::class,
+            'DomainSync',
+            DAY_TIMESTAMP,
+            [
+                'state'         => CronTask::STATE_WAITING,
+                'hourmin'       => 23,
+                'hourmax'       => 24,
+                'param'         => 20,
+                'logs_lifetime' => 30,
+                'comment'       => __('Synchronize domain lifecycle and DNS zone records from provider APIs', 'domainmanager'),
+            ]
+        );
+    }
+}
