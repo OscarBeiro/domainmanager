@@ -39,7 +39,7 @@ use GlpiPlugin\Domainmanager\LockEnforcer;
 use GlpiPlugin\Domainmanager\Profile as DomainmanagerProfile;
 use GlpiPlugin\Domainmanager\SupplierTab;
 
-define('PLUGIN_DOMAINMANAGER_VERSION', '0.11.8');
+define('PLUGIN_DOMAINMANAGER_VERSION', '0.11.9');
 define('PLUGIN_DOMAINMANAGER_MIN_GLPI', '11.0.0');
 define('PLUGIN_DOMAINMANAGER_MAX_GLPI', '11.0.99');
 define('PLUGIN_DOMAINMANAGER_REPOSITORY_URL', 'https://github.com/TICGAL-GLPI-Plugins/domainmanager');
@@ -89,6 +89,13 @@ define('PLUGIN_DOMAINMANAGER_SO_SUPPLIER_REGISTRAR', 9412);
 define('PLUGIN_DOMAINMANAGER_SO_SUPPLIER_NS_PROVIDER', 9413);
 define('PLUGIN_DOMAINMANAGER_SO_SUPPLIER_REGISTRAR_COUNT', 9414);
 define('PLUGIN_DOMAINMANAGER_SO_SUPPLIER_NS_PROVIDER_COUNT', 9415);
+// Real, filterable search option on Domain (§9 Phase 17 "Domain identity
+// header") — see its own registration below. A separate field from native
+// id 1 ("Name", glpi_domains.name, Unicode-stored) rather than a merge into
+// it: MySQL has no IDN function, so matching a pasted-in Punycode string
+// against the Unicode name column isn't possible without this cached
+// column to search against instead.
+define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_NAME_ASCII', 9416);
 
 /**
  * Plugin_Version_Domainmanager
@@ -243,6 +250,22 @@ function plugin_domainmanager_getAddSearchOptionsNew($itemtype): array
             'linkfield'     => 'domains_id',
             'name'          => __('Last sync', 'domainmanager'),
             'datatype'      => 'datetime',
+            'massiveaction' => false,
+            'joinparams'    => [
+                'jointype' => 'child',
+            ],
+        ];
+        // §9 Phase 17 "Domain identity header": plain 'text' datatype, same
+        // single-hop 'child' join shape as the options above — lets a
+        // Punycode string pasted from a DNS log find the domain, which
+        // native id 1 ("Name") alone cannot do (see constant definition).
+        $options[] = [
+            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN_NAME_ASCII,
+            'table'         => DomainState::getTable(),
+            'field'         => 'name_ascii',
+            'linkfield'     => 'domains_id',
+            'name'          => __('Punycode name', 'domainmanager'),
+            'datatype'      => 'text',
             'massiveaction' => false,
             'joinparams'    => [
                 'jointype' => 'child',
@@ -523,9 +546,13 @@ function plugin_init_domainmanager(): void
         // plugin-owned editable field — see HookHandler::infocomSaved().
         $PLUGIN_HOOKS[Hooks::ITEM_ADD]['domainmanager'] = [
             Infocom::class => [HookHandler::class, 'infocomSaved'],
+            // §9 Phase 17 "Domain identity header": keeps the state row's
+            // cached Punycode form (name_ascii) in sync for search.
+            Domain::class  => [HookHandler::class, 'domainSaved'],
         ];
         $PLUGIN_HOOKS[Hooks::ITEM_UPDATE]['domainmanager'] = [
             Infocom::class => [HookHandler::class, 'infocomSaved'],
+            Domain::class  => [HookHandler::class, 'domainSaved'],
         ];
 
         $PLUGIN_HOOKS[Hooks::PRE_ITEM_UPDATE]['domainmanager'] = [

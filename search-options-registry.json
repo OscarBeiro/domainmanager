@@ -115,6 +115,15 @@
           "field": "id",
           "purpose": "Real, filterable/sortable 'count' companion to id 9413's 'NS Provider' itemlink list — single-hop reverse 'child' join, 'linkfield' => 'dns_suppliers_id'. Same shape as the pre-revision 9413",
           "verified_collision_free": false
+        },
+        {
+          "itemtype": "Domain",
+          "id": 9416,
+          "name": "Punycode name",
+          "table": "glpi_plugin_domainmanager_states",
+          "field": "name_ascii",
+          "purpose": "Real, filterable 'text' search option (§9 Phase 17 'Domain identity header') for the cached Punycode/ASCII form of the Domain's name (glpi_domains.name stores Unicode; MySQL has no IDN function so it can't match a pasted Punycode string itself) — same single-hop 'child' join shape as 9406-9410, kept in sync by HookHandler::domainSaved() on Domain item_add/item_update",
+          "verified_collision_free": false
         }
       ],
       "removed": [

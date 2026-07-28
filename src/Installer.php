@@ -66,6 +66,7 @@ class Installer
         self::addRegistrarMetadataColumns($migration);
         self::addRecordProxiedColumn($migration);
         self::addDomainManagedColumn($migration);
+        self::addNameAsciiColumn($migration);
         self::pruneStaleSearchOptionCriteria();
         self::seedDomainType();
         self::seedRecordTypes();
@@ -157,6 +158,7 @@ class Installer
                     `dns_status` varchar(50) NOT NULL DEFAULT 'never',
                     `dns_message` text,
                     `is_managed` tinyint NOT NULL DEFAULT '0',
+                    `name_ascii` varchar(255) NOT NULL DEFAULT '',
                     `date_mod` timestamp NULL DEFAULT NULL,
                     `date_creation` timestamp NULL DEFAULT NULL,
                     PRIMARY KEY (`id`),
@@ -165,6 +167,7 @@ class Installer
                     KEY `dns_suppliers_id` (`dns_suppliers_id`),
                     KEY `last_sync_date` (`last_sync_date`),
                     KEY `is_managed` (`is_managed`),
+                    KEY `name_ascii` (`name_ascii`),
                     KEY `date_mod` (`date_mod`),
                     KEY `date_creation` (`date_creation`)
                 ) ENGINE=InnoDB DEFAULT CHARSET={$charset} COLLATE={$collation} ROW_FORMAT=DYNAMIC
@@ -373,6 +376,71 @@ class Installer
                 if ($is_managed) {
                     $DB->update($table, ['is_managed' => 1], ['id' => (int) $row['id']]);
                 }
+            }
+        }
+    }
+
+    /**
+     * Add `name_ascii` to the states table: a cached Punycode/ACE form of
+     * the Domain's own `glpi_domains.name` (§9 Phase 17 "Domain identity
+     * header"), kept in sync going forward by `HookHandler::domainSaved()`
+     * on Domain `item_add`/`item_update`. This exists purely to make the
+     * Punycode form searchable — `glpi_domains.name` stores the Unicode
+     * form (`IdnNormalizer` is the single conversion point, §9 Phase 10),
+     * and MySQL has no IDN function, so there is no way to match a
+     * pasted-in Punycode string against the stored Unicode name without a
+     * persisted ASCII column to search against instead.
+     *
+     * Backfilled from every non-deleted Domain on first install of this
+     * column, not just Domains that already have a state row — a Domain
+     * with no registrar/sync history yet must still be findable by
+     * Punycode, so this creates a state row for it when one doesn't
+     * already exist (mirroring `HookHandler::infocomSaved()`'s own
+     * create-if-missing branch), unlike `addDomainManagedColumn()` above
+     * which only ever updates rows that already exist.
+     *
+     * @param  Migration $migration
+     * @return void
+     */
+    private static function addNameAsciiColumn(Migration $migration): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $table          = 'glpi_plugin_domainmanager_states';
+        $column_existed = $DB->fieldExists($table, 'name_ascii', false);
+
+        $migration->addField($table, 'name_ascii', 'varchar(255) NOT NULL DEFAULT \'\'');
+        $migration->addKey($table, 'name_ascii');
+        // Flush now so the backfill below runs against a column that
+        // actually exists yet, same reasoning as addDomainManagedColumn().
+        $migration->executeMigration();
+
+        if ($column_existed) {
+            return;
+        }
+
+        $now      = date('Y-m-d H:i:s');
+        $iterator = $DB->request([
+            'SELECT' => ['id', 'name'],
+            'FROM'   => 'glpi_domains',
+            'WHERE'  => ['is_deleted' => 0],
+        ]);
+
+        foreach ($iterator as $row) {
+            $domains_id = (int) $row['id'];
+            $name_ascii = IdnNormalizer::toAscii((string) $row['name']);
+
+            $state = DomainState::getForDomain($domains_id);
+            if ($state !== null) {
+                $DB->update($table, ['name_ascii' => $name_ascii], ['id' => $state->getID()]);
+            } else {
+                $DB->insert($table, [
+                    'domains_id'    => $domains_id,
+                    'name_ascii'    => $name_ascii,
+                    'date_creation' => $now,
+                    'date_mod'      => $now,
+                ]);
             }
         }
     }

@@ -155,6 +155,46 @@ class HookHandler
     }
 
     /**
+     * item_add/item_update on Domain: keep the state row's cached
+     * Punycode/ASCII form of the domain's name (`name_ascii`) in sync
+     * (§9 Phase 17 "Domain identity header") — independent of Infocom/
+     * registrar assignment, since `glpi_domains.name` stores the Unicode
+     * form and MySQL can't compute the Punycode form itself, this cache is
+     * the only way a pasted-in Punycode string can be matched by search.
+     * Creates the state row when one doesn't exist yet (a brand-new Domain
+     * has no registrar/sync history), mirroring infocomSaved()'s own
+     * create-if-missing branch.
+     *
+     * @param  Domain $domain
+     * @return void
+     */
+    public static function domainSaved(Domain $domain): void
+    {
+        $domains_id = (int) $domain->getID();
+        if ($domains_id <= 0) {
+            return;
+        }
+
+        $name       = (string) ($domain->fields['name'] ?? '');
+        $name_ascii = $name !== '' ? IdnNormalizer::toAscii($name) : '';
+
+        $state = DomainState::getForDomain($domains_id);
+        if ($state !== null) {
+            if ($state->fields['name_ascii'] !== $name_ascii) {
+                $state->update([
+                    'id'         => $state->getID(),
+                    'name_ascii' => $name_ascii,
+                ]);
+            }
+        } elseif ($name_ascii !== '') {
+            (new DomainState())->add([
+                'domains_id' => $domains_id,
+                'name_ascii' => $name_ascii,
+            ]);
+        }
+    }
+
+    /**
      * Log a Registrar supplier assignment change on the Domain's own native
      * Historical tab (§3.7)
      *

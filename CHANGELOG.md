@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.9] - 2026-07-28
+### Changed
+- **Domain form panel: redesigned the domain identity header** (§9 Phase 17) — the Unicode domain name (19px/500, not a link) now carries a small "IDN" badge when a distinct Punycode form exists; the Punycode form itself renders on its own muted/monospace line with an icon-only copy-to-clipboard button (reusing GLPI 11 core's own `data-glpi-clipboard-text` delegated handler, no new JS); and two labelled outline buttons, "Visit" and "WHOIS" (linking to who.is), replace the previous plain side-by-side links. Pure-ASCII domains show only the name line. Also replaced the repeated "Not reported by this driver"/"Not on file" text in the Registrar details table with a muted em-dash carrying the same text as a tooltip, so populated values stand out more.
+### Added
+- **New `name_ascii` column on the plugin's state table**, caching each Domain's Punycode/ASCII form (`glpi_domains.name` stores the Unicode form, and MySQL has no IDN function) — backfilled for every existing Domain on upgrade and kept in sync going forward via a new `Domain` `item_add`/`item_update` hook (`HookHandler::domainSaved()`). Backs a new "Punycode name" search option (id 9416) on Domain, so pasting a Punycode string from a DNS log now finds the domain (previously only the native "Name" option existed, matching the Unicode form only).
+
 ## [0.11.8] - 2026-07-28
 ### Changed
 - **Domain form panel: moved the Punycode/ASCII form out of the footnote area into a clickable domain-identity row** above the status table — the Unicode domain name and its Punycode form now render side by side as two external links (`target="_blank"`, `rel="noopener noreferrer"`), each opening the respective form directly, shown only when a Punycode form actually exists and differs from the Unicode name.

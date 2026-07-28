@@ -2349,3 +2349,90 @@ diagnose the original bug).
 - **Expected:** badges update immediately and match everywhere with zero lag
   after either sync path.
 - [ ] Pass
+
+## 18. Phase 17: Domain identity header redesign + Punycode search
+
+### 18.1 IDN domain: two-line identity block renders correctly
+- **Steps:** open the Domain form for an IDN domain whose stored name
+  differs from its Punycode form (e.g. `viñamoraima.com`, ID 20 on the
+  `glpi-claude` dev instance).
+- **Expected:** line 1 shows the Unicode name in 19px/500 plain text (not a
+  link), followed by a small "IDN" badge. Line 2 shows the Punycode form
+  (`xn--viamoraima-u9a.com`) in muted/monospace/small text, with an
+  icon-only copy button next to it.
+- [x] Pass — verified 2026-07-28 by rendering `Domain$main` via
+  `ajax/common.tabs.php` for domain ID 20: `font-size: 19px; font-weight:
+  500;`, `<span class="badge text-bg-info ms-1">IDN</span>`, `<code>xn--
+  viamoraima-u9a.com</code>` all present.
+
+### 18.2 Pure-ASCII domain: line 1 only, no badge, no line 2
+- **Steps:** open the Domain form for a domain whose name is already plain
+  ASCII (e.g. `beiro.net`, ID 1).
+- **Expected:** only the name line renders — no "IDN" badge, no Punycode
+  line, no copy button.
+- [x] Pass — verified 2026-07-28 for domain ID 1: only `beiro.net` in the
+  19px/500 line; no "IDN"/`ti-copy`/`code` markup present.
+
+### 18.3 Visit button opens the Punycode form; WHOIS uses who.is
+- **Steps:** on the IDN domain's identity row, check the "Visit" button's
+  `href` and the "WHOIS" button's `href`.
+- **Expected:** Visit's `href` is `https://<punycode>` (not the Unicode
+  name), with the Unicode name as its `title` tooltip; WHOIS's `href` is
+  `https://who.is/whois/<punycode>`. Both open in a new tab
+  (`target="_blank" rel="noopener noreferrer"`). On a pure-ASCII domain,
+  both use the plain name instead.
+- [x] Pass — verified 2026-07-28: domain 20's Visit `href` is
+  `https://xn--viamoraima-u9a.com` with `title="viñamoraima.com"`; WHOIS
+  `href` is `https://who.is/whois/xn--viamoraima-u9a.com`. Domain 1's Visit/
+  WHOIS both use `beiro.net`.
+
+### 18.4 Copy button copies the exact Punycode form
+- **Steps:** click the copy icon next to the Punycode line on an IDN
+  domain, then paste the clipboard contents somewhere.
+- **Expected:** clipboard contains the Punycode form exactly (e.g.
+  `xn--viamoraima-u9a.com`), with a "Copied to clipboard" toast. Uses
+  GLPI 11 core's own `[data-glpi-clipboard-text]` delegated handler
+  (`js/common.js`) — no plugin JS was added.
+- [ ] Pass (manual browser check needed — clipboard access requires a real
+  browser context, not reproducible via curl)
+
+### 18.5 "Not reported by this driver" / "Not on file" replaced with a muted em-dash + tooltip
+- **Steps:** open the Registrar details table for a domain where the
+  driver doesn't report one of WHOIS privacy / Transfer lock / Domain lock
+  / Auto-renew / DNSSEC / Transfer-EPP-auth-code.
+- **Expected:** that cell shows a muted "—" instead of the full sentence;
+  hovering it shows the same sentence as a tooltip. Populated Yes/No badges
+  are unaffected.
+- [ ] Pass
+
+### 18.6 Punycode search finds the domain
+- **Steps:** search Domain using the new "Punycode name" search option
+  (id 9416) with a Punycode string pasted from a DNS log (e.g.
+  `xn--viamoraima`, `contains`).
+- **Expected:** the matching domain (e.g. `viñamoraima.com`, ID 20) appears
+  in the results, even though its stored `name` is the Unicode form.
+- [x] Pass — verified 2026-07-28 via
+  `front/domain.php?criteria[0][field]=9416&criteria[0][searchtype]=contains&criteria[0][value]=xn--viamoraima`:
+  `viñamoraima.com` returned.
+
+### 18.7 `name_ascii` backfill covers every existing Domain on upgrade
+- **Steps:** after upgrading to 0.11.9, check
+  `glpi_plugin_domainmanager_states.name_ascii` for a Domain that already
+  had a state row and one that didn't yet (no registrar/sync history).
+- **Expected:** both get a correct Punycode value; pure-ASCII domains get
+  their name unchanged; a state row is created for a Domain that had none.
+- [x] Pass — verified 2026-07-28: `name_ascii` correctly backfilled for
+  IDs 1, 2, 3, 5, 11, 12, 14-30 (ASCII: unchanged) and ID 20 (IDN:
+  `xn--viamoraima-u9a.com`). Trashed domain ID 13 (`is_deleted=1`)
+  correctly excluded from backfill (matches native search's own exclusion
+  of trashed items by default).
+
+### 18.8 No new PHP warnings/notices from this phase
+- **Steps:** after exercising 18.1-18.7, check
+  `/var/glpi/logs/php-errors.log` and `domainmanager-errors.log` for any
+  new entries.
+- **Expected:** no new warnings/notices — only pre-existing sync-history
+  log lines from before this phase.
+- [x] Pass — verified 2026-07-28: no new entries in either log after the
+  above requests; `php -l` clean on every touched file (`setup.php`,
+  `src/Installer.php`, `src/HookHandler.php`, `src/DomainForm.php`).
