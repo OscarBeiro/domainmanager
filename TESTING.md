@@ -2680,3 +2680,56 @@ Superseded: Phase 26 originally added parallel `rdap_transfer_lock`/`rdap_domain
   `src/Service/RdapGapChecker.php`, `src/Cron.php`,
   `src/Service/SyncEngine.php`, `templates/domain_panel.html.twig`).
 - [ ] Pass
+
+## Phase 28 (implemented 2026-07-28) — Fix false-positive RDAP cross-check mismatches; RDAP registrar of record on Supplier tab (§9)
+
+### 28.1 Registrar name with a legal suffix no longer flags a false mismatch
+- **Steps:** open the Domain form for a domain whose RDAP-reported
+  registrar name includes a legal suffix (e.g. "DINAHOSTING S.L.") and
+  whose Infocom Supplier is named just "dinahosting".
+- **Expected:** no "Registrar mismatch" badge — confirmed live 2026-07-28
+  on `moraima.gal` (id 27) before this fix showed exactly this
+  false-positive.
+- [ ] Pass
+
+### 28.2 A genuine registrar mismatch still shows the badge
+- **Steps:** open the Domain form for a domain whose RDAP-reported
+  registrar name shares no substring with the Supplier's name at all
+  (e.g. RDAP says "Example Registrar Inc." but the Supplier is "GoDaddy").
+- **Expected:** "Registrar mismatch" badge still appears — the fuzzy
+  match doesn't suppress genuinely different registrars.
+- [ ] Pass
+
+### 28.3 Reordered-but-identical nameserver lists no longer flag a false mismatch
+- **Steps:** open the Domain form for a domain where RDAP's nameserver
+  list and a live lookup return the same hosts in a different order
+  (confirmed live 2026-07-28 on `moraima.gal`: RDAP order
+  ns/ns4/ns2/ns3.gestiondecuenta.com vs. live order ns/ns4/ns3/ns2).
+- **Expected:** no "Nameserver mismatch" badge. The *displayed* lists in
+  the sub-panel (when some other mismatch is shown) still show each
+  source's own original order — only the comparison changed.
+- [ ] Pass
+
+### 28.4 A genuine nameserver mismatch still shows the badge
+- **Steps:** open the Domain form for a domain where RDAP's nameserver
+  list and a live lookup genuinely differ (a host present in one but not
+  the other).
+- **Expected:** "Nameserver mismatch" badge still appears.
+- [ ] Pass
+
+### 28.5 Supplier's Domain Manager tab shows the RDAP registrar of record
+- **Steps:** open the Domain Manager tab on a Supplier that has at least
+  one domain with a populated `rdap_registrar_name`.
+- **Expected:** a read-only "RDAP registrar of record" row appears near
+  the API driver selector, showing the name and, if present, "(IANA
+  #...)"; absent entirely for a Supplier with no RDAP-checked domains.
+- [ ] Pass
+
+### 28.6 No new PHP warnings/notices from this phase
+- **Steps:** after exercising 28.1-28.5, check `/var/glpi/logs/php-errors.log`
+  and `domainmanager-errors.log` for any new entries.
+- **Expected:** no new warnings/notices; `php -l` and `phpcs` clean on
+  every touched file (`src/DomainForm.php`, `src/DomainState.php`,
+  `src/SupplierTab.php`, `templates/domain_panel.html.twig`,
+  `templates/supplier_tab.html.twig`).
+- [ ] Pass

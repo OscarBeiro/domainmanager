@@ -210,6 +210,7 @@ class SupplierTab extends CommonGLPI
             'status_labels'      => DomainStatusResolver::getStatusLabels(),
             'status_classes'     => DomainStatusResolver::getStatusClasses(),
             'never_synced_count' => $never_synced_count,
+            'rdap_registrar_info' => DomainState::getRdapRegistrarInfo((int) $supplier->getID()),
             'domains_search_url' => self::getDomainsSearchUrl((int) $supplier->getID()),
             'discovery_supported'  => $discovery_supported,
             'import_modal_script'  => $import_modal_script,

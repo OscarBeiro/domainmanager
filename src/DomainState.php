@@ -391,6 +391,58 @@ class DomainState extends CommonDBTM
     }
 
     /**
+     * §9 Phase 28: the most recently RDAP-checked, still-populated
+     * registrar-of-record (name + IANA id) among this Supplier's own
+     * registrar-linked domains — surfaced read-only on the Supplier's
+     * Domain Manager tab so an admin can confirm/record it once per
+     * Supplier, rather than only ever seeing it on an individual Domain
+     * form's cross-check panel (§6.2). Purely informational, same
+     * "never a source of truth" rule as that panel (§9 Phase 21
+     * "Registrar-of-record note") — this is a read, never a write path.
+     *
+     * @param  int $suppliers_id
+     * @return array{name: string, iana_id: ?string}|null
+     */
+    public static function getRdapRegistrarInfo(int $suppliers_id): ?array
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        if ($suppliers_id <= 0) {
+            return null;
+        }
+
+        $row = $DB->request([
+            'SELECT'    => [self::getTable() . '.rdap_registrar_name', self::getTable() . '.rdap_registrar_iana_id'],
+            'FROM'      => self::getTable(),
+            'LEFT JOIN' => [
+                'glpi_infocoms' => [
+                    'ON' => [
+                        'glpi_infocoms'  => 'items_id',
+                        self::getTable() => 'domains_id',
+                        ['AND' => ['glpi_infocoms.itemtype' => 'Domain']],
+                    ],
+                ],
+            ],
+            'WHERE'     => [
+                'glpi_infocoms.suppliers_id'            => $suppliers_id,
+                self::getTable() . '.rdap_registrar_name' => ['<>', ''],
+            ],
+            'ORDER'     => self::getTable() . '.last_rdap_check_date DESC',
+            'LIMIT'     => 1,
+        ])->current();
+
+        if ($row === null || empty($row['rdap_registrar_name'])) {
+            return null;
+        }
+
+        return [
+            'name'    => (string) $row['rdap_registrar_name'],
+            'iana_id' => $row['rdap_registrar_iana_id'] !== null ? (string) $row['rdap_registrar_iana_id'] : null,
+        ];
+    }
+
+    /**
      * Detach a purged supplier from every state row referencing it
      *
      * @param  int $suppliers_id

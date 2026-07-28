@@ -263,13 +263,17 @@
                 </table>
             {% endif %}
 
-            {# §9 Phase 23: registrar-of-record / nameserver cross-check —
+            {# §9 Phase 23/28: registrar-of-record / nameserver cross-check —
                diagnostic only (never wired into any lock/sync/reassignment
                path, §9 Phase 21/22 note), shown only when RDAP's view
                actually disagrees with what's currently on record, to avoid
-               noise on the (expected) common case where they agree. #}
-            {% set registrar_mismatch = state and state.rdap_registrar_name and registrar_supplier and (state.rdap_registrar_name|lower != registrar_supplier.getName()|lower) %}
-            {% set ns_mismatch = rdap_nameservers and live_nameservers and (rdap_nameservers|sort != live_nameservers|sort) %}
+               noise on the (expected) common case where they agree.
+               `registrar_mismatch`/`ns_mismatch` are computed in
+               DomainForm::inject() (normalized comparisons — legal-suffix-
+               tolerant name matching, order/case-insensitive nameserver
+               sets), not here — a naive exact-match here previously flagged
+               harmless differences (RDAP's legal-form registrar name,
+               reordered nameserver lists) as false-positive mismatches. #}
             {% if registrar_mismatch or ns_mismatch %}
                 <hr class="m-0">
                 <div class="p-3">

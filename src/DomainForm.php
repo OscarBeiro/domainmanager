@@ -124,6 +124,25 @@ class DomainForm
             ? (new NsResolver())->getNameservers((string) ($item->fields['name'] ?? ''))
             : [];
 
+        // §9 Phase 28: mismatch detection moved out of Twig and normalized
+        // here — the raw display lists above are kept exactly as reported
+        // (order/casing as each source returned them), but *comparing* them
+        // needs to ignore harmless differences that aren't a real
+        // discrepancy (§9 Phase 28 addendum, found live: RDAP and a live
+        // lookup reporting the identical nameserver set in a different
+        // order tripped a naive `!=` set comparison; a registrar's RDAP
+        // name carrying its legal suffix, e.g. "DINAHOSTING S.L." vs. the
+        // Supplier's plain "dinahosting", tripped a naive case-insensitive
+        // string comparison).
+        $ns_mismatch = $rdap_nameservers !== []
+            && $live_nameservers !== []
+            && self::normalizeNsList($rdap_nameservers) !== self::normalizeNsList($live_nameservers);
+
+        $registrar_mismatch = $state !== null
+            && $state->fields['rdap_registrar_name']
+            && $registrar_supplier !== null
+            && !self::registrarNamesLikelyMatch((string) $state->fields['rdap_registrar_name'], $registrar_supplier->getName());
+
         TemplateRenderer::getInstance()->display('@domainmanager/domain_panel.html.twig', [
             'is_new'             => $is_new,
             'can_update'         => $can_update,
@@ -141,6 +160,57 @@ class DomainForm
             'provider_unknown'   => NsProviderRegistry::PROVIDER_UNKNOWN,
             'rdap_nameservers'   => $rdap_nameservers,
             'live_nameservers'   => $live_nameservers,
+            'ns_mismatch'        => $ns_mismatch,
+            'registrar_mismatch' => $registrar_mismatch,
         ]);
+    }
+
+    /**
+     * Normalizes a nameserver list for *comparison only* (lowercase,
+     * trailing-dot stripped, deduplicated, sorted) — never used for
+     * display, where each source's own reported form is shown as-is.
+     *
+     * @param  string[] $hosts
+     * @return string[]
+     */
+    private static function normalizeNsList(array $hosts): array
+    {
+        $normalized = array_map(
+            static fn ($host) => strtolower(rtrim(trim((string) $host), '.')),
+            $hosts
+        );
+        $normalized = array_values(array_unique($normalized));
+        sort($normalized);
+
+        return $normalized;
+    }
+
+    /**
+     * Whether an RDAP-reported registrar name and the Infocom Supplier's
+     * name plausibly refer to the same organization — a plain
+     * case-insensitive `==` is too strict, since RDAP commonly includes the
+     * registrar's full legal form (e.g. "DINAHOSTING S.L.") while the
+     * Supplier is usually named just "dinahosting". Strips everything but
+     * letters/digits from both and checks substring containment either
+     * way, rather than trying to maintain an exhaustive legal-suffix list
+     * (S.L./S.A./Inc./LLC/Ltd/GmbH/…) that would never really be complete.
+     *
+     * @param  string $rdap_name
+     * @param  string $supplier_name
+     * @return bool
+     */
+    private static function registrarNamesLikelyMatch(string $rdap_name, string $supplier_name): bool
+    {
+        $normalize = static fn (string $value): string => strtolower(preg_replace('/[^a-z0-9]/i', '', $value) ?? '');
+
+        $rdap_normalized     = $normalize($rdap_name);
+        $supplier_normalized = $normalize($supplier_name);
+
+        if ($rdap_normalized === '' || $supplier_normalized === '') {
+            return false;
+        }
+
+        return str_contains($rdap_normalized, $supplier_normalized)
+            || str_contains($supplier_normalized, $rdap_normalized);
     }
 }
