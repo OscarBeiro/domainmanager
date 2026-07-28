@@ -526,6 +526,14 @@ class Installer
         $migration->addField($table, 'rdap_registrar_iana_id', 'varchar(32) NULL DEFAULT NULL');
         $migration->addField($table, 'rdap_nameservers', 'text', ['value' => null]);
         $migration->addKey($table, 'last_rdap_check_date');
+
+        // §9 Phase 25: RDAP's `transfer` eventAction (most recent registrar
+        // transfer, distinct from `last changed`, which can be bumped by
+        // any registry-side edit) — same nullable/additive pattern as the
+        // rest of this table, added later than the original 8 columns
+        // above but via the same idempotent `addField()`, so it lands on
+        // both fresh installs and existing ones upgrading past this version.
+        $migration->addField($table, 'rdap_transfer_date', 'datetime', ['value' => null]);
     }
 
     /**

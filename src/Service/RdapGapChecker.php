@@ -55,6 +55,7 @@ class RdapGapChecker
     public const GAP_REGISTRATION_DATE = 'registration_date';
     public const GAP_EXPIRATION_DATE   = 'expiration_date';
     public const GAP_LAST_CHANGED      = 'last_changed';
+    public const GAP_TRANSFER_DATE     = 'transfer_date';
     public const GAP_PENDING_DELETE    = 'pending_delete';
     public const GAP_PENDING_TRANSFER  = 'pending_transfer';
     public const GAP_DNSSEC            = 'dnssec';
@@ -91,6 +92,9 @@ class RdapGapChecker
 
         if ($state === null || self::isEmptyDate($state->fields['rdap_last_changed_date'] ?? null)) {
             $gaps[] = self::GAP_LAST_CHANGED;
+        }
+        if ($state === null || self::isEmptyDate($state->fields['rdap_transfer_date'] ?? null)) {
+            $gaps[] = self::GAP_TRANSFER_DATE;
         }
         if ($state === null || $state->fields['rdap_pending_delete'] === null) {
             $gaps[] = self::GAP_PENDING_DELETE;

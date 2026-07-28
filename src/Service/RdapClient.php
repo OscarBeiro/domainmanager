@@ -116,6 +116,7 @@ class RdapClient
         $registrationDate = self::eventDate($events, 'registration');
         $expirationDate    = self::eventDate($events, 'expiration');
         $lastChangedDate   = self::eventDate($events, 'last changed');
+        $transferDate      = self::eventDate($events, 'transfer');
 
         // IANA RDAP status registry values are lowercase, space-separated
         // strings (e.g. "client transfer prohibited"), not camelCase.
@@ -166,6 +167,7 @@ class RdapClient
             registrationDate: $registrationDate,
             expirationDate: $expirationDate,
             lastChangedDate: $lastChangedDate,
+            transferDate: $transferDate,
             transferLock: $transferLock,
             domainLock: $domainLock,
             pendingDelete: $pendingDelete,

@@ -87,6 +87,10 @@
                         <th>{{ __('DNS Provider', 'domainmanager') }}</th>
                         <th>{{ __('Registrar sync', 'domainmanager') }}</th>
                         <th>{{ __('DNS sync', 'domainmanager') }}</th>
+                        {# §9 Phase 25: RDAP-sourced, independent of driver sync outcome —
+                           shown whenever RDAP has reported a value, regardless of rstatus/dstatus #}
+                        <th>{{ __('Last changed (RDAP)', 'domainmanager') }}</th>
+                        <th>{{ __('Last transfer (RDAP)', 'domainmanager') }}</th>
                         <th>{{ __('Last sync', 'domainmanager') }}</th>
                     </tr>
                 </thead>
@@ -121,6 +125,20 @@
                                   title="{{ state ? state.dns_message : '' }}">
                                 {{ status_labels[dstatus]|default(dstatus) }}
                             </span>
+                        </td>
+                        <td>
+                            {% if state and state.rdap_last_changed_date %}
+                                {{ state.rdap_last_changed_date }}
+                            {% else %}
+                                <span class="text-muted" title="{{ __('Not yet checked via RDAP', 'domainmanager') }}">&mdash;</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if state and state.rdap_transfer_date %}
+                                {{ state.rdap_transfer_date }}
+                            {% else %}
+                                <span class="text-muted" title="{{ __('Not yet checked via RDAP, or never transferred', 'domainmanager') }}">&mdash;</span>
+                            {% endif %}
                         </td>
                         <td id="domainmanager-lastsync">
                             {{ state and state.last_sync_date ? state.last_sync_date : __('Never', 'domainmanager') }}

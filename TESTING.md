@@ -2555,3 +2555,44 @@ diagnose the original bug).
 - **Expected:** no new warnings/notices; `php -l` and `phpcs` clean on
   `src/Cron.php`.
 - [ ] Pass
+
+## Phase 25 (implemented 2026-07-28) — Last changed / last transfer RDAP dates (§9)
+
+### 25.1 New column populates and displays on migration/upgrade
+- **Steps:** run the plugin's migration (fresh install or upgrade past
+  this version), then check `glpi_plugin_domainmanager_states` schema.
+- **Expected:** `rdap_transfer_date` (datetime, nullable) exists; no error
+  on either a fresh install or an upgrade of an already-migrated instance.
+- [ ] Pass
+
+### 25.2 "Last changed (RDAP)" and "Last transfer (RDAP)" columns appear between "DNS sync" and "Last sync"
+- **Steps:** open the Domain form for any domain.
+- **Expected:** the main status table header row reads Registrar | DNS
+  Provider | Registrar sync | DNS sync | Last changed (RDAP) | Last
+  transfer (RDAP) | Last sync, in that order.
+- [ ] Pass
+
+### 25.3 Both columns show "—" before RDAP has ever reported a value
+- **Steps:** open the Domain form for a domain never RDAP-checked, and
+  for one RDAP-checked but never transferred.
+- **Expected:** "Last changed (RDAP)" and "Last transfer (RDAP)" both show
+  a muted "—" with an explanatory tooltip; not gated on `rstatus`/`dstatus`
+  (shown even if the registrar/DNS sync itself errored).
+- [ ] Pass
+
+### 25.4 RDAP enrichment populates `rdap_transfer_date` from the `transfer` eventAction
+- **Steps:** run RdapEnrichment against a domain whose RDAP record
+  includes a `transfer` event (a domain that has actually been
+  transferred between registrars).
+- **Expected:** `rdap_transfer_date` is set to that event's date; the
+  Domain form's "Last transfer (RDAP)" column shows it.
+- [ ] Pass
+
+### 25.5 No new PHP warnings/notices from this phase
+- **Steps:** after exercising 25.1-25.4, check `/var/glpi/logs/php-errors.log`
+  and `domainmanager-errors.log` for any new entries.
+- **Expected:** no new warnings/notices; `php -l` and `phpcs` clean on
+  every touched file (`src/Installer.php`, `src/Dto/RdapLookupResult.php`,
+  `src/Service/RdapClient.php`, `src/Service/RdapGapChecker.php`,
+  `src/Cron.php`).
+- [ ] Pass

@@ -49,6 +49,7 @@ final class RdapLookupResult
         public readonly ?DateTimeImmutable $registrationDate = null,
         public readonly ?DateTimeImmutable $expirationDate = null,
         public readonly ?DateTimeImmutable $lastChangedDate = null,
+        public readonly ?DateTimeImmutable $transferDate = null,
         public readonly ?bool $transferLock = null,
         public readonly ?bool $domainLock = null,
         public readonly ?bool $pendingDelete = null,

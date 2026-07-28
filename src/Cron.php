@@ -352,6 +352,9 @@ class Cron
         if (in_array(RdapGapChecker::GAP_LAST_CHANGED, $gaps, true) && $result->lastChangedDate !== null) {
             $state_input['rdap_last_changed_date'] = $result->lastChangedDate->format('Y-m-d H:i:s');
         }
+        if (in_array(RdapGapChecker::GAP_TRANSFER_DATE, $gaps, true) && $result->transferDate !== null) {
+            $state_input['rdap_transfer_date'] = $result->transferDate->format('Y-m-d H:i:s');
+        }
         if (in_array(RdapGapChecker::GAP_PENDING_DELETE, $gaps, true) && $result->pendingDelete !== null) {
             $state_input['rdap_pending_delete'] = (int) $result->pendingDelete;
         }
