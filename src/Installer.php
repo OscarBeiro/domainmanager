@@ -67,6 +67,7 @@ class Installer
         self::addRecordProxiedColumn($migration);
         self::addDomainManagedColumn($migration);
         self::addNameAsciiColumn($migration);
+        self::addRdapColumns($migration);
         self::clearDuplicateNameAscii();
         self::pruneStaleSearchOptionCriteria();
         self::seedDomainType();
@@ -160,6 +161,14 @@ class Installer
                     `dns_message` text,
                     `is_managed` tinyint NOT NULL DEFAULT '0',
                     `name_ascii` varchar(255) NOT NULL DEFAULT '',
+                    `last_rdap_check_date` datetime NULL DEFAULT NULL,
+                    `rdap_last_changed_date` datetime NULL DEFAULT NULL,
+                    `rdap_pending_delete` tinyint NULL DEFAULT NULL,
+                    `rdap_pending_transfer` tinyint NULL DEFAULT NULL,
+                    `rdap_dnssec_signed` tinyint NULL DEFAULT NULL,
+                    `rdap_registrar_name` varchar(255) NULL DEFAULT NULL,
+                    `rdap_registrar_iana_id` varchar(32) NULL DEFAULT NULL,
+                    `rdap_nameservers` text,
                     `date_mod` timestamp NULL DEFAULT NULL,
                     `date_creation` timestamp NULL DEFAULT NULL,
                     PRIMARY KEY (`id`),
@@ -169,6 +178,7 @@ class Installer
                     KEY `last_sync_date` (`last_sync_date`),
                     KEY `is_managed` (`is_managed`),
                     KEY `name_ascii` (`name_ascii`),
+                    KEY `last_rdap_check_date` (`last_rdap_check_date`),
                     KEY `date_mod` (`date_mod`),
                     KEY `date_creation` (`date_creation`)
                 ) ENGINE=InnoDB DEFAULT CHARSET={$charset} COLLATE={$collation} ROW_FORMAT=DYNAMIC
@@ -487,6 +497,35 @@ class Installer
                 ]);
             }
         }
+    }
+
+    /**
+     * Add the 8 RDAP-enrichment columns to the states table (§9 Phase 21,
+     * `PHASE21_PLAN.md`). Same table `is_managed`/`name_ascii`/the registrar
+     * metadata columns already live on — a plugin-only concept with no
+     * native `glpi_domains` equivalent, so it belongs on this read-only
+     * state table rather than a new one. All 8 are nullable, all additive,
+     * no changes to existing columns: `null` means "not yet checked via
+     * RDAP" (for the tri-state flags/text fields) or "never checked" (for
+     * `last_rdap_check_date`), the same real, meaningful third state already
+     * established for `registrar_dnssec_enabled` et al. above.
+     *
+     * @param  Migration $migration
+     * @return void
+     */
+    private static function addRdapColumns(Migration $migration): void
+    {
+        $table = 'glpi_plugin_domainmanager_states';
+
+        $migration->addField($table, 'last_rdap_check_date', 'datetime', ['value' => null]);
+        $migration->addField($table, 'rdap_last_changed_date', 'datetime', ['value' => null]);
+        $migration->addField($table, 'rdap_pending_delete', 'tinyint NULL DEFAULT NULL');
+        $migration->addField($table, 'rdap_pending_transfer', 'tinyint NULL DEFAULT NULL');
+        $migration->addField($table, 'rdap_dnssec_signed', 'tinyint NULL DEFAULT NULL');
+        $migration->addField($table, 'rdap_registrar_name', 'varchar(255) NULL DEFAULT NULL');
+        $migration->addField($table, 'rdap_registrar_iana_id', 'varchar(32) NULL DEFAULT NULL');
+        $migration->addField($table, 'rdap_nameservers', 'text', ['value' => null]);
+        $migration->addKey($table, 'last_rdap_check_date');
     }
 
     /**
