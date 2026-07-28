@@ -2436,3 +2436,85 @@ diagnose the original bug).
 - [x] Pass — verified 2026-07-28: no new entries in either log after the
   above requests; `php -l` clean on every touched file (`setup.php`,
   `src/Installer.php`, `src/HookHandler.php`, `src/DomainForm.php`).
+
+## Phase 21-23 (implemented 2026-07-28) — RDAP as a fallback/supplementary data source (§9)
+
+### 21.1 Cron task registration
+- **Steps:** Setup > Automatic actions, locate "RdapEnrichment".
+- **Expected:** appears with default 10-minute frequency, independent of
+  the existing "DomainSync" task.
+- [ ] Pass
+
+### 21.2 Exactly one eligible domain processed per execution; already-checked-today domains skipped
+- **Steps:** run the RdapEnrichment task twice in the same day.
+- **Expected:** the first run processes one domain and sets its
+  `last_rdap_check_date` to today; the second run skips it (moves on to
+  the next oldest-/never-checked candidate, or no-ops if none remain).
+- [ ] Pass
+
+### 21.3 A domain whose driver already reports every in-scope field is never selected
+- **Steps:** run RdapEnrichment against a domain fully reported by its
+  driver (e.g. IONOS, which reports DNSSEC) once RDAP has already filled
+  its other gaps (dates, last-changed, pending flags).
+- **Expected:** `RdapGapChecker::hasGap()` returns `false`; the domain is
+  skipped in favor of the next candidate.
+- [ ] Pass
+
+### 21.4 A real `.es` domain gets a normal "no data" outcome, not an error
+- **Steps:** run RdapEnrichment against a `.es` domain.
+- **Expected:** `rdap.org` 404s; `domainmanager.log` gets a "no data for
+  domain" entry (not `domainmanager-errors.log`); `last_rdap_check_date`
+  is still set so it isn't retried until tomorrow.
+- [ ] Pass
+
+### 21.5 A real `.com` and a real `.gal` domain populate all applicable new columns
+- **Steps:** run RdapEnrichment against a `.com` and a `.gal` domain.
+- **Expected:** `rdap_last_changed_date`, `rdap_pending_delete`,
+  `rdap_pending_transfer`, `rdap_registrar_name`, `rdap_registrar_iana_id`,
+  `rdap_nameservers` populate where RDAP has data; registration/expiration
+  dates on `glpi_domains` fill in only if they were previously empty.
+- [ ] Pass
+
+### 21.6 DNSSEC gap-fill: skipped when the driver reports it, applied when it doesn't
+- **Steps:** compare an IONOS-registered domain (reports
+  `registrar_dnssec_enabled`) against a Dinahosting-registered domain
+  (doesn't) after both have had at least one RDAP pass.
+- **Expected:** the IONOS domain's `rdap_dnssec_signed` stays untouched by
+  gap-fill logic (not a gap); the Dinahosting domain gets
+  `rdap_dnssec_signed` populated and the Registrar details table's DNSSEC
+  cell shows the RDAP value with a "via RDAP" tooltip.
+- [ ] Pass
+
+### 21.7 Registrar-of-record mismatch badge — only on an actual mismatch
+- **Steps:** open the Domain form for a domain where `rdap_registrar_name`
+  differs from the Infocom Supplier's name, and for one where they agree
+  (or RDAP hasn't reported a registrar name at all).
+- **Expected:** the "RDAP cross-check" sub-panel and its "Registrar
+  mismatch" badge appear only in the first case; no sub-panel visible at
+  all in the second (no badge noise on the common/agreeing case).
+- [ ] Pass
+
+### 21.8 Nameserver cross-check badge — only on an actual mismatch, never fed into the DNS pipeline
+- **Steps:** open the Domain form for a domain where RDAP's
+  `rdap_nameservers` differs from a live NS lookup, and for one where they
+  match.
+- **Expected:** "Nameserver mismatch" badge shown only in the first case;
+  in both cases, confirm `rdap_nameservers` never appears in
+  `DomainRecord`/`RecordReconciler` — it's read via `DomainForm::inject()`
+  and rendered directly in Twig, never passed to the sync pipeline.
+- [ ] Pass
+
+### 21.9 Clean no-op tick — no error, no unnecessary log entries
+- **Steps:** run RdapEnrichment when every domain either was checked today
+  or has no gap.
+- **Expected:** a single "No domain eligible for RDAP enrichment" line in
+  `domainmanager.log`; nothing in `domainmanager-errors.log`.
+- [ ] Pass
+
+### 21.10 Config page status line
+- **Steps:** open the Domain Manager config page after at least one
+  RdapEnrichment run.
+- **Expected:** shows "N domain(s) pending RDAP enrichment, last processed
+  at [time]" with a real count and timestamp; before any run has ever
+  happened, shows "…none processed yet" instead.
+- [ ] Pass

@@ -34,6 +34,7 @@ namespace GlpiPlugin\Domainmanager\Config;
 use CommonGLPI;
 use Config as CoreConfig;
 use Glpi\Application\View\TemplateRenderer;
+use GlpiPlugin\Domainmanager\DomainState;
 use Session;
 
 /**
@@ -165,8 +166,9 @@ final class Config extends CommonGLPI
     public static function showConfigForm(): bool
     {
         TemplateRenderer::getInstance()->display('@domainmanager/config.html.twig', [
-            'domaintypes_id' => self::getDomainTypeId(),
-            'can_edit'       => Session::haveRight(self::$rightname, UPDATE),
+            'domaintypes_id'       => self::getDomainTypeId(),
+            'can_edit'             => Session::haveRight(self::$rightname, UPDATE),
+            'rdap_enrichment'      => DomainState::getRdapEnrichmentStatus(),
         ]);
 
         return true;

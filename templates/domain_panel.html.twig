@@ -176,6 +176,9 @@
                             <th>{{ __('Domain lock', 'domainmanager') }}</th>
                             <th>{{ __('Auto-renew', 'domainmanager') }}</th>
                             <th>{{ __('DNSSEC', 'domainmanager') }}</th>
+                            {# §9 Phase 23: RDAP-only fields, no driver ever reports these #}
+                            <th>{{ __('Pending delete', 'domainmanager') }}</th>
+                            <th>{{ __('Pending transfer', 'domainmanager') }}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -208,7 +211,6 @@
                             {% for field in [
                                 'registrar_domain_lock',
                                 'registrar_auto_renew',
-                                'registrar_dnssec_enabled',
                             ] %}
                                 <td>
                                     {% if state[field] is null %}
@@ -220,9 +222,73 @@
                                     {% endif %}
                                 </td>
                             {% endfor %}
+                            {# §9 Phase 23: DNSSEC gap-fill — the driver's own value wins when
+                               reported; RDAP's `rdap_dnssec_signed` fills the gap otherwise
+                               (see RdapGapChecker's dual-source rule), marked "via RDAP". #}
+                            <td>
+                                {% if state.registrar_dnssec_enabled is not null %}
+                                    {% if state.registrar_dnssec_enabled %}
+                                        <span class="badge text-bg-success">{{ __('Yes', 'domainmanager') }}</span>
+                                    {% else %}
+                                        <span class="badge text-bg-secondary">{{ __('No', 'domainmanager') }}</span>
+                                    {% endif %}
+                                {% elseif state.rdap_dnssec_signed is not null %}
+                                    {% if state.rdap_dnssec_signed %}
+                                        <span class="badge text-bg-success" title="{{ __('via RDAP', 'domainmanager') }}">{{ __('Yes', 'domainmanager') }}<i class="ti ti-satellite ms-1"></i></span>
+                                    {% else %}
+                                        <span class="badge text-bg-secondary" title="{{ __('via RDAP', 'domainmanager') }}">{{ __('No', 'domainmanager') }}<i class="ti ti-satellite ms-1"></i></span>
+                                    {% endif %}
+                                {% else %}
+                                    <span class="text-muted" title="{{ __('Not reported by this driver', 'domainmanager') }}">&mdash;</span>
+                                {% endif %}
+                            </td>
+                            {% for field in ['rdap_pending_delete', 'rdap_pending_transfer'] %}
+                                <td>
+                                    {% if state[field] is null %}
+                                        <span class="text-muted" title="{{ __('Not yet checked via RDAP', 'domainmanager') }}">&mdash;</span>
+                                    {% elseif state[field] %}
+                                        <span class="badge text-bg-danger" title="{{ __('via RDAP', 'domainmanager') }}">{{ __('Yes', 'domainmanager') }}</span>
+                                    {% else %}
+                                        <span class="badge text-bg-secondary" title="{{ __('via RDAP', 'domainmanager') }}">{{ __('No', 'domainmanager') }}</span>
+                                    {% endif %}
+                                </td>
+                            {% endfor %}
                         </tr>
                     </tbody>
                 </table>
+            {% endif %}
+
+            {# §9 Phase 23: registrar-of-record / nameserver cross-check —
+               diagnostic only (never wired into any lock/sync/reassignment
+               path, §9 Phase 21/22 note), shown only when RDAP's view
+               actually disagrees with what's currently on record, to avoid
+               noise on the (expected) common case where they agree. #}
+            {% set registrar_mismatch = state and state.rdap_registrar_name and registrar_supplier and (state.rdap_registrar_name|lower != registrar_supplier.getName()|lower) %}
+            {% set ns_mismatch = rdap_nameservers and live_nameservers and (rdap_nameservers|sort != live_nameservers|sort) %}
+            {% if registrar_mismatch or ns_mismatch %}
+                <hr class="m-0">
+                <div class="p-3">
+                    <div class="text-muted small lh-sm mb-2">
+                        <i class="ti ti-info-circle me-1"></i>{{ __('RDAP cross-check', 'domainmanager') }}
+                    </div>
+                    {% if registrar_mismatch %}
+                        <div class="small mb-1">
+                            <span class="badge text-bg-warning me-1">{{ __('Registrar mismatch', 'domainmanager') }}</span>
+                            {{ __('RDAP reports', 'domainmanager') }}
+                            <strong>{{ state.rdap_registrar_name }}{{ state.rdap_registrar_iana_id ? ' (IANA #' ~ state.rdap_registrar_iana_id ~ ')' : '' }}</strong>
+                            &middot;
+                            {{ __('Supplier on file', 'domainmanager') }}: <strong>{{ registrar_supplier.getName() }}</strong>
+                        </div>
+                    {% endif %}
+                    {% if ns_mismatch %}
+                        <div class="small">
+                            <span class="badge text-bg-warning me-1">{{ __('Nameserver mismatch', 'domainmanager') }}</span>
+                            {{ __('RDAP', 'domainmanager') }}: <strong>{{ rdap_nameservers|join(', ') }}</strong>
+                            &middot;
+                            {{ __('Live', 'domainmanager') }}: <strong>{{ live_nameservers|join(', ') }}</strong>
+                        </div>
+                    {% endif %}
+                </div>
             {% endif %}
         </div>
     {% else %}

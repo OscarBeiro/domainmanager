@@ -332,6 +332,65 @@ class DomainState extends CommonDBTM
     }
 
     /**
+     * RDAP enrichment cron status for the config page (§9 Phase 23): how many
+     * non-deleted, non-template domains are still eligible for a check today
+     * ({@see Cron::cronRdapEnrichment}'s own date-based eligibility, without
+     * the additional per-domain {@see \GlpiPlugin\Domainmanager\Service\RdapGapChecker}
+     * filter — cheap to compute here, and "still due for a look" is the
+     * honest reading of this line for an admin), plus the most recent
+     * `last_rdap_check_date` across all domains.
+     *
+     * @return array{pending:int, last_processed:?string}
+     */
+    public static function getRdapEnrichmentStatus(): array
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $today = date('Y-m-d');
+        $table = self::getTable();
+
+        $pending = 0;
+        foreach (
+            $DB->request([
+                'SELECT'    => ['glpi_domains.id'],
+                'FROM'      => 'glpi_domains',
+                'LEFT JOIN' => [
+                    $table => [
+                        'ON' => [
+                            $table         => 'domains_id',
+                            'glpi_domains' => 'id',
+                        ],
+                    ],
+                ],
+                'WHERE'     => [
+                    'glpi_domains.is_deleted'  => 0,
+                    'glpi_domains.is_template' => 0,
+                    'OR'                       => [
+                        [$table . '.last_rdap_check_date' => null],
+                        [$table . '.last_rdap_check_date' => ['<', $today . ' 00:00:00']],
+                    ],
+                ],
+            ]) as $row
+        ) {
+            $pending++;
+        }
+
+        $last_processed = null;
+        foreach ($DB->request(['SELECT' => 'last_rdap_check_date', 'FROM' => $table]) as $row) {
+            $value = $row['last_rdap_check_date'] ?? null;
+            if ($value !== null && ($last_processed === null || $value > $last_processed)) {
+                $last_processed = $value;
+            }
+        }
+
+        return [
+            'pending'        => $pending,
+            'last_processed' => $last_processed,
+        ];
+    }
+
+    /**
      * Detach a purged supplier from every state row referencing it
      *
      * @param  int $suppliers_id

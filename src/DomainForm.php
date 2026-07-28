@@ -34,6 +34,7 @@ namespace GlpiPlugin\Domainmanager;
 use Domain;
 use Glpi\Application\View\TemplateRenderer;
 use GlpiPlugin\Domainmanager\Service\DomainStatusResolver;
+use GlpiPlugin\Domainmanager\Service\NsResolver;
 use Session;
 use Supplier;
 
@@ -106,6 +107,23 @@ class DomainForm
             }
         }
 
+        // §9 Phase 23: nameserver cross-check (RDAP's reported list vs. a
+        // live lookup) is display-only, informational (§9 Phase 22 note —
+        // RDAP's nameserver list never feeds DomainRecord/RecordReconciler).
+        // Only looked up when RDAP has actually reported something to
+        // compare against, so a domain never RDAP-checked doesn't pay for
+        // a live DNS query it can't do anything useful with.
+        $rdap_nameservers = [];
+        if ($state !== null && !empty($state->fields['rdap_nameservers'])) {
+            $decoded = json_decode((string) $state->fields['rdap_nameservers'], true);
+            if (is_array($decoded)) {
+                $rdap_nameservers = $decoded;
+            }
+        }
+        $live_nameservers = $rdap_nameservers !== []
+            ? (new NsResolver())->getNameservers((string) ($item->fields['name'] ?? ''))
+            : [];
+
         TemplateRenderer::getInstance()->display('@domainmanager/domain_panel.html.twig', [
             'is_new'             => $is_new,
             'can_update'         => $can_update,
@@ -121,7 +139,8 @@ class DomainForm
             'repository_url'     => PLUGIN_DOMAINMANAGER_REPOSITORY_URL,
             'locked_fields'      => $locked_fields,
             'provider_unknown'   => NsProviderRegistry::PROVIDER_UNKNOWN,
+            'rdap_nameservers'   => $rdap_nameservers,
+            'live_nameservers'   => $live_nameservers,
         ]);
     }
-
 }

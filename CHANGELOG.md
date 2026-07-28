@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-07-28
+### Added
+- **RDAP as a fallback/supplementary data source (§9 Phases 21-23)**: a new `PluginDomainmanagerCronRdapEnrichment` Automatic Action (default every 10 minutes) queries `rdap.org` directly for one gap-eligible domain per tick and fills in whatever the configured registrar driver left blank — registration/expiration dates, a new RDAP-only "last changed" timestamp, and new tri-state pending-delete/pending-transfer flags. DNSSEC gets the same gap-fill only when the driver itself doesn't already report it (e.g. Dinahosting, not IONOS). Registrar-of-record (name + IANA ID) and the nameserver list are also fetched every lookup, purely as read-only diagnostics — never wired into the Infocom `suppliers_id` mirror or the DNS sync pipeline. A domain's TLD not being covered by RDAP (a 404 from `rdap.org`) is treated as a normal outcome, not an error; `last_rdap_check_date` still advances so it isn't retried until the next day.
+- **Registrar details block now surfaces RDAP-only fields**: "Pending delete" and "Pending transfer" columns (no driver reports these), and the existing DNSSEC column falls back to RDAP's value with a "via RDAP" marker when the driver itself reports nothing.
+- **RDAP cross-check sub-panel** on the Domain form: a registrar-of-record mismatch badge (RDAP's reported registrar vs. the Infocom Supplier on file) and a nameserver mismatch badge (RDAP's reported nameservers vs. a live lookup), each shown only when they actually disagree.
+- **Config page**: a status line showing how many domains are still pending RDAP enrichment and when the cron last processed one.
+
 ## [1.0.0] - 2026-07-28
 ### Fixed
 - **Reimporting a domain that had been moved to the trash created a duplicate `Domain` item instead of restoring the trashed one**: the Import Domains modal's existence check only ever looked at non-deleted domains, so a soft-deleted domain's name was never recognized as "already exists", and every reimport-then-delete cycle piled up another orphaned duplicate carrying none of the tickets/contracts/infocom still linked to the original. The import now also checks for a matching trashed domain and restores it (un-deleting it, reusing its id) instead of creating a new one; if several trashed domains share the same name, the oldest (first ever created) is restored and the rest are left untouched in the trash.
