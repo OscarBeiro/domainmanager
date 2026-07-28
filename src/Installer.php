@@ -683,5 +683,20 @@ class Installer
                 'comment'       => __('Synchronize domain lifecycle and DNS zone records from provider APIs', 'domainmanager'),
             ]
         );
+
+        // §9 Phase 22: its own automatic action, independently configurable
+        // from the daily sync task above — default every 10 minutes, one
+        // domain per tick (the cron cadence itself is the rate-limit
+        // defense against rdap.org, §9 Phase 21 "Rate-limit rationale").
+        CronTask::register(
+            Cron::class,
+            'RdapEnrichment',
+            10 * MINUTE_TIMESTAMP,
+            [
+                'state'         => CronTask::STATE_WAITING,
+                'logs_lifetime' => 30,
+                'comment'       => __('Fill registrar-reported gaps (dates, lock/DNSSEC status, pending flags) from RDAP', 'domainmanager'),
+            ]
+        );
     }
 }
