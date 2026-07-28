@@ -612,6 +612,7 @@ The tab is laid out in two columns: the credentials form (left) and an always-re
 - Rights: `Session::haveRight('domain', UPDATE)` + `$domain->can($id, UPDATE)` (entity-aware); 403 JSON otherwise.
 - CSRF: automatic via core `CheckCsrfListener`; the button JS sends `X-Glpi-Csrf-Token` from the page meta tag (`X-Requested-With: XMLHttpRequest`).
 - Runs `SyncEngine::sync()` synchronously, returns `{registrar_status, dns_status, messages, last_sync_date}` JSON; the panel refreshes badges in place.
+- **Deliberately never touches RDAP** (§9 Phase 21-26): "Update Now" only re-runs the configured registrar/DNS driver sync. `RdapClient` is invoked *only* from `Cron::cronRdapEnrichment()`'s own throttled tick (one lookup per 10-minute run, §9 Phase 22 "Rate-limit rationale") — never on-demand from a user action. Letting "Update Now" also trigger an RDAP lookup would mean an admin clicking it repeatedly (or a bulk "Review and sync" action across many domains) could burst well past `rdap.org`'s free-tier rate limit; the cron's own tick spacing is the *only* thing keeping this plugin's RDAP usage safe, so nothing else is allowed to call `RdapClient` outside it.
 
 ### 6.3.1 Unlink registrar endpoint (§9 Phase 14)
 `src/Controller/DomainRegistrarUnlinkController.php` — `#[Route('/domainunlink/{domains_id}', ...)]` ⇒ URL `/plugins/domainmanager/domainunlink/{id}`.

@@ -2640,3 +2640,15 @@ diagnose the original bug).
   every touched file (`setup.php`, `src/Installer.php`,
   `src/Service/RdapGapChecker.php`, `src/Cron.php`).
 - [ ] Pass
+
+### 26.6 "Update Now" (and the bulk "Review and sync" action) never call RDAP
+- **Steps:** click "Update Now" on a domain, and run the bulk "Review and
+  sync" massive action, then check `domainmanager.log` for any RDAP
+  activity lines during that request.
+- **Expected:** no RDAP lookup happens — only the registrar/DNS driver
+  sync runs (`SyncEngine::sync()`). `RdapClient` is only ever instantiated
+  from `Cron::cronRdapEnrichment()`'s own throttled tick; confirmed by
+  `grep -rl "new RdapClient" src/` matching only `src/Cron.php`. This is
+  deliberate, not an oversight — it protects `rdap.org`'s free-tier rate
+  limit from user-triggered bursts (§9 Phase 21-26, §6.3).
+- [ ] Pass
