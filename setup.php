@@ -96,6 +96,18 @@ define('PLUGIN_DOMAINMANAGER_SO_SUPPLIER_NS_PROVIDER_COUNT', 9415);
 // against the Unicode name column isn't possible without this cached
 // column to search against instead.
 define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_NAME_ASCII', 9416);
+// Real, filterable search options on Domain, one per registrar
+// administrative-metadata column added by
+// Installer::addRegistrarMetadataColumns() (§9 Phase 7) — see their own
+// registration below. `registrar_domain_type` was dropped (commit
+// "Drop Domain type field, move Transfer/EPP auth code into its place")
+// so its slot is not reused here.
+define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_WHOIS_PRIVACY', 9417);
+define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_TRANSFER_LOCK', 9418);
+define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_AUTH_CODE', 9419);
+define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_DOMAIN_LOCK', 9420);
+define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_AUTO_RENEW', 9421);
+define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNSSEC', 9422);
 
 /**
  * Plugin_Version_Domainmanager
@@ -266,6 +278,99 @@ function plugin_domainmanager_getAddSearchOptionsNew($itemtype): array
             'linkfield'     => 'domains_id',
             'name'          => __('Punycode name', 'domainmanager'),
             'datatype'      => 'text',
+            'massiveaction' => false,
+            'joinparams'    => [
+                'jointype' => 'child',
+            ],
+        ];
+
+        // The 5 tri-state registrar administrative-metadata flags
+        // (Installer::addRegistrarMetadataColumns(), §9 Phase 7): same
+        // single-hop 'child' join shape as every other Domain-side option
+        // above, 'bool' datatype — same accepted "0 OR NULL" WHERE-builder
+        // limitation as PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_PROXY's own
+        // nullable tinyint (no per-search-option override reachable here
+        // either, DomainState IS this plugin's own itemtype but the
+        // limitation lives in core's SQLProvider, not something this
+        // itemtype's own code path controls).
+        $options[] = [
+            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN_WHOIS_PRIVACY,
+            'table'         => DomainState::getTable(),
+            'field'         => 'registrar_privacy_enabled',
+            'linkfield'     => 'domains_id',
+            'name'          => __('WHOIS privacy', 'domainmanager'),
+            'datatype'      => 'bool',
+            'massiveaction' => false,
+            'joinparams'    => [
+                'jointype' => 'child',
+            ],
+        ];
+        $options[] = [
+            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN_TRANSFER_LOCK,
+            'table'         => DomainState::getTable(),
+            'field'         => 'registrar_transfer_lock',
+            'linkfield'     => 'domains_id',
+            'name'          => __('Transfer lock', 'domainmanager'),
+            'datatype'      => 'bool',
+            'massiveaction' => false,
+            'joinparams'    => [
+                'jointype' => 'child',
+            ],
+        ];
+        $options[] = [
+            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN_DOMAIN_LOCK,
+            'table'         => DomainState::getTable(),
+            'field'         => 'registrar_domain_lock',
+            'linkfield'     => 'domains_id',
+            'name'          => __('Domain lock', 'domainmanager'),
+            'datatype'      => 'bool',
+            'massiveaction' => false,
+            'joinparams'    => [
+                'jointype' => 'child',
+            ],
+        ];
+        $options[] = [
+            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN_AUTO_RENEW,
+            'table'         => DomainState::getTable(),
+            'field'         => 'registrar_auto_renew',
+            'linkfield'     => 'domains_id',
+            'name'          => __('Auto-renew', 'domainmanager'),
+            'datatype'      => 'bool',
+            'massiveaction' => false,
+            'joinparams'    => [
+                'jointype' => 'child',
+            ],
+        ];
+        $options[] = [
+            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNSSEC,
+            'table'         => DomainState::getTable(),
+            'field'         => 'registrar_dnssec_enabled',
+            'linkfield'     => 'domains_id',
+            'name'          => __('DNSSEC', 'domainmanager'),
+            'datatype'      => 'bool',
+            'massiveaction' => false,
+            'joinparams'    => [
+                'jointype' => 'child',
+            ],
+        ];
+
+        // Transfer/EPP auth code: the raw value is a live credential (same
+        // "never leaves the browser" treatment as any other secret in this
+        // plugin, per the template's own "On file"/"Not on file" badge,
+        // domain_panel.html.twig) — 'searchtype' is restricted to
+        // ['empty'] only, so this is filterable ("which domains have a code
+        // on file?") without ever exposing the value itself in a search
+        // results column or criteria input.
+        // `getSpecificValueToDisplay()` masks it unconditionally below.
+        $options[] = [
+            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN_AUTH_CODE,
+            'itemtype'      => DomainState::class,
+            'table'         => DomainState::getTable(),
+            'field'         => 'registrar_auth_info',
+            'linkfield'     => 'domains_id',
+            'name'          => __('Transfer / EPP auth code', 'domainmanager'),
+            'datatype'      => 'specific',
+            'searchtype'    => ['empty'],
             'massiveaction' => false,
             'joinparams'    => [
                 'jointype' => 'child',
