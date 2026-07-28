@@ -47,6 +47,17 @@
 
     {% if not is_new %}
         <div class="card-body p-0">
+            {% if punycode %}
+                <div class="p-2 border-bottom d-flex align-items-center gap-2">
+                    <a href="https://{{ domain_name }}" target="_blank" rel="noopener noreferrer">
+                        {{ domain_name }} <i class="ti ti-external-link"></i>
+                    </a>
+                    <span class="text-muted">/</span>
+                    <a href="https://{{ punycode }}" target="_blank" rel="noopener noreferrer">
+                        {{ punycode }} <i class="ti ti-external-link"></i>
+                    </a>
+                </div>
+            {% endif %}
             <table class="table table-sm mb-0">
                 <thead>
                     <tr>
@@ -102,12 +113,6 @@
             </table>
 
             <div class="p-3">
-                {% if punycode %}
-                    <div class="text-muted small lh-sm mb-1">
-                        {{ __('Punycode / ASCII form', 'domainmanager') }}:
-                        <code>{{ punycode }}</code>
-                    </div>
-                {% endif %}
                 {% if not registrar_supplier %}
                     <div class="text-muted small lh-sm mb-1">
                         <a href="{{ infocom_tab_url }}">{{ __('Set the Registrar via the Financial and administrative information tab', 'domainmanager') }}</a>

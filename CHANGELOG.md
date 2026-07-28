@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.8] - 2026-07-28
+### Changed
+- **Domain form panel: moved the Punycode/ASCII form out of the footnote area into a clickable domain-identity row** above the status table — the Unicode domain name and its Punycode form now render side by side as two external links (`target="_blank"`, `rel="noopener noreferrer"`), each opening the respective form directly, shown only when a Punycode form actually exists and differs from the Unicode name.
+
 ## [0.11.7] - 2026-07-28
 ### Fixed
 - **Domain form's "Domain Manager" panel visual polish, matching the Supplier tab's "Domains" panel conventions**: the ribbon-banner header now sits inset within the card (`m-n2` → `m-2`) instead of touching the full border; "Registrar details" (WHOIS privacy, Transfer lock, Transfer/EPP auth code, Domain lock, Auto-renew, DNSSEC) is now rendered as a `table table-sm` matching the table above it instead of a loose label/value grid, with the Transfer/EPP auth code column moved next to Transfer lock; the Registrar/DNS sync-status footnotes are combined onto a single condensed, muted line instead of three separate full-weight paragraph lines; and the "Set the Registrar via the Financial and administrative information tab" link now only renders when no registrar supplier is assigned, instead of unconditionally.

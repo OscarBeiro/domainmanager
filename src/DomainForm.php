@@ -112,6 +112,7 @@ class DomainForm
             'state'              => $state?->fields,
             'registrar_supplier' => $registrar_supplier,
             'dns_supplier'       => $dns_supplier,
+            'domain_name'        => $item->fields['name'] ?? '',
             'punycode'           => $punycode,
             'status_labels'      => DomainStatusResolver::getStatusLabels(),
             'status_classes'     => DomainStatusResolver::getStatusClasses(),
