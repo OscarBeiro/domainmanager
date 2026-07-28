@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [1.0.0] - 2026-07-28
 ### Fixed
 - **Reimporting a domain that had been moved to the trash created a duplicate `Domain` item instead of restoring the trashed one**: the Import Domains modal's existence check only ever looked at non-deleted domains, so a soft-deleted domain's name was never recognized as "already exists", and every reimport-then-delete cycle piled up another orphaned duplicate carrying none of the tickets/contracts/infocom still linked to the original. The import now also checks for a matching trashed domain and restores it (un-deleting it, reusing its id) instead of creating a new one; if several trashed domains share the same name, the oldest (first ever created) is restored and the rest are left untouched in the trash.
 
