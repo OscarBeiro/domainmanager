@@ -162,10 +162,10 @@ class Installer
                     `is_managed` tinyint NOT NULL DEFAULT '0',
                     `name_ascii` varchar(255) NOT NULL DEFAULT '',
                     `last_rdap_check_date` datetime NULL DEFAULT NULL,
-                    `rdap_last_changed_date` datetime NULL DEFAULT NULL,
-                    `rdap_pending_delete` tinyint NULL DEFAULT NULL,
-                    `rdap_pending_transfer` tinyint NULL DEFAULT NULL,
-                    `rdap_dnssec_signed` tinyint NULL DEFAULT NULL,
+                    `last_changed_date` datetime NULL DEFAULT NULL,
+                    `transfer_date` datetime NULL DEFAULT NULL,
+                    `pending_delete` tinyint NULL DEFAULT NULL,
+                    `pending_transfer` tinyint NULL DEFAULT NULL,
                     `rdap_registrar_name` varchar(255) NULL DEFAULT NULL,
                     `rdap_registrar_iana_id` varchar(32) NULL DEFAULT NULL,
                     `rdap_nameservers` text,
@@ -500,48 +500,93 @@ class Installer
     }
 
     /**
-     * Add the 8 RDAP-enrichment columns to the states table (§9 Phase 21,
+     * Add the RDAP-enrichment columns to the states table (§9 Phases 21-27,
      * `PHASE21_PLAN.md`). Same table `is_managed`/`name_ascii`/the registrar
      * metadata columns already live on — a plugin-only concept with no
      * native `glpi_domains` equivalent, so it belongs on this read-only
-     * state table rather than a new one. All 8 are nullable, all additive,
-     * no changes to existing columns: `null` means "not yet checked via
-     * RDAP" (for the tri-state flags/text fields) or "never checked" (for
-     * `last_rdap_check_date`), the same real, meaningful third state already
-     * established for `registrar_dnssec_enabled` et al. above.
+     * state table rather than a new one.
+     *
+     * §9 Phase 27 revised the naming/storage strategy after review: no
+     * "rdap_" prefix on fields with no ambiguity risk (`last_changed_date`/
+     * `transfer_date`/`pending_delete`/`pending_transfer` — RDAP is simply
+     * this data's *source*, not part of its name, same as e.g.
+     * `registrar_dnssec_enabled` doesn't say which driver reported it), and
+     * Transfer lock/Domain lock/DNSSEC no longer get a parallel `rdap_*`
+     * shadow column at all — RDAP fills the *existing*
+     * `registrar_transfer_lock`/`registrar_domain_lock`/`registrar_dnssec_enabled`
+     * columns directly, only when the driver hasn't already reported a
+     * value (see `RdapGapChecker`/`Cron::processRdapEnrichment()` and
+     * `SyncEngine`'s matching "only touch fields actually reported" fix
+     * below). `rdap_registrar_name`/`rdap_registrar_iana_id`/`rdap_nameservers`
+     * keep the prefix: unlike the fields above, these represent a genuinely
+     * different concept from anything already named "registrar" on this
+     * table (Infocom's Supplier mirror) and dropping the prefix would read
+     * as if they were that same authoritative value (§9 Phase 21
+     * "Registrar-of-record note").
+     *
+     * All nullable, all additive, no changes to existing columns: `null`
+     * means "not yet checked via RDAP" (for the tri-state flags/text
+     * fields) or "never checked" (for `last_rdap_check_date`), the same
+     * real, meaningful third state already established for
+     * `registrar_dnssec_enabled` et al. above.
      *
      * @param  Migration $migration
      * @return void
      */
     private static function addRdapColumns(Migration $migration): void
     {
+        /** @var \DBmysql $DB */
+        global $DB;
+
         $table = 'glpi_plugin_domainmanager_states';
 
         $migration->addField($table, 'last_rdap_check_date', 'datetime', ['value' => null]);
-        $migration->addField($table, 'rdap_last_changed_date', 'datetime', ['value' => null]);
-        $migration->addField($table, 'rdap_pending_delete', 'tinyint NULL DEFAULT NULL');
-        $migration->addField($table, 'rdap_pending_transfer', 'tinyint NULL DEFAULT NULL');
-        $migration->addField($table, 'rdap_dnssec_signed', 'tinyint NULL DEFAULT NULL');
+
+        // §9 Phase 27: renamed away from the "rdap_"-prefixed/shadow-column
+        // naming this feature briefly had (never in a real release, only on
+        // two dev containers). `changeField()`/`addField()` both queue
+        // their ALTER clause purely from the *current* live schema at call
+        // time, with no awareness of each other's pending clauses in the
+        // same run — calling both for the same target column name in one
+        // migration (rename old->new AND add new "if missing") produces a
+        // single ALTER TABLE with two clauses creating the same column,
+        // which MySQL rejects outright. So each of these is an *either/or*,
+        // decided per-instance by checking which name (if either) already
+        // exists: a genuine 1.0.0-vintage install upgrading directly gets
+        // `addField()` (never had either name); a beta install that still
+        // has the old name gets `changeField()` (rename, no data loss); an
+        // install already on the final name (fresh installs via the
+        // CREATE TABLE path above, or an already-upgraded beta) gets
+        // neither — both calls are no-ops once their target/source column
+        // already matches.
+        foreach (
+            [
+                ['rdap_last_changed_date', 'last_changed_date', 'datetime', ['value' => null]],
+                ['rdap_transfer_date', 'transfer_date', 'datetime', ['value' => null]],
+                ['rdap_pending_delete', 'pending_delete', 'tinyint NULL DEFAULT NULL', []],
+                ['rdap_pending_transfer', 'pending_transfer', 'tinyint NULL DEFAULT NULL', []],
+            ] as [$oldfield, $newfield, $type, $options]
+        ) {
+            if ($DB->fieldExists($table, $oldfield, false)) {
+                $migration->changeField($table, $oldfield, $newfield, $type, $options);
+            } else {
+                $migration->addField($table, $newfield, $type, $options);
+            }
+        }
+
         $migration->addField($table, 'rdap_registrar_name', 'varchar(255) NULL DEFAULT NULL');
         $migration->addField($table, 'rdap_registrar_iana_id', 'varchar(32) NULL DEFAULT NULL');
         $migration->addField($table, 'rdap_nameservers', 'text', ['value' => null]);
         $migration->addKey($table, 'last_rdap_check_date');
 
-        // §9 Phase 25: RDAP's `transfer` eventAction (most recent registrar
-        // transfer, distinct from `last changed`, which can be bumped by
-        // any registry-side edit) — same nullable/additive pattern as the
-        // rest of this table, added later than the original 8 columns
-        // above but via the same idempotent `addField()`, so it lands on
-        // both fresh installs and existing ones upgrading past this version.
-        $migration->addField($table, 'rdap_transfer_date', 'datetime', ['value' => null]);
-
-        // §9 Phase 26: dual-source fallback for Transfer lock/Domain lock,
-        // same "driver's own value wins, RDAP fills the gap otherwise"
-        // treatment already given to DNSSEC (`registrar_dnssec_enabled`/
-        // `rdap_dnssec_signed`) — these were parsed by `RdapClient` since
-        // Phase 21 but never actually stored or surfaced anywhere.
-        $migration->addField($table, 'rdap_transfer_lock', 'tinyint NULL DEFAULT NULL');
-        $migration->addField($table, 'rdap_domain_lock', 'tinyint NULL DEFAULT NULL');
+        // Transfer lock/Domain lock/DNSSEC folded into the existing
+        // registrar_transfer_lock/registrar_domain_lock/registrar_dnssec_enabled
+        // columns instead of a parallel rdap_* one (§9 Phase 27) — nothing
+        // to migrate the *values* into (these beta-only columns never held
+        // anything a real user would miss), just drop them if present.
+        $migration->dropField($table, 'rdap_transfer_lock');
+        $migration->dropField($table, 'rdap_domain_lock');
+        $migration->dropField($table, 'rdap_dnssec_signed');
     }
 
     /**

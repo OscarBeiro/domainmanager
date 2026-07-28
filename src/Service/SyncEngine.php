@@ -189,14 +189,41 @@ class SyncEngine
             'dns_message'       => $result['dns_message'],
             'is_managed'        => (int) $is_managed,
             'last_sync_date'    => $now,
-            'registrar_auth_info'       => $result['registrar_auth_info'],
-            'registrar_privacy_enabled' => $result['registrar_privacy_enabled'],
-            'registrar_domain_lock'     => $result['registrar_domain_lock'],
-            'registrar_transfer_lock'   => $result['registrar_transfer_lock'],
-            'registrar_auto_renew'      => $result['registrar_auto_renew'],
-            'registrar_domain_type'     => $result['registrar_domain_type'],
-            'registrar_dnssec_enabled'  => $result['registrar_dnssec_enabled'],
         ];
+
+        // §9 Phase 27: only touch a registrar-metadata field when *this*
+        // sync's registrar leg actually reported a value for it — leave it
+        // untouched (not overwritten with null) otherwise. Previously these
+        // were always included, unconditionally nulling any field the
+        // current driver doesn't support on every single sync; harmless on
+        // its own, but it would silently erase whatever RDAP's gap-fill
+        // (`Cron::processRdapEnrichment()`) had just written into the same
+        // column, since those two write to the exact same
+        // registrar_transfer_lock/registrar_domain_lock/registrar_dnssec_enabled
+        // fields RDAP fills the gap on (§9 Phase 26/27 — no more separate
+        // rdap_* shadow columns for these three). Trade-off accepted: a
+        // value from a previous registrar (or a stale RDAP fill) can now
+        // persist display-wise until something actually overwrites it —
+        // no code path currently resets these to null on registrar
+        // reassignment/unlink either, so this was already the de facto
+        // behavior for every field that isn't part of the reassignment's
+        // own explicit reset logic.
+        foreach (
+            [
+                'registrar_auth_info',
+                'registrar_privacy_enabled',
+                'registrar_domain_lock',
+                'registrar_transfer_lock',
+                'registrar_auto_renew',
+                'registrar_domain_type',
+                'registrar_dnssec_enabled',
+            ] as $field
+        ) {
+            if ($result[$field] !== null) {
+                $state_input[$field] = $result[$field];
+            }
+        }
+
         if ($state !== null) {
             $state->update(['id' => $state->getID()] + $state_input);
         } else {

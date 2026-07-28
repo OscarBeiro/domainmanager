@@ -2597,45 +2597,14 @@ diagnose the original bug).
   `src/Cron.php`).
 - [ ] Pass
 
-## Phase 26 (implemented 2026-07-28) — Transfer/Domain lock RDAP gap-fill, RDAP fields searchable (§9)
+## Phase 26 (implemented 2026-07-28, storage approach superseded same day by Phase 27) — Transfer/Domain lock RDAP gap-fill, RDAP fields searchable (§9)
 
-### 26.1 Transfer lock/Domain lock fall back to RDAP's value when the driver reports nothing
-- **Steps:** compare a domain whose driver reports `registrar_transfer_lock`/
-  `registrar_domain_lock` against one where the driver doesn't (both
-  RDAP-checked at least once).
-- **Expected:** the driver-reporting domain's cells are unaffected (no "via
-  RDAP" marker); the other domain's cells show the RDAP value with the
-  same "via RDAP" tooltip/icon already used for DNSSEC.
-- [ ] Pass
-
-### 26.2 A domain neither the driver nor RDAP reports still shows the muted dash
-- **Steps:** open the Domain form for a domain with no driver value and no
-  RDAP check yet for Transfer lock/Domain lock.
-- **Expected:** both cells show a muted "—" with "Not reported by this
-  driver" tooltip (unchanged from before this phase).
-- [ ] Pass
-
-### 26.3 New search options list and filter correctly
-- **Steps:** Domain search, add each of the 7 new criteria (ids
-  9423-9429: Last changed, Last transfer, Transfer lock (RDAP), Domain
-  lock (RDAP), Pending delete, Pending transfer, DNSSEC (RDAP)).
-- **Expected:** each appears under the "Domain Manager" search-option
-  group, filters/sorts correctly, and returns results independent of
-  whichever value the panel displays for the dual-source fields (e.g.
-  filtering "Transfer lock (RDAP) = Yes" still finds a domain whose panel
-  shows the *driver's* "No" for the plain "Transfer lock" column).
-- [ ] Pass
-
-### 26.4 Migration adds the two new columns on both fresh installs and upgrades
-- **Steps:** run the plugin's migration on a fresh install and on an
-  instance already migrated through Phase 25.
-- **Expected:** `rdap_transfer_lock`/`rdap_domain_lock` (tinyint, nullable)
-  exist on `glpi_plugin_domainmanager_states` in both cases; no error.
-- [ ] Pass
+Superseded: Phase 26 originally added parallel `rdap_transfer_lock`/`rdap_domain_lock` columns with a dual-source display. Phase 27 (below) replaced this with filling the existing `registrar_transfer_lock`/`registrar_domain_lock` columns directly. The regression cases below are folded into Phase 27's.
 
 ### 26.5 No new PHP warnings/notices from this phase
-- **Steps:** after exercising 26.1-26.4, check `/var/glpi/logs/php-errors.log`
-  and `domainmanager-errors.log` for any new entries.
+- **Steps:** after exercising the Phase 27 cases below, check
+  `/var/glpi/logs/php-errors.log` and `domainmanager-errors.log` for any
+  new entries.
 - **Expected:** no new warnings/notices; `php -l` and `phpcs` clean on
   every touched file (`setup.php`, `src/Installer.php`,
   `src/Service/RdapGapChecker.php`, `src/Cron.php`).
@@ -2651,4 +2620,63 @@ diagnose the original bug).
   `grep -rl "new RdapClient" src/` matching only `src/Cron.php`. This is
   deliberate, not an oversight — it protects `rdap.org`'s free-tier rate
   limit from user-triggered bursts (§9 Phase 21-26, §6.3).
+- [ ] Pass
+
+## Phase 27 (implemented 2026-07-28) — Drop "rdap_" naming, fold lock fields into existing columns (§9)
+
+### 27.1 Transfer lock/Domain lock/DNSSEC show one plain value, no dual-source marker
+- **Steps:** compare a domain whose driver reports
+  `registrar_transfer_lock`/`registrar_domain_lock`/`registrar_dnssec_enabled`
+  against one where the driver doesn't (both RDAP-checked at least once).
+- **Expected:** both domains' cells show a plain Yes/No badge with no "via
+  RDAP" marker/icon — the driver-reporting domain shows its own value, the
+  other shows whatever RDAP filled in, visually identical either way.
+- [ ] Pass
+
+### 27.2 A field neither the driver nor RDAP has reported still shows the muted dash
+- **Steps:** open the Domain form for a domain with no driver value and no
+  RDAP check yet for Transfer lock/Domain lock/DNSSEC.
+- **Expected:** the cell shows a muted "—" with a "Not reported" tooltip.
+- [ ] Pass
+
+### 27.3 RDAP's fill survives a later ordinary registrar sync that doesn't report the field
+- **Steps:** let RDAP fill `registrar_dnssec_enabled` (or transfer/domain
+  lock) for a Dinahosting-registered domain (driver doesn't report
+  DNSSEC), then run/trigger a normal registrar sync (cron or "Update Now")
+  for that same domain.
+- **Expected:** the RDAP-filled value is still there after the sync — not
+  reset to "—". This is the regression the `SyncEngine` fix (§9 Phase 27)
+  exists to prevent; before that fix, every ordinary sync unconditionally
+  nulled any field its driver doesn't support.
+- [ ] Pass
+
+### 27.4 New/renamed search options list and filter correctly
+- **Steps:** Domain search, add each of the 4 renamed/new criteria (ids
+  9423, 9424, 9427, 9428: Last changed, Last transfer, Pending delete,
+  Pending transfer), and confirm the existing Transfer lock/Domain
+  lock/DNSSEC options (ids 9418/9420/9422) now also match RDAP-filled
+  values.
+- **Expected:** all filter/sort correctly; no "(RDAP)"-suffixed duplicate
+  options remain for Transfer lock/Domain lock/DNSSEC.
+- [ ] Pass
+
+### 27.5 Migration renames/drops columns correctly on every install path
+- **Steps:** run the plugin's migration (`plugin:install`) against: (a) a
+  genuine 1.0.0-vintage install that never had any RDAP columns, (b) a
+  beta install still on the old `rdap_*` names, (c) a fresh install.
+- **Expected:** all three end up with the same final schema
+  (`last_changed_date`, `transfer_date`, `pending_delete`,
+  `pending_transfer`, no `rdap_transfer_lock`/`rdap_domain_lock`/
+  `rdap_dnssec_signed`) — no "Duplicate column name" SQL error on any path
+  (confirmed live against `glpi_glpi_1`: the first migration attempt hit
+  exactly this error before the `$DB->fieldExists()`-gated fix).
+- [ ] Pass
+
+### 27.6 No new PHP warnings/notices from this phase
+- **Steps:** after exercising 27.1-27.5, check `/var/glpi/logs/php-errors.log`
+  and `domainmanager-errors.log` for any new entries.
+- **Expected:** no new warnings/notices; `php -l` and `phpcs` clean on
+  every touched file (`setup.php`, `src/Installer.php`,
+  `src/Service/RdapGapChecker.php`, `src/Cron.php`,
+  `src/Service/SyncEngine.php`, `templates/domain_panel.html.twig`).
 - [ ] Pass

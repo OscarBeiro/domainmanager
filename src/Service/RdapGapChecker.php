@@ -49,6 +49,16 @@ use GlpiPlugin\Domainmanager\DomainState;
  * successful lookup regardless of prior value, so they must never be the
  * sole reason a domain is considered "still has a gap" (that would make
  * every already-fully-enriched domain eligible forever).
+ *
+ * §9 Phase 27: Transfer lock/Domain lock/DNSSEC no longer have a separate
+ * `rdap_*` column — RDAP fills the *same* `registrar_transfer_lock`/
+ * `registrar_domain_lock`/`registrar_dnssec_enabled` columns the driver
+ * itself writes to, only when the driver hasn't already reported a value.
+ * This only works because `SyncEngine` was changed in the same phase to
+ * leave a registrar-metadata field untouched (rather than overwriting it
+ * with `null`) when the current sync's driver doesn't report it — without
+ * that fix, the very next registrar sync would silently erase whatever
+ * RDAP had just filled in.
  */
 class RdapGapChecker
 {
@@ -92,39 +102,30 @@ class RdapGapChecker
 
         $state = DomainState::getForDomain($domains_id);
 
-        if ($state === null || self::isEmptyDate($state->fields['rdap_last_changed_date'] ?? null)) {
+        if ($state === null || self::isEmptyDate($state->fields['last_changed_date'] ?? null)) {
             $gaps[] = self::GAP_LAST_CHANGED;
         }
-        if ($state === null || self::isEmptyDate($state->fields['rdap_transfer_date'] ?? null)) {
+        if ($state === null || self::isEmptyDate($state->fields['transfer_date'] ?? null)) {
             $gaps[] = self::GAP_TRANSFER_DATE;
         }
-        if ($state === null || $state->fields['rdap_pending_delete'] === null) {
+        if ($state === null || $state->fields['pending_delete'] === null) {
             $gaps[] = self::GAP_PENDING_DELETE;
         }
-        if ($state === null || $state->fields['rdap_pending_transfer'] === null) {
+        if ($state === null || $state->fields['pending_transfer'] === null) {
             $gaps[] = self::GAP_PENDING_TRANSFER;
         }
 
-        // DNSSEC has two possible sources: the registrar driver may already
-        // report it (registrar_dnssec_enabled), in which case RDAP would
-        // only duplicate a known value — only a gap when neither source has it.
-        $driverReportsDnssec = $state !== null && $state->fields['registrar_dnssec_enabled'] !== null;
-        $rdapHasDnssec       = $state !== null && $state->fields['rdap_dnssec_signed'] !== null;
-        if (!$driverReportsDnssec && !$rdapHasDnssec) {
+        // §9 Phase 27: Transfer lock/Domain lock/DNSSEC are gap-filled
+        // directly into the existing registrar_* column (no separate
+        // rdap_* shadow column anymore) — a gap only when the driver
+        // itself hasn't already reported a value there.
+        if ($state === null || $state->fields['registrar_dnssec_enabled'] === null) {
             $gaps[] = self::GAP_DNSSEC;
         }
-
-        // §9 Phase 26: same dual-source rule as DNSSEC above, for
-        // Transfer lock/Domain lock.
-        $driverReportsTransferLock = $state !== null && $state->fields['registrar_transfer_lock'] !== null;
-        $rdapHasTransferLock       = $state !== null && $state->fields['rdap_transfer_lock'] !== null;
-        if (!$driverReportsTransferLock && !$rdapHasTransferLock) {
+        if ($state === null || $state->fields['registrar_transfer_lock'] === null) {
             $gaps[] = self::GAP_TRANSFER_LOCK;
         }
-
-        $driverReportsDomainLock = $state !== null && $state->fields['registrar_domain_lock'] !== null;
-        $rdapHasDomainLock       = $state !== null && $state->fields['rdap_domain_lock'] !== null;
-        if (!$driverReportsDomainLock && !$rdapHasDomainLock) {
+        if ($state === null || $state->fields['registrar_domain_lock'] === null) {
             $gaps[] = self::GAP_DOMAIN_LOCK;
         }
 

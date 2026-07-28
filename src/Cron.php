@@ -350,25 +350,29 @@ class Cron
         $state_input = ['last_rdap_check_date' => $now];
 
         if (in_array(RdapGapChecker::GAP_LAST_CHANGED, $gaps, true) && $result->lastChangedDate !== null) {
-            $state_input['rdap_last_changed_date'] = $result->lastChangedDate->format('Y-m-d H:i:s');
+            $state_input['last_changed_date'] = $result->lastChangedDate->format('Y-m-d H:i:s');
         }
         if (in_array(RdapGapChecker::GAP_TRANSFER_DATE, $gaps, true) && $result->transferDate !== null) {
-            $state_input['rdap_transfer_date'] = $result->transferDate->format('Y-m-d H:i:s');
+            $state_input['transfer_date'] = $result->transferDate->format('Y-m-d H:i:s');
         }
         if (in_array(RdapGapChecker::GAP_PENDING_DELETE, $gaps, true) && $result->pendingDelete !== null) {
-            $state_input['rdap_pending_delete'] = (int) $result->pendingDelete;
+            $state_input['pending_delete'] = (int) $result->pendingDelete;
         }
         if (in_array(RdapGapChecker::GAP_PENDING_TRANSFER, $gaps, true) && $result->pendingTransfer !== null) {
-            $state_input['rdap_pending_transfer'] = (int) $result->pendingTransfer;
+            $state_input['pending_transfer'] = (int) $result->pendingTransfer;
         }
+        // §9 Phase 27: fills the same column the driver itself writes to
+        // (SyncEngine now leaves it untouched, rather than nulling it,
+        // when its own sync doesn't report a value — see SyncEngine's
+        // docblock addendum) instead of a separate rdap_* shadow column.
         if (in_array(RdapGapChecker::GAP_DNSSEC, $gaps, true) && $result->dnssecSigned !== null) {
-            $state_input['rdap_dnssec_signed'] = (int) $result->dnssecSigned;
+            $state_input['registrar_dnssec_enabled'] = (int) $result->dnssecSigned;
         }
         if (in_array(RdapGapChecker::GAP_TRANSFER_LOCK, $gaps, true) && $result->transferLock !== null) {
-            $state_input['rdap_transfer_lock'] = (int) $result->transferLock;
+            $state_input['registrar_transfer_lock'] = (int) $result->transferLock;
         }
         if (in_array(RdapGapChecker::GAP_DOMAIN_LOCK, $gaps, true) && $result->domainLock !== null) {
-            $state_input['rdap_domain_lock'] = (int) $result->domainLock;
+            $state_input['registrar_domain_lock'] = (int) $result->domainLock;
         }
 
         // §9 Phase 22 "Registrar-of-record and nameserver fields are
