@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.7] - 2026-07-28
+### Fixed
+- **Domain form's "Domain Manager" panel visual polish, matching the Supplier tab's "Domains" panel conventions**: the ribbon-banner header now sits inset within the card (`m-n2` → `m-2`) instead of touching the full border; "Registrar details" (WHOIS privacy, Transfer lock, Transfer/EPP auth code, Domain lock, Auto-renew, DNSSEC) is now rendered as a `table table-sm` matching the table above it instead of a loose label/value grid, with the Transfer/EPP auth code column moved next to Transfer lock; the Registrar/DNS sync-status footnotes are combined onto a single condensed, muted line instead of three separate full-weight paragraph lines; and the "Set the Registrar via the Financial and administrative information tab" link now only renders when no registrar supplier is assigned, instead of unconditionally.
+
 ## [0.11.6] - 2026-07-27
 ### Added
 - **Five new searchable/sortable fields on the native Supplier search page** (Phase 16 "Supplier-side searchable fields"), modeled on core's own Ticket-task "Description" + "Number of tasks" pairing: "Registrar" and "NS Provider" show the actual clickable domain names (not just a count) for which the Supplier holds that role, each paired with a "Number of domains (Registrar)"/"Number of domains (NS Provider)" count field for quick sorting; plus "Domains", a combined count across both roles. Lets a Supplier list be filtered/sorted down to e.g. "only suppliers actually used as a registrar" or browsed to see exactly which domains, without opening each Supplier's own tab. See `search-options-registry.json` (ids 9411-9415) and `ARCHITECTURE.md` §9 Phase 16.
