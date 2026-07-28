@@ -83,7 +83,7 @@ class ConnectionTestController extends AbstractController
 
         $config      = SupplierConfig::getForSupplier($suppliers_id);
         $submitted   = $request->request->all('_credentials');
-        $credentials = $this->mergeCredentials($driver, is_array($submitted) ? $submitted : [], $config);
+        $credentials = $this->mergeCredentials($driver, $submitted, $config);
 
         try {
             $driver_instance = DriverFactory::createDriver($driver, $credentials);

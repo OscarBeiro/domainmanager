@@ -25,6 +25,26 @@ parameters:
         - '/Access to (property \$\w+|constant \w+) on an unknown class (GlpiPlugin(\\\w+)+|Plugin\w+)/'
         - '/PHPDoc tag \@var for variable \$\w+ contains unknown class (GlpiPlugin(\\\w+)+|Plugin\w+)/'
         - '/Static method (GlpiPlugin(\\\w+)+|Plugin\w+).* is unused/'
+        -
+            # PermissionControlRule matches any file whose name ends in
+            # "Config.php" and demands $rightname = 'config' — a filename
+            # heuristic, not itemtype-aware. SupplierConfig is per-supplier
+            # API credentials, not the plugin's own config screen; its
+            # rightname is correctly 'contact_enterprise' (mirrors
+            # Supplier's own permission, since editing a supplier's API
+            # access requires the right to edit that supplier).
+            message: '/The class in Config\.php or config\.class\.php must have the \$rightname attribute set to "config"\./'
+            path: src/SupplierConfig.php
+        -
+            # GLPIKey::decrypt()'s real signature (src/GLPIKey.php, confirmed
+            # against the running 11.0.8 image) is `?string decrypt(?string
+            # $string, ?string $key = null)` — genuinely nullable. PHPStan's
+            # bundled stub for this method disagrees and is treated as
+            # certain, making this real null-guard look like dead code. Kept
+            # in the app code (removing it would be wrong against the actual
+            # core behavior), just silenced here.
+            message: '/Strict comparison using === between string and null will always evaluate to false\./'
+            path: src/SupplierConfig.php
     reportUnmatchedIgnoredErrors: false
 rules:
     - GlpiProject\Tools\PHPStan\Rules\GlobalVarTypeRule

@@ -46,6 +46,11 @@ use Throwable;
 
 class Cron
 {
+    // Setup > Automatic actions gates configuring a third-party cron task's
+    // frequency/parameters on this right — 'config' matches every other
+    // plugin's own cron itemtype and core's own convention.
+    public static $rightname = 'config';
+
     // §9 Phase 22: how many never-/oldest-checked candidates to scan per
     // tick looking for one with an actual gap (RdapGapChecker) before
     // giving up as a clean no-op — bounded so a portfolio consisting

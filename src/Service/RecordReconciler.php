@@ -90,7 +90,7 @@ class RecordReconciler
      *
      * @param  Domain       $domain
      * @param  ZoneRecord[] $records upstream snapshot
-     * @return array{added: int, updated: int, restored: int, stale: int, unchanged: int}
+     * @return array{added: int, updated: int, restored: int, trashed: int, unchanged: int}
      */
     public function reconcile(Domain $domain, array $records): array
     {

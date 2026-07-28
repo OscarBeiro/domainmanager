@@ -86,7 +86,7 @@ class DomainImportController extends AbstractController
         $submitted    = $request->request->all('_import');
         $entities_id  = (int) $request->request->get('entities_id', 0);
         $names        = [];
-        foreach (is_array($submitted) ? $submitted : [] as $name) {
+        foreach ($submitted as $name) {
             $name = trim((string) $name);
             if ($name !== '') {
                 $names[DomainDiscoveryMatcher::normalize($name)] = $name;

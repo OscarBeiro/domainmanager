@@ -137,7 +137,7 @@ final class Config extends CommonGLPI
     /**
      * {@inheritDoc}
      */
-    public function getTabNameForItem(CommonGLPI $item, $withtemplate = 0): string|array
+    public function getTabNameForItem(CommonGLPI $item, $withtemplate = 0): string
     {
         if ($item instanceof CoreConfig && Session::haveRight(self::$rightname, UPDATE)) {
             return self::createTabEntry(self::getTypeName());
