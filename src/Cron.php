@@ -33,6 +33,7 @@ namespace GlpiPlugin\Domainmanager;
 
 use CronTask;
 use Domain;
+use Dropdown;
 use GlpiPlugin\Domainmanager\Dto\RdapLookupResult;
 use GlpiPlugin\Domainmanager\Exception\DriverException;
 use GlpiPlugin\Domainmanager\Service\PluginLogger;
@@ -40,6 +41,7 @@ use GlpiPlugin\Domainmanager\Service\RdapClient;
 use GlpiPlugin\Domainmanager\Service\RdapGapChecker;
 use GlpiPlugin\Domainmanager\Service\SyncEngine;
 use GlpiPlugin\Domainmanager\Service\SyncLogger;
+use Supplier;
 use Throwable;
 
 class Cron
@@ -90,7 +92,7 @@ class Cron
         $batch_size = max(1, (int) ($task->fields['param'] ?? 20));
 
         $iterator = $DB->request([
-            'SELECT'    => 'glpi_domains.id',
+            'SELECT'    => ['glpi_domains.id', 'glpi_domains.entities_id'],
             'FROM'      => 'glpi_domains',
             'LEFT JOIN' => [
                 DomainState::getTable() => [
@@ -114,10 +116,22 @@ class Cron
         $processed = 0;
         $errors    = 0;
 
+        // §9 Phase 24: same per-entity breakdown convention as core's own
+        // cron tasks (e.g. "close tickets"), plus a per-registrar-supplier
+        // breakdown on top — extra debugging value specific to this plugin,
+        // since a bad sync run is as likely to be one misbehaving supplier's
+        // API as an entity-wide problem.
+        $per_entity   = [];
+        $per_supplier = [];
+
         foreach ($iterator as $row) {
+            $domains_id  = (int) $row['id'];
+            $entities_id = (int) $row['entities_id'];
+            $is_error    = false;
+
             try {
                 $domain = new Domain();
-                if (!$domain->getFromDB((int) $row['id'])) {
+                if (!$domain->getFromDB($domains_id)) {
                     continue;
                 }
                 $result = $engine->sync($domain);
@@ -126,24 +140,66 @@ class Cron
                     || $result['dns_status'] === DomainState::STATUS_ERROR
                 ) {
                     $errors++;
+                    $is_error = true;
                 }
             } catch (Throwable $e) {
                 $errors++;
+                $is_error = true;
                 $logger->detail(
-                    'Cron sync failed for domain #' . $row['id'] . ': ' . $e::class . ': ' . $e->getMessage()
+                    'Cron sync failed for domain #' . $domains_id . ': ' . $e::class . ': ' . $e->getMessage()
                 );
             }
+
+            self::tally($per_entity, $entities_id, $is_error);
+            $state = DomainState::getForDomain($domains_id);
+            if ($state !== null && (int) $state->fields['registrar_suppliers_id'] > 0) {
+                self::tally($per_supplier, (int) $state->fields['registrar_suppliers_id'], $is_error);
+            }
+
             $processed++;
             $task->addVolume(1);
         }
 
         if ($processed > 0) {
             $task->log(sprintf('Synchronized %d domain(s), %d with errors', $processed, $errors));
+            foreach ($per_entity as $entities_id => $tally) {
+                $task->log(sprintf(
+                    '%s: %d domain(s) synchronized (%d error(s))',
+                    Dropdown::getDropdownName('glpi_entities', $entities_id),
+                    $tally['count'],
+                    $tally['errors']
+                ));
+            }
+            foreach ($per_supplier as $suppliers_id => $tally) {
+                $task->log(sprintf(
+                    'Registrar %s: %d domain(s) synchronized (%d error(s))',
+                    Dropdown::getDropdownName(Supplier::getTable(), $suppliers_id),
+                    $tally['count'],
+                    $tally['errors']
+                ));
+            }
             return 1;
         }
 
         $task->log('No active domain to synchronize');
         return 0;
+    }
+
+    /**
+     * @param  array<int, array{count:int, errors:int}> $tallies
+     * @param  int                                       $key
+     * @param  bool                                      $is_error
+     * @return void
+     */
+    private static function tally(array &$tallies, int $key, bool $is_error): void
+    {
+        if (!isset($tallies[$key])) {
+            $tallies[$key] = ['count' => 0, 'errors' => 0];
+        }
+        $tallies[$key]['count']++;
+        if ($is_error) {
+            $tallies[$key]['errors']++;
+        }
     }
 
     /**
@@ -166,7 +222,7 @@ class Cron
         $today = date('Y-m-d');
 
         $iterator = $DB->request([
-            'SELECT'    => ['glpi_domains.id', 'glpi_domains.name'],
+            'SELECT'    => ['glpi_domains.id', 'glpi_domains.name', 'glpi_domains.entities_id'],
             'FROM'      => 'glpi_domains',
             'LEFT JOIN' => [
                 DomainState::getTable() => [
@@ -196,17 +252,37 @@ class Cron
                 continue;
             }
 
+            $outcome = 'no data (TLD/domain not covered)';
             try {
-                self::processRdapEnrichment($domains_id, (string) $row['name'], $client);
+                $outcome = self::processRdapEnrichment($domains_id, (string) $row['name'], $client);
             } catch (Throwable $e) {
+                $outcome = 'error: ' . $e::class . ': ' . $e->getMessage();
                 PluginLogger::error(
                     'RDAP enrichment failed for domain #' . $domains_id,
                     $e::class . ': ' . $e->getMessage()
                 );
             }
 
+            // §9 Phase 24: same per-entity/per-registrar debugging
+            // convention added to cronDomainSync — even though this task
+            // only ever touches one domain per tick, naming its entity and
+            // registrar here (rather than just an id) makes the automatic
+            // action's log immediately useful without cross-referencing
+            // the domain record.
+            $state        = DomainState::getForDomain($domains_id);
+            $supplier_name = ($state !== null && (int) $state->fields['registrar_suppliers_id'] > 0)
+                ? Dropdown::getDropdownName(Supplier::getTable(), (int) $state->fields['registrar_suppliers_id'])
+                : __('no registrar', 'domainmanager');
+
             $task->addVolume(1);
-            $task->log('Processed RDAP enrichment for domain #' . $domains_id);
+            $task->log(sprintf(
+                '%s: domain #%d (%s), registrar %s — %s',
+                Dropdown::getDropdownName('glpi_entities', (int) $row['entities_id']),
+                $domains_id,
+                $row['name'],
+                $supplier_name,
+                $outcome
+            ));
             return 1;
         }
 
@@ -223,12 +299,14 @@ class Cron
      * @param  int         $domains_id
      * @param  string      $fqdn
      * @param  RdapClient  $client
-     * @return void
+     * @return string a short human-readable outcome, for the cron task's own log
+     *         ({@see self::cronRdapEnrichment}) — distinct from PluginLogger's
+     *         file-based activity log, which still gets its own line either way
      * @throws DriverException on a genuine lookup failure (network error,
      *         non-404 non-2xx, unparsable body) — caller logs to
      *         domainmanager-errors.log, distinct from the 404 no-data case
      */
-    private static function processRdapEnrichment(int $domains_id, string $fqdn, RdapClient $client): void
+    private static function processRdapEnrichment(int $domains_id, string $fqdn, RdapClient $client): string
     {
         $state    = DomainState::getForDomain($domains_id);
         $isFirst  = $state === null || $state->fields['last_rdap_check_date'] === null;
@@ -239,7 +317,7 @@ class Cron
         if (!$result->found) {
             self::upsertState($domains_id, $state, ['last_rdap_check_date' => $now]);
             PluginLogger::activity('RDAP: no data for domain #' . $domains_id . ' (' . $fqdn . '), TLD/domain not covered');
-            return;
+            return 'no data (TLD/domain not covered)';
         }
 
         $gaps = RdapGapChecker::getGaps($domains_id);
@@ -307,6 +385,12 @@ class Cron
                 'RDAP notices for domain #' . $domains_id . ' (' . $fqdn . '): ' . implode(' | ', $result->notices)
             );
         }
+
+        $filled = array_values(array_diff(array_keys($state_input), ['last_rdap_check_date']));
+
+        return $filled === []
+            ? 'no new data from RDAP'
+            : 'filled ' . implode(', ', $filled);
     }
 
     /**

@@ -2518,3 +2518,40 @@ diagnose the original bug).
   at [time]" with a real count and timestamp; before any run has ever
   happened, shows "…none processed yet" instead.
 - [ ] Pass
+
+## Phase 24 (implemented 2026-07-28) — Richer automatic-action logs (§9)
+
+### 24.1 DomainSync log shows a per-entity breakdown
+- **Steps:** run the DomainSync task against domains spanning at least
+  two entities, then check Setup > Automatic actions > DomainSync > Logs
+  for that run.
+- **Expected:** the log description has the overall "Synchronized N
+  domain(s), M with errors" line, plus one line per entity actually
+  touched, each naming the entity and its own count/error total.
+- [ ] Pass
+
+### 24.2 DomainSync log shows a per-registrar-supplier breakdown
+- **Steps:** same run as 24.1, with domains spanning at least two
+  registrar Suppliers.
+- **Expected:** one additional log line per registrar Supplier touched
+  ("Registrar X: N domain(s) synchronized (M error(s))"); a domain with
+  no registrar assigned is excluded from this breakdown (not a bogus "no
+  registrar" line).
+- [ ] Pass
+
+### 24.3 RdapEnrichment log names the entity, registrar, and outcome for the single domain processed
+- **Steps:** run RdapEnrichment against a domain with a real gap and a
+  registrar assigned, then check its log line for that run.
+- **Expected:** one line reading `<Entity>: domain #<id> (<name>),
+  registrar <Supplier> — filled <fields...>` (or "no registrar" if none
+  assigned, or "no new data from RDAP"/"no data (TLD/domain not covered)"
+  for those outcomes) — not just a bare "Processed RDAP enrichment for
+  domain #<id>".
+- [ ] Pass
+
+### 24.4 No new PHP warnings/notices from this phase
+- **Steps:** after exercising 24.1-24.3, check `/var/glpi/logs/php-errors.log`
+  and `domainmanager-errors.log` for any new entries.
+- **Expected:** no new warnings/notices; `php -l` and `phpcs` clean on
+  `src/Cron.php`.
+- [ ] Pass

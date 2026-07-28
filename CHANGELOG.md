@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Registrar details block now surfaces RDAP-only fields**: "Pending delete" and "Pending transfer" columns (no driver reports these), and the existing DNSSEC column falls back to RDAP's value with a "via RDAP" marker when the driver itself reports nothing.
 - **RDAP cross-check sub-panel** on the Domain form: a registrar-of-record mismatch badge (RDAP's reported registrar vs. the Infocom Supplier on file) and a nameserver mismatch badge (RDAP's reported nameservers vs. a live lookup), each shown only when they actually disagree.
 - **Config page**: a status line showing how many domains are still pending RDAP enrichment and when the cron last processed one.
+- **Richer automatic-action logs (§9 Phase 24)**: both `DomainSync` and `RdapEnrichment` now log a per-entity breakdown (matching core's own "close tickets" cron convention) plus a per-registrar-supplier breakdown, instead of a single bare count — a bad run now shows which entity/supplier it's concentrated in without opening individual domain records. The single-domain-per-tick `RdapEnrichment` task names that domain's entity, registrar, and a short outcome summary (which fields it filled, or why it didn't) in its one log line.
 
 ## [1.0.0] - 2026-07-28
 ### Fixed
