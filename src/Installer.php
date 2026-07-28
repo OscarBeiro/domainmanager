@@ -67,6 +67,7 @@ class Installer
         self::addRecordProxiedColumn($migration);
         self::addDomainManagedColumn($migration);
         self::addNameAsciiColumn($migration);
+        self::clearDuplicateNameAscii();
         self::pruneStaleSearchOptionCriteria();
         self::seedDomainType();
         self::seedRecordTypes();
@@ -266,6 +267,42 @@ class Installer
     }
 
     /**
+     * Every install between `addNameAsciiColumn()` shipping and this fix
+     * backfilled/wrote `name_ascii` unconditionally from
+     * `IdnNormalizer::toAscii()`, which Punycode-encodes a plain-ASCII
+     * domain to itself — so every non-IDN domain's `name_ascii` duplicated
+     * `glpi_domains.name`, making the "Punycode name" search option match
+     * (and therefore fail to *filter*) every domain rather than just real
+     * IDN ones (§9 Phase 17 addendum "Punycode name duplicates the domain
+     * name"). One-time cleanup, idempotent (a no-op once no row's
+     * `name_ascii` still equals its Domain's `name`): re-derives nothing,
+     * just blanks out the rows `addNameAsciiColumn()`/`HookHandler::
+     * domainSaved()` would no longer write that value for today.
+     *
+     * @return void
+     */
+    private static function clearDuplicateNameAscii(): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $table = 'glpi_plugin_domainmanager_states';
+        if (!$DB->fieldExists($table, 'name_ascii', false)) {
+            return;
+        }
+
+        $DB->update(
+            $table,
+            ['name_ascii' => ''],
+            [
+                'name_ascii' => new \QueryExpression(
+                    '(SELECT `name` FROM `glpi_domains` WHERE `glpi_domains`.`id` = `' . $table . '`.`domains_id`)'
+                ),
+            ]
+        );
+    }
+
+    /**
      * Add the 7 registrar administrative-metadata columns to the states
      * table (§9 Phase 7). These are plugin-only concepts with no native
      * `glpi_domains` equivalent (unlike `date_domaincreation`/
@@ -429,7 +466,14 @@ class Installer
 
         foreach ($iterator as $row) {
             $domains_id = (int) $row['id'];
-            $name_ascii = IdnNormalizer::toAscii((string) $row['name']);
+            $name       = (string) $row['name'];
+            $name_ascii = IdnNormalizer::toAscii($name);
+            // Same "distinct value only" rule as HookHandler::domainSaved()
+            // — a plain-ASCII domain Punycode-encodes to itself, so leave
+            // it empty rather than backfilling a duplicate of the name.
+            if ($name_ascii === $name) {
+                $name_ascii = '';
+            }
 
             $state = DomainState::getForDomain($domains_id);
             if ($state !== null) {

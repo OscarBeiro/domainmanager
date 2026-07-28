@@ -177,6 +177,14 @@ class HookHandler
 
         $name       = (string) ($domain->fields['name'] ?? '');
         $name_ascii = $name !== '' ? IdnNormalizer::toAscii($name) : '';
+        // A domain with no Unicode characters Punycode-encodes to itself —
+        // storing that identical value would make every plain-ASCII domain
+        // match on the "Punycode name" search option too, so this field
+        // only ever holds a *distinct* value, on genuine IDN domains
+        // (§9 Phase 17 addendum "Punycode name duplicates the domain name").
+        if ($name_ascii === $name) {
+            $name_ascii = '';
+        }
 
         $state = DomainState::getForDomain($domains_id);
         if ($state !== null) {
