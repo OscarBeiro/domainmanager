@@ -170,16 +170,6 @@
                             </div>
                         {% endfor %}
                         <div class="mb-2 col-12 col-sm-4">
-                            <label class="form-label mb-0">{{ __('Domain type', 'domainmanager') }}</label>
-                            <div>
-                                {% if state.registrar_domain_type %}
-                                    {{ domain_type_labels[state.registrar_domain_type]|default(state.registrar_domain_type) }}
-                                {% else %}
-                                    <span class="text-muted">{{ __('Not reported by this driver', 'domainmanager') }}</span>
-                                {% endif %}
-                            </div>
-                        </div>
-                        <div class="mb-2 col-12 col-sm-4">
                             <label class="form-label mb-0">{{ __('Transfer / EPP auth code', 'domainmanager') }}</label>
                             <div>
                                 {% if state.registrar_auth_info %}

@@ -120,31 +120,7 @@ class DomainForm
             'repository_url'     => PLUGIN_DOMAINMANAGER_REPOSITORY_URL,
             'locked_fields'      => $locked_fields,
             'provider_unknown'   => NsProviderRegistry::PROVIDER_UNKNOWN,
-            'domain_type_labels' => self::getDomainTypeLabels(),
         ]);
-    }
-
-    /**
-     * Cosmetic-only formatting for the raw `domainType` values a registrar
-     * driver may report (§9 Phase 7) — currently only IONOS's own
-     * `domainLarge.domainType` enum (`DOMAIN`/`X_DOMAIN`/`GENERIC_DOMAIN`).
-     * IONOS's spec names these values but never documents what
-     * distinguishes them, so this deliberately does not invent a meaning
-     * for `X_DOMAIN`/`GENERIC_DOMAIN` — it only title-cases the raw value
-     * for readability (`X_DOMAIN` -> "X Domain"). An unrecognized value
-     * from a future driver still displays via the same fallback.
-     *
-     * @return array<string, string>
-     */
-    private static function getDomainTypeLabels(): array
-    {
-        $values = ['DOMAIN', 'X_DOMAIN', 'GENERIC_DOMAIN'];
-        $labels = [];
-        foreach ($values as $value) {
-            $labels[$value] = ucwords(strtolower(str_replace('_', ' ', $value)));
-        }
-
-        return $labels;
     }
 
 }
