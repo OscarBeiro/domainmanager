@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-07-28
+### Added
+- **Search options for the remaining registrar administrative-metadata fields on Domain** (ids 9417-9422): WHOIS privacy, transfer lock, domain lock, auto-renew and DNSSEC are now filterable/sortable bool fields, matching the fields already shown on the domain panel's "Registrar details" table. The Transfer/EPP auth code is filterable only via "is empty" — the raw value is never shown in search results or criteria, mirroring the panel's own "On file"/"Not on file" masking.
+### Fixed
+- **"Punycode name" search option matched every domain, not just IDN ones**: `name_ascii` was always populated from `IdnNormalizer::toAscii()`, which encodes a plain-ASCII domain to itself, so every non-IDN domain's cached value duplicated its real name and always matched, making the field useless as a filter. Now only genuinely distinct (real IDN) encodings are stored, with a one-time migration clearing the duplicate values already backfilled on existing installs.
+
 ## [0.11.9] - 2026-07-28
 ### Changed
 - **Domain form panel: redesigned the domain identity header** (§9 Phase 17) — the Unicode domain name (19px/500, not a link) now carries a small "IDN" badge when a distinct Punycode form exists; the Punycode form itself renders on its own muted/monospace line with an icon-only copy-to-clipboard button (reusing GLPI 11 core's own `data-glpi-clipboard-text` delegated handler, no new JS); and two labelled outline buttons, "Visit" and "WHOIS" (linking to who.is), replace the previous plain side-by-side links. Pure-ASCII domains show only the name line. Also replaced the repeated "Not reported by this driver"/"Not on file" text in the Registrar details table with a muted em-dash carrying the same text as a tooltip, so populated values stand out more.
