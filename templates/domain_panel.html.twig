@@ -52,9 +52,6 @@
                 <div>
                     <div style="font-size: 19px; font-weight: 500;">
                         {{ domain_name }}
-                        {% if punycode %}
-                            <span class="badge text-bg-info ms-1">{{ __('IDN', 'domainmanager') }}</span>
-                        {% endif %}
                     </div>
                     {% if punycode %}
                         <div class="text-muted small">
@@ -76,6 +73,11 @@
                        class="btn btn-sm btn-outline-secondary">
                         <i class="ti ti-search me-1"></i>{{ __('WHOIS', 'domainmanager') }}
                     </a>
+                    {% if registrar_supplier and can_update %}
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="domainmanager-unlink-registrar" title="{{ __('Unlink registrar', 'domainmanager') }}">
+                            <i class="ti ti-unlink me-1"></i>{{ __('Unlink registrar', 'domainmanager') }}
+                        </button>
+                    {% endif %}
                 </div>
             </div>
             <table class="table table-sm mb-0">
@@ -93,11 +95,6 @@
                         <td>
                             {% if registrar_supplier %}
                                 <a href="{{ registrar_supplier.getLinkURL() ~ supplier_tab_forcetab }}">{{ registrar_supplier.getName() }}</a>
-                                {% if can_update %}
-                                    <button type="button" class="btn btn-sm btn-outline-secondary ms-1 p-1" id="domainmanager-unlink-registrar" title="{{ __('Unlink registrar', 'domainmanager') }}">
-                                        <i class="ti ti-unlink"></i>
-                                    </button>
-                                {% endif %}
                             {% else %}
                                 <span class="text-muted">{{ __('No registrar supplier set', 'domainmanager') }}</span>
                             {% endif %}
