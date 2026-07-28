@@ -120,7 +120,7 @@ class MassiveActionHandler
                     $ma->itemDone(Domain::class, $id, MassiveAction::ACTION_KO);
                     $ma->addMessage(sprintf(
                         __('Sync reported an error for %s — see the plugin error log', 'domainmanager'),
-                        $domain->getName()
+                        $domain->getName(),
                     ));
                 } elseif ($has_inactive_supplier) {
                     // Not a failure — a deliberate skip (§addendum "Skip
@@ -129,7 +129,7 @@ class MassiveActionHandler
                     $ma->itemDone(Domain::class, $id, MassiveAction::ACTION_KO);
                     $ma->addMessage(sprintf(
                         __('Skipped %s — resolved supplier is inactive', 'domainmanager'),
-                        $domain->getName()
+                        $domain->getName(),
                     ));
                 } else {
                     $ma->itemDone(Domain::class, $id, MassiveAction::ACTION_OK);
@@ -138,7 +138,7 @@ class MassiveActionHandler
                 $ma->itemDone(Domain::class, $id, MassiveAction::ACTION_KO);
                 $ma->addMessage(sprintf(
                     __('Sync failed unexpectedly for %s — see the plugin error log', 'domainmanager'),
-                    $domain->getName()
+                    $domain->getName(),
                 ));
             }
         }

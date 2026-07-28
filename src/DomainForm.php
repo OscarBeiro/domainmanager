@@ -176,8 +176,8 @@ class DomainForm
     private static function normalizeNsList(array $hosts): array
     {
         $normalized = array_map(
-            static fn ($host) => strtolower(rtrim(trim((string) $host), '.')),
-            $hosts
+            static fn($host) => strtolower(rtrim(trim((string) $host), '.')),
+            $hosts,
         );
         $normalized = array_values(array_unique($normalized));
         sort($normalized);
@@ -201,7 +201,7 @@ class DomainForm
      */
     private static function registrarNamesLikelyMatch(string $rdap_name, string $supplier_name): bool
     {
-        $normalize = static fn (string $value): string => strtolower(preg_replace('/[^a-z0-9]/i', '', $value) ?? '');
+        $normalize = static fn(string $value): string => strtolower(preg_replace('/[^a-z0-9]/i', '', $value) ?? '');
 
         $rdap_normalized     = $normalize($rdap_name);
         $supplier_normalized = $normalize($supplier_name);

@@ -82,7 +82,7 @@ class RdapClient
 
         if ($status < 200 || $status >= 300) {
             throw new DriverException(
-                sprintf(__('RDAP lookup failed: HTTP %d', 'domainmanager'), $status)
+                sprintf(__('RDAP lookup failed: HTTP %d', 'domainmanager'), $status),
             );
         }
 
@@ -120,7 +120,7 @@ class RdapClient
 
         // IANA RDAP status registry values are lowercase, space-separated
         // strings (e.g. "client transfer prohibited"), not camelCase.
-        $hasStatus = static fn (string $value): bool => in_array($value, $status, true);
+        $hasStatus = static fn(string $value): bool => in_array($value, $status, true);
 
         $transferLock = $hasStatus('client transfer prohibited') || $hasStatus('server transfer prohibited')
             ? true
@@ -137,7 +137,7 @@ class RdapClient
             : null;
 
         [$registrarName, $registrarIanaId] = self::registrarEntity(
-            is_array($data['entities'] ?? null) ? $data['entities'] : []
+            is_array($data['entities'] ?? null) ? $data['entities'] : [],
         );
 
         $nameservers = [];

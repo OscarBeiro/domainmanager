@@ -233,13 +233,13 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
         // the old endpoint's shape.
         $data = $this->request(
             'GET',
-            'accounts/' . rawurlencode($accountId) . '/registrar/registrations/' . rawurlencode($domain)
+            'accounts/' . rawurlencode($accountId) . '/registrar/registrations/' . rawurlencode($domain),
         );
 
         $result = $data['result'] ?? null;
         if (!is_array($result)) {
             throw new DriverException(
-                __('Domain is not managed by Cloudflare Registrar on this account', 'domainmanager')
+                __('Domain is not managed by Cloudflare Registrar on this account', 'domainmanager'),
             );
         }
 
@@ -267,7 +267,7 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
             isset($result['locked']) ? (bool) $result['locked'] : null,
             isset($result['auto_renew']) ? (bool) $result['auto_renew'] : null,
             null,
-            null
+            null,
         );
     }
 
@@ -296,7 +296,7 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
             $data = $this->request(
                 'GET',
                 'accounts/' . rawurlencode($accountId) . '/registrar/registrations',
-                $query
+                $query,
             );
 
             foreach ($data['result'] ?? [] as $row) {
@@ -370,7 +370,7 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
                         $content,
                         (int) ($row['ttl'] ?? 0),
                         (string) ($row['id'] ?? ''),
-                        $isProxied
+                        $isProxied,
                     );
                 } catch (InvalidArgumentException $e) {
                     PluginLogger::activity("Cloudflare record skipped for $domain: " . $e->getMessage());
@@ -410,7 +410,7 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
         $zone = $data['result'][0] ?? null;
         if (!is_array($zone) || empty($zone['id'])) {
             throw new DriverException(
-                sprintf(__('No Cloudflare zone found for %s under this account', 'domainmanager'), $domain)
+                sprintf(__('No Cloudflare zone found for %s under this account', 'domainmanager'), $domain),
             );
         }
 
@@ -446,7 +446,7 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
 
         if ($status >= 500) {
             throw new DriverException(
-                sprintf(__('Cloudflare API unavailable (HTTP %d)', 'domainmanager'), $status)
+                sprintf(__('Cloudflare API unavailable (HTTP %d)', 'domainmanager'), $status),
             );
         }
 
@@ -467,8 +467,8 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
             throw new DriverException(
                 sprintf(
                     __('Cloudflare API error: %s', 'domainmanager'),
-                    $summary !== '' ? $summary : sprintf('HTTP %d', $status)
-                )
+                    $summary !== '' ? $summary : sprintf('HTTP %d', $status),
+                ),
             );
         }
 

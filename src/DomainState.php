@@ -121,10 +121,10 @@ class DomainState extends CommonDBTM
                     ? \htmlescape(__('Never synchronized', 'domainmanager'))
                     : \htmlescape($value);
 
-            // Never render the actual credential in a search results
-            // column, same "On file"/"Not on file" masking as the domain
-            // panel's own badge (domain_panel.html.twig) — only whether a
-            // code is on file is ever shown here.
+                // Never render the actual credential in a search results
+                // column, same "On file"/"Not on file" masking as the domain
+                // panel's own badge (domain_panel.html.twig) — only whether a
+                // code is on file is ever shown here.
             case 'registrar_auth_info':
                 $value = (string) ($values[$field] ?? '');
                 return $value === ''
@@ -279,7 +279,7 @@ class DomainState extends CommonDBTM
                         self::getTable() . '.dns_suppliers_id' => $suppliers_id,
                     ],
                 ],
-                getEntitiesRestrictCriteria('glpi_domains', '', '', true)
+                getEntitiesRestrictCriteria('glpi_domains', '', '', true),
             ),
             'ORDER'     => 'glpi_domains.name ASC',
         ]);
@@ -461,7 +461,7 @@ class DomainState extends CommonDBTM
             $DB->update(
                 self::getTable(),
                 [$field => 0],
-                [$field => $suppliers_id]
+                [$field => $suppliers_id],
             );
         }
     }

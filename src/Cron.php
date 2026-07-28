@@ -146,7 +146,7 @@ class Cron
                 $errors++;
                 $is_error = true;
                 $logger->detail(
-                    'Cron sync failed for domain #' . $domains_id . ': ' . $e::class . ': ' . $e->getMessage()
+                    'Cron sync failed for domain #' . $domains_id . ': ' . $e::class . ': ' . $e->getMessage(),
                 );
             }
 
@@ -167,7 +167,7 @@ class Cron
                     '%s: %d domain(s) synchronized (%d error(s))',
                     Dropdown::getDropdownName('glpi_entities', $entities_id),
                     $tally['count'],
-                    $tally['errors']
+                    $tally['errors'],
                 ));
             }
             foreach ($per_supplier as $suppliers_id => $tally) {
@@ -175,7 +175,7 @@ class Cron
                     'Registrar %s: %d domain(s) synchronized (%d error(s))',
                     Dropdown::getDropdownName(Supplier::getTable(), $suppliers_id),
                     $tally['count'],
-                    $tally['errors']
+                    $tally['errors'],
                 ));
             }
             return 1;
@@ -259,7 +259,7 @@ class Cron
                 $outcome = 'error: ' . $e::class . ': ' . $e->getMessage();
                 PluginLogger::error(
                     'RDAP enrichment failed for domain #' . $domains_id,
-                    $e::class . ': ' . $e->getMessage()
+                    $e::class . ': ' . $e->getMessage(),
                 );
             }
 
@@ -281,7 +281,7 @@ class Cron
                 $domains_id,
                 $row['name'],
                 $supplier_name,
-                $outcome
+                $outcome,
             ));
             return 1;
         }
@@ -395,7 +395,7 @@ class Cron
 
         if ($isFirst && $result->notices !== []) {
             PluginLogger::activity(
-                'RDAP notices for domain #' . $domains_id . ' (' . $fqdn . '): ' . implode(' | ', $result->notices)
+                'RDAP notices for domain #' . $domains_id . ' (' . $fqdn . '): ' . implode(' | ', $result->notices),
             );
         }
 

@@ -182,7 +182,7 @@ class DomainImportController extends AbstractController
                 $sync_failed++;
                 PluginLogger::error(
                     "Initial sync failed for imported domain #$domains_id ($name)",
-                    $e::class . ': ' . $e->getMessage()
+                    $e::class . ': ' . $e->getMessage(),
                 );
             }
         }
@@ -190,7 +190,7 @@ class DomainImportController extends AbstractController
         Session::addMessageAfterRedirect(
             self::buildSummaryMessage($created, $restored, $skipped, $failed, $sync_failed),
             false,
-            ($created > 0 || $restored > 0) ? INFO : WARNING
+            ($created > 0 || $restored > 0) ? INFO : WARNING,
         );
 
         return $this->redirectToSupplierTab($suppliers_id);
@@ -219,14 +219,14 @@ class DomainImportController extends AbstractController
         if ($failed > 0) {
             $parts[] = sprintf(
                 _n('%d could not be created, see the plugin error log', '%d could not be created, see the plugin error log', $failed, 'domainmanager'),
-                $failed
+                $failed,
             );
         }
 
         if ($sync_failed > 0) {
             $parts[] = sprintf(
                 _n('%d could not be synced yet, see the plugin error log', '%d could not be synced yet, see the plugin error log', $sync_failed, 'domainmanager'),
-                $sync_failed
+                $sync_failed,
             );
         }
 
@@ -240,7 +240,7 @@ class DomainImportController extends AbstractController
     private function redirectToSupplierTab(int $suppliers_id): RedirectResponse
     {
         return new RedirectResponse(
-            Supplier::getFormURLWithID($suppliers_id) . '&forcetab=' . urlencode(SupplierTab::class . '$1')
+            Supplier::getFormURLWithID($suppliers_id) . '&forcetab=' . urlencode(SupplierTab::class . '$1'),
         );
     }
 }

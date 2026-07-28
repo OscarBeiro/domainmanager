@@ -93,7 +93,7 @@ class DomainDiscoveryController extends AbstractController
         } catch (Throwable $e) {
             PluginLogger::error(
                 "Domain discovery crashed for supplier #$suppliers_id",
-                $e::class . ': ' . $e->getMessage()
+                $e::class . ': ' . $e->getMessage(),
             );
 
             return new Response(__('Unexpected error while listing domains, see the plugin error log', 'domainmanager'), 500);

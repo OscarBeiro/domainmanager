@@ -71,7 +71,7 @@ final class ConfigController extends AbstractController
         PluginLogger::activity(
             $domaintypes_id > 0
                 ? "Configuration changed: domain type to apply to imported domains set to DomainType #$domaintypes_id"
-                : 'Configuration changed: domain type to apply to imported domains cleared (imported domains will get no type)'
+                : 'Configuration changed: domain type to apply to imported domains cleared (imported domains will get no type)',
         );
 
         Session::addMessageAfterRedirect(__s('Configuration saved', 'domainmanager'));

@@ -145,7 +145,7 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
                     $result->httpStatusCode,
                     $result->userMessage,
                     $result->rawDetail,
-                    $result->checkedAt
+                    $result->checkedAt,
                 ),
             ];
         } finally {
@@ -185,7 +185,7 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
                 ConnectionTestStatus::UpstreamError,
                 $status,
                 sprintf(__("The provider's API is currently unavailable (HTTP %d).", 'domainmanager'), $status),
-                'Dinahosting System_GetRequestTypes (HTTP ' . $status . '): ' . self::sanitizeMessage($body)
+                'Dinahosting System_GetRequestTypes (HTTP ' . $status . '): ' . self::sanitizeMessage($body),
             );
         }
 
@@ -197,7 +197,7 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
                 ConnectionTestStatus::UnknownError,
                 $status,
                 __('Unexpected response from the provider API.', 'domainmanager'),
-                'Non-JSON body: ' . self::sanitizeMessage($body)
+                'Non-JSON body: ' . self::sanitizeMessage($body),
             );
         }
 
@@ -216,7 +216,7 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
                 ConnectionTestStatus::Success,
                 null,
                 __('Connection successful.', 'domainmanager'),
-                ''
+                '',
             );
         }
 
@@ -248,7 +248,7 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
             $command,
             $responseCode,
             $message,
-            $errorDetail !== '' ? " errors=[$errorDetail]" : ''
+            $errorDetail !== '' ? " errors=[$errorDetail]" : '',
         );
 
         return $this->bothCapabilities($status, null, $userMessage, $rawDetail);
@@ -368,7 +368,7 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
                     $name,
                     $content,
                     (int) ($row['ttl'] ?? 0),
-                    (string) ($row['id'] ?? '')
+                    (string) ($row['id'] ?? ''),
                 );
             } catch (InvalidArgumentException $e) {
                 PluginLogger::activity("Dinahosting record skipped for $domain: " . $e->getMessage());
@@ -429,7 +429,7 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
             'CNAME', 'NS' => (string) ($row['destinationHostname'] ?? ''),
             'TXT'         => (string) ($row['text'] ?? ''),
             'MX'          => trim(
-                ((string) ($row['priority'] ?? '')) . ' ' . (string) ($row['destinationHostname'] ?? $row['address'] ?? '')
+                ((string) ($row['priority'] ?? '')) . ' ' . (string) ($row['destinationHostname'] ?? $row['address'] ?? ''),
             ),
             default => (string) (
                 $row['destinationHostname']
@@ -467,7 +467,7 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
 
         if ($status >= 500) {
             throw new DriverException(
-                sprintf(__('Dinahosting API unavailable (HTTP %d)', 'domainmanager'), $status)
+                sprintf(__('Dinahosting API unavailable (HTTP %d)', 'domainmanager'), $status),
             );
         }
 
@@ -494,7 +494,7 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
             // were wrong, when they demonstrably weren't.
             if ($responseCode === self::CODE_AUTH_ERROR_OBJECT) {
                 throw new DriverException(
-                    __('Dinahosting authentication succeeded, but this account is not authorized to manage this domain', 'domainmanager')
+                    __('Dinahosting authentication succeeded, but this account is not authorized to manage this domain', 'domainmanager'),
                 );
             }
 
@@ -507,8 +507,8 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
             throw new DriverException(
                 sprintf(
                     __('Dinahosting API error: %s', 'domainmanager'),
-                    $summary !== '' ? $summary : sprintf('code %d', $responseCode)
-                )
+                    $summary !== '' ? $summary : sprintf('code %d', $responseCode),
+                ),
             );
         }
 

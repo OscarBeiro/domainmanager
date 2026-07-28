@@ -174,7 +174,7 @@ class SupplierTab extends CommonGLPI
                     'title'       => sprintf(__('Import Domains — %s', 'domainmanager'), $supplier->getName()),
                     'modal_class' => 'modal-lg modal-dialog-scrollable',
                     'display'     => false,
-                ]
+                ],
             )
             : '';
 
@@ -199,12 +199,12 @@ class SupplierTab extends CommonGLPI
             'testable_capabilities' => DriverRegistry::getTestableCapabilities($current_driver),
             'all_testable_capabilities' => array_combine(
                 DriverRegistry::getAvailableDrivers(),
-                array_map([DriverRegistry::class, 'getTestableCapabilities'], DriverRegistry::getAvailableDrivers())
+                array_map([DriverRegistry::class, 'getTestableCapabilities'], DriverRegistry::getAvailableDrivers()),
             ),
             'primary_capability'   => DriverRegistry::getPrimaryTestableCapability($current_driver),
             'all_primary_capabilities' => array_combine(
                 DriverRegistry::getAvailableDrivers(),
-                array_map([DriverRegistry::class, 'getPrimaryTestableCapability'], DriverRegistry::getAvailableDrivers())
+                array_map([DriverRegistry::class, 'getPrimaryTestableCapability'], DriverRegistry::getAvailableDrivers()),
             ),
             'domains'            => self::buildDomainsListRows($domains_raw),
             'status_labels'      => DomainStatusResolver::getStatusLabels(),
@@ -245,7 +245,7 @@ class SupplierTab extends CommonGLPI
 
         $none_label = $options[DriverRegistry::DRIVER_NONE] ?? null;
         unset($options[DriverRegistry::DRIVER_NONE]);
-        uasort($options, static fn (string $a, string $b): int => strcasecmp($a, $b));
+        uasort($options, static fn(string $a, string $b): int => strcasecmp($a, $b));
 
         if ($none_label !== null) {
             $options = [DriverRegistry::DRIVER_NONE => $none_label] + $options;

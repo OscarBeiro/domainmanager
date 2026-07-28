@@ -57,7 +57,7 @@ class DriverFactory
         $driver = self::build($config);
         if (!$driver instanceof RegistrarDriverInterface) {
             throw new DriverException(
-                sprintf(__('Driver %s has no registrar pipeline', 'domainmanager'), $config->fields['api_driver'])
+                sprintf(__('Driver %s has no registrar pipeline', 'domainmanager'), $config->fields['api_driver']),
             );
         }
 
@@ -76,7 +76,7 @@ class DriverFactory
         $driver = self::build($config);
         if (!$driver instanceof DnsPipelineInterface) {
             throw new DriverException(
-                sprintf(__('Driver %s has no DNS pipeline', 'domainmanager'), $config->fields['api_driver'])
+                sprintf(__('Driver %s has no DNS pipeline', 'domainmanager'), $config->fields['api_driver']),
             );
         }
 
@@ -125,7 +125,7 @@ class DriverFactory
             DriverRegistry::DRIVER_IONOS       => new IonosDriver($credentials),
             DriverRegistry::DRIVER_DINAHOSTING => new DinahostingDriver($credentials),
             default => throw new DriverException(
-                __('No API driver configured for this supplier', 'domainmanager')
+                __('No API driver configured for this supplier', 'domainmanager'),
             ),
         };
     }

@@ -105,7 +105,7 @@ class Installer
         // Defensive: no plugin itemtype registers display preferences by default
         $DB->delete(
             'glpi_displaypreferences',
-            ['itemtype' => ['LIKE', 'GlpiPlugin\\\\Domainmanager\\\\%']]
+            ['itemtype' => ['LIKE', 'GlpiPlugin\\\\Domainmanager\\\\%']],
         );
 
         $migration->executeMigration();
@@ -306,9 +306,9 @@ class Installer
             ['name_ascii' => ''],
             [
                 'name_ascii' => new \QueryExpression(
-                    '(SELECT `name` FROM `glpi_domains` WHERE `glpi_domains`.`id` = `' . $table . '`.`domains_id`)'
+                    '(SELECT `name` FROM `glpi_domains` WHERE `glpi_domains`.`id` = `' . $table . '`.`domains_id`)',
                 ),
-            ]
+            ],
         );
     }
 
@@ -649,7 +649,7 @@ class Installer
                 $DB->update(
                     'glpi_savedsearches',
                     ['query' => http_build_query($params)],
-                    ['id' => (int) $row['id']]
+                    ['id' => (int) $row['id']],
                 );
             }
         }
@@ -742,7 +742,7 @@ class Installer
                 'param'         => 20,
                 'logs_lifetime' => 30,
                 'comment'       => __('Synchronize domain lifecycle and DNS zone records from provider APIs', 'domainmanager'),
-            ]
+            ],
         );
 
         // §9 Phase 22: its own automatic action, independently configurable
@@ -757,7 +757,7 @@ class Installer
                 'state'         => CronTask::STATE_WAITING,
                 'logs_lifetime' => 30,
                 'comment'       => __('Fill registrar-reported gaps (dates, lock/DNSSEC status, pending flags) from RDAP', 'domainmanager'),
-            ]
+            ],
         );
     }
 }
