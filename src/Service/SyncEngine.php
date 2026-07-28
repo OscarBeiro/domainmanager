@@ -114,35 +114,45 @@ class SyncEngine
         LockEnforcer::$sync_in_progress = true;
         try {
             // 1-2. NS detection → DNS pipeline candidate
-            $ns_hosts = $this->resolver->getNameservers($fqdn);
-            if ($ns_hosts === []) {
-                $result['dns_status']  = DomainState::STATUS_ERROR;
-                $result['dns_message'] = __('NS lookup failed', 'domainmanager');
+            // Skipped entirely without a registrar: an unmanaged domain's
+            // live public NS records (if it even resolves) belong to
+            // whoever actually controls it, not to us, so reporting a
+            // "detected provider" here would be meaningless noise.
+            if ($registrar_id === 0) {
+                $result['detected_provider'] = '';
+                $result['dns_status']        = DomainState::STATUS_UNCONFIGURED;
+                $result['dns_message']       = __('No registrar supplier configured', 'domainmanager');
             } else {
-                $provider = NsProviderRegistry::match($ns_hosts);
-                if ($provider === null) {
-                    $result['detected_provider'] = NsProviderRegistry::PROVIDER_UNKNOWN;
-                    $result['dns_status']        = DomainState::STATUS_UNKNOWN;
-                    $result['dns_message']       = sprintf(
-                        __('DNS provider not recognized from nameservers: %s', 'domainmanager'),
-                        implode(', ', array_slice($ns_hosts, 0, 4))
-                    );
-                } elseif (!isset($provider['driver'])) {
-                    $result['detected_provider'] = $provider['name'];
-                    $result['dns_status']        = DomainState::STATUS_UNSUPPORTED;
-                    $result['dns_message']       = sprintf(
-                        __('API integration for %s is not currently supported', 'domainmanager'),
-                        $provider['name']
-                    );
+                $ns_hosts = $this->resolver->getNameservers($fqdn);
+                if ($ns_hosts === []) {
+                    $result['dns_status']  = DomainState::STATUS_ERROR;
+                    $result['dns_message'] = __('NS lookup failed', 'domainmanager');
                 } else {
-                    $result['detected_provider'] = $provider['name'];
-                    $dns_config = $this->findSupplierConfigForDriver($provider['driver']);
-                    if ($dns_config === null) {
-                        $result['dns_status']  = DomainState::STATUS_UNCONFIGURED;
-                        $result['dns_message'] = sprintf(
-                            __('No supplier is configured with the %s driver', 'domainmanager'),
+                    $provider = NsProviderRegistry::match($ns_hosts);
+                    if ($provider === null) {
+                        $result['detected_provider'] = NsProviderRegistry::PROVIDER_UNKNOWN;
+                        $result['dns_status']        = DomainState::STATUS_UNKNOWN;
+                        $result['dns_message']       = sprintf(
+                            __('DNS provider not recognized from nameservers: %s', 'domainmanager'),
+                            implode(', ', array_slice($ns_hosts, 0, 4))
+                        );
+                    } elseif (!isset($provider['driver'])) {
+                        $result['detected_provider'] = $provider['name'];
+                        $result['dns_status']        = DomainState::STATUS_UNSUPPORTED;
+                        $result['dns_message']       = sprintf(
+                            __('API integration for %s is not currently supported', 'domainmanager'),
                             $provider['name']
                         );
+                    } else {
+                        $result['detected_provider'] = $provider['name'];
+                        $dns_config = $this->findSupplierConfigForDriver($provider['driver']);
+                        if ($dns_config === null) {
+                            $result['dns_status']  = DomainState::STATUS_UNCONFIGURED;
+                            $result['dns_message'] = sprintf(
+                                __('No supplier is configured with the %s driver', 'domainmanager'),
+                                $provider['name']
+                            );
+                        }
                     }
                 }
             }
