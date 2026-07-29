@@ -1416,6 +1416,7 @@ Six phases. Each is one Claude Code session, committed and pushed before context
 | **34** | `1.2.0-alpha3` | Controllers, three modals, rights gating, §0.4 pre-flight, live NS re-check, `ImportedRecord` row, Historical lines. No UI trigger yet — the modals exist and are reachable by URL but nothing in GLPI's own `DomainRecord` tab opens them. **Superseded by Phase 34b** (§11.15a): the controller/modal write path is removed, not wired up, once the native-hook design was adopted |
 | **34b** | `1.2.0-alpha4` | Rights redesigned as a per-type READ/CREATE/UPDATE/DELETE matrix (§11.6); native tab fully superseded — `hook.php` item hooks intercept native add/update/purge (§11.7), pre-flight logic ported from the removed modals into the hooks (§11.10), `DomainRecord`'s native tab display overridden to filter rows by per-type READ (§11.15a) |
 | **35** | `1.2.0-beta1` | End-to-end verification; finalise `ARCHITECTURE.md`, `CHANGELOG.md`, `TESTING.md`. Refining only, nothing new built (implemented 2026-07-29) |
+| **36** | `1.2.0-beta2` | Managed-domain indicator + conditional hiding of native `DomainRecord::showForDomain()` add controls (§11.18) — client-side companion to §11.15a/§11.17's "no hook substitutes what the tab renders" finding: that's still true server-side, but `POST_SHOW_TAB` can drive a JS hide of the *rendered* controls |
 | release | `1.2.0` | |
 
 **Alpha means "still assembling"; beta means "complete and hardening"** — an honest signal if a
@@ -1582,7 +1583,61 @@ Confirm against the live `11.0/bugfixes` branch and live provider docs. **Never 
 | Rollback / compensating writes | **Rejected permanently** (§11.14). |
 | Single flat `domainmanager:dns_records` right (Phase 32 shape) | **Superseded** by a per-type CREATE/UPDATE/DELETE matrix, once the write surface moved to native-tab hooks (§11.6). |
 | Plugin-owned write panel + 3 confirmation modals + `DnsRecordWriteController` (Phase 34 shape) | **Superseded** by native-tab `hook.php` interception (§11.7/§11.10/§11.15a); the controller/modals become dead code, pre-flight logic ported into the hooks. |
-| Per-type `READ` right hiding rows from the native `DomainRecord` tab | **Investigated and rejected**, not deferred: no native hook lets a plugin substitute `DomainRecord::displayTabContentForItem()`'s output (`PRE_SHOW_TAB`/`POST_SHOW_TAB` fire around it, not instead of it); only HTML-scraping or a wholesale duplicate of `showForDomain()` would work, and both are fragile in a way genuinely worse than not having the feature (§11.6, §11.15a). |
+| Per-type `READ` right hiding rows from the native `DomainRecord` tab | **Investigated and rejected**, not deferred: no native hook lets a plugin substitute `DomainRecord::displayTabContentForItem()`'s output (`PRE_SHOW_TAB`/`POST_SHOW_TAB` fire around it, not instead of it); only HTML-scraping or a wholesale duplicate of `showForDomain()` would work, and both are fragile in a way genuinely worse than not having the feature (§11.6, §11.15a). Note this is about server-side row filtering specifically — client-side JS hiding of the whole add-controls block via the same hooks is a different, much smaller surface, and was implemented in Phase 36 (§11.18). |
+
+### 11.18 Phase 36: managed-domain indicator + conditional hiding of native add controls
+
+**Trigger:** live testing surfaced that GLPI core's own "Link a record" dropdown+Add and "New
+Domain record for this item" controls (§11.15a) are unconditionally visible on *every*
+`DomainRecord` tab, including on an IONOS-managed domain for a profile holding none of the
+per-type write-back rights (§11.6) — confusing, since a native add there either falls through to
+a local-only row or gets rejected outright by `DnsRecordWriteback::onPreAdd()`. Separately, there
+was no visual indicator anywhere on the `DomainRecord` tab (or the item header) that a domain is
+under Domain Manager's management at all — only `supplier_domains_list.html.twig` and
+`domain_panel.html.twig`'s own status cards show that, and neither is visible from the Records tab.
+
+**Two features, both client-side, both hooked the same way:**
+
+1. **Managed indicator** — a small `ti ti-world-cog` icon appended to core's own
+   `.navigationheader-title` element (`src/CommonGLPI.php::showNavigationHeader()`, confirmed on
+   `11.0/bugfixes`), shown whenever `DomainState.is_managed` is true for the domain being viewed.
+   Deliberately an icon with a `title` tooltip, not a badge/banner — Óscar's own call, after an
+   initial "managed" badge suggestion read as too heavy for something that should read as native
+   chrome, not a bolted-on notice.
+2. **Conditional hiding of the native add controls** — on the Records tab specifically
+   (`options['itemtype'] === DomainRecord::class`), hidden only when *both* (a) the domain's DNS
+   is under IONOS write-back (`DnsRecordWriteback::isDomainDnsEditable()`) and (b) the current user
+   holds none of the four per-type CREATE rights (`DnsRecordWriteback::userMayCreateAnyType()`).
+   Per Óscar's explicit call: a user who *can* write at least one type keeps seeing the native
+   controls unchanged — this is a permission-driven visibility choice, not a blanket "managed
+   domains never get native add" rule.
+
+**Why this doesn't contradict §11.15a/§11.17's rejection of server-side row-hiding:** that finding
+is still correct — no hook substitutes what `DomainRecord::displayTabContentForItem()` renders.
+What's new here is a *client-side* DOM hide, driven by `Hooks::POST_SHOW_TAB` (confirmed on
+`11.0/bugfixes`, `src/CommonGLPI.php::displayStandardTab()`: fires once per non-main tab actually
+rendered — including on the very page load where that tab is the `forcetab`-forced one, not only
+on later ajax tab switches — via `Plugin::doHook(Hooks::POST_SHOW_TAB, ['item' => $item, 'options'
+=> $options])`, a plain (non-itemtype-keyed) hook whose callback filters on `$item instanceof
+Domain` itself, same convention as the existing `POST_ITEM_FORM` → `DomainForm::inject()`). It
+hides the *whole* add-controls block (the outer `<div class="mb-3">` wrapping both the "Link a
+record" form and the "New Domain record" button+collapsible form — confirmed verbatim from
+`src/DomainRecord.php::showForDomain()`) by selecting on the one stable, non-translated,
+non-`mt_rand()` hook available: `form[id^="domain_form"]`, then hiding its closest `div.mb-3`
+ancestor. Matching on visible button text was ruled out (locale-dependent); matching on the
+`mt_rand()`-suffixed `add_new_record_btn{{ rand }}` id alone was ruled out (doesn't reach the
+sibling "Link a record" form in one selector).
+
+**Two hook entry points needed, not one:** `POST_ITEM_FORM` (existing, `DomainForm::inject()`)
+only fires on the Domain item's own main form tab — a user landing directly on the Records tab
+(`forcetab=DomainRecord$1`) never triggers it. `POST_SHOW_TAB` (new, `DomainForm::onShowTab()`)
+covers every *other* tab. Both call the same private `DomainForm::renderManagedIndicator()`
+helper, rendering one shared Twig partial (`templates/domain_managed_indicator.html.twig`), so the
+icon-insertion script has exactly one implementation regardless of which hook fired it. The icon
+insertion is idempotent (checks for an existing `.domainmanager-managed-icon` child before
+appending) and only needs to run once per full page load — `showNavigationHeader()` renders the
+header once, tab-agnostic, and is never replaced by client-side ajax tab switching, so there's no
+need to re-run on every tab click.
 
 ---
 

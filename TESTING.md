@@ -3078,3 +3078,64 @@ real production credentials. The one remaining gap is a live create/update/delet
 explicitly deferred rather than silently skipped. Phase 35 gates the release as `1.2.0-beta1`;
 subsequent `1.2.0` release will consolidate all alpha/beta bullets into a single section per §10
 amendment.
+
+## Phase 36 — Managed-domain indicator + conditional hiding of native add controls (ARCHITECTURE.md §11.18)
+
+### 36.1 Managed icon appears on the Domain tab
+- **Steps:** Open a Domain whose `DomainState.is_managed` is true, on its default "Domain" tab
+  (`front/domain.form.php?id=<id>`).
+- **Expected:** A `ti ti-world-cog` icon appears at the end of the item's title
+  (`.navigationheader-title`), with a "Managed by Domain Manager" tooltip on hover. Not present for
+  a domain with `is_managed = 0`.
+- [ ] Verified
+
+### 36.2 Managed icon appears on the Records tab and other non-main tabs, even when directly forced
+- **Steps:** Load the same managed domain directly on its Records tab
+  (`front/domain.form.php?id=<id>&forcetab=DomainRecord$1`), i.e. without visiting the Domain tab
+  first in this page load.
+- **Expected:** The icon still appears — `DomainForm::onShowTab()` (hooked on
+  `Hooks::POST_SHOW_TAB`) fires for this tab independently of `DomainForm::inject()`
+  (`Hooks::POST_ITEM_FORM`, main-tab only). Repeat on Historical or another secondary tab to
+  confirm it isn't Records-specific.
+- [ ] Verified
+
+### 36.3 Icon does not duplicate across client-side tab switches
+- **Steps:** From 36.1/36.2, click between two or more tabs of the same item without a full page
+  reload.
+- **Expected:** Exactly one icon remains — the header (`.navigationheader-title`) is rendered once
+  per full page load and is not replaced by ajax tab switching, and the insertion script is
+  idempotent (checks for an existing `.domainmanager-managed-icon` before appending).
+- [ ] Verified
+
+### 36.4 Native add controls hidden when domain is IONOS-managed and user lacks all per-type CREATE rights
+- **Steps:** As a profile holding none of `domainmanager:dns_records_a/aaaa/cname/txt`'s CREATE
+  bit, open the Records tab of a domain whose DNS is under IONOS write-back
+  (`DnsRecordWriteback::isDomainDnsEditable()` true).
+- **Expected:** Both the "Link a record" dropdown+Add row and the "New Domain record for this
+  item" button (and its collapsible form) are hidden — the whole block is invisible, not just
+  disabled.
+- [ ] Verified
+
+### 36.5 Native add controls stay visible when the user holds at least one per-type CREATE right
+- **Steps:** As a profile holding CREATE on at least one of the four per-type rights, open the
+  Records tab of the same IONOS-managed domain.
+- **Expected:** Both native controls render and function exactly as before this phase — per the
+  maintainer's explicit call, holding *any* write right keeps the native UI, this is not an
+  all-or-nothing gate.
+- [ ] Verified
+
+### 36.6 Native add controls stay visible on a non-managed / non-IONOS domain regardless of rights
+- **Steps:** Open the Records tab of a domain with `is_managed = 0`, or one whose DNS supplier
+  isn't IONOS (`isDomainDnsEditable()` false), as a profile with no per-type CREATE rights at all.
+- **Expected:** Native controls remain visible — hiding only triggers when the domain is actually
+  under write-back; it must never hide controls that behave as plain native GLPI functionality for
+  such a domain.
+- [ ] Verified
+
+### 36.7 No regression to existing write-back enforcement
+- **Steps:** Re-run 35.3/35.6 (or equivalent) — an add/update/delete attempt through the (visible or
+  hidden) native controls still goes through `DnsRecordWriteback`'s existing pre-flight and rights
+  checks unchanged.
+- **Expected:** This phase only changes button *visibility*; no change to what happens when an
+  action is actually submitted.
+- [ ] Verified

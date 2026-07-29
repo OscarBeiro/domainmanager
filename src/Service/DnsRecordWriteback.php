@@ -411,6 +411,42 @@ class DnsRecordWriteback
     }
 
     /**
+     * Whether the current user holds the CREATE bit on at least one
+     * per-type DNS write-back right (§11.6/§11.7) — used by
+     * `DomainForm::onShowTab()` to decide whether the native "Link a
+     * record"/"New Domain record for this item" controls are worth
+     * showing on an IONOS-managed domain's Records tab: a user who can't
+     * create any type via write-back would only get a confusing local-only
+     * add that `DnsRecordWriteback::onPreAdd()` may reject outright.
+     *
+     * @return bool
+     */
+    public static function userMayCreateAnyType(): bool
+    {
+        foreach (Profile::getDnsRecordRights() as $type => $right) {
+            if (self::hasRight($type, CREATE)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Public wrapper around `isDnsEditable()` for callers outside this
+     * class (§11.6 addendum) — e.g. `DomainForm::onShowTab()`, deciding
+     * whether the domain's DNS is under IONOS write-back at all before
+     * even considering hiding the native add controls.
+     *
+     * @param  DomainState $state
+     * @return bool
+     */
+    public static function isDomainDnsEditable(DomainState $state): bool
+    {
+        return self::isDnsEditable($state);
+    }
+
+    /**
      * Ported from the removed DnsRecordWriteController::isDnsEditable().
      *
      * @param  DomainState $state

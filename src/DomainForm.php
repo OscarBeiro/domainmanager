@@ -32,7 +32,9 @@
 namespace GlpiPlugin\Domainmanager;
 
 use Domain;
+use DomainRecord;
 use Glpi\Application\View\TemplateRenderer;
+use GlpiPlugin\Domainmanager\Service\DnsRecordWriteback;
 use GlpiPlugin\Domainmanager\Service\DomainStatusResolver;
 use GlpiPlugin\Domainmanager\Service\NsResolver;
 use Session;
@@ -162,6 +164,69 @@ class DomainForm
             'live_nameservers'   => $live_nameservers,
             'ns_mismatch'        => $ns_mismatch,
             'registrar_mismatch' => $registrar_mismatch,
+        ]);
+
+        self::renderManagedIndicator($state !== null && (bool) $state->fields['is_managed'], false);
+    }
+
+    /**
+     * `Hooks::POST_SHOW_TAB` entry point — fires for every *non-main* tab of
+     * a Domain item (Records, Historical, Associated items, …), unlike
+     * `inject()` above which only runs on the Domain item's own main form
+     * tab. Needed so the "managed by Domain Manager" indicator (§9 Phase 36)
+     * shows up regardless of which tab a user lands on first, and so the
+     * Records tab specifically can also decide whether to hide GLPI core's
+     * own native "Link a record"/"New Domain record for this item"
+     * controls (`DomainRecord::showForDomain()`) — confusing on an
+     * IONOS-managed domain when the user holds none of the per-type DNS
+     * write-back rights (§11.6), since a native add there would either be
+     * silently local-only or get rejected outright by
+     * `DnsRecordWriteback::onPreAdd()`. Left alone whenever the user *does*
+     * hold at least one such right, per the maintainer's own call: buttons
+     * stay if editing is actually possible.
+     *
+     * @param  array $params {item, options}
+     * @return void
+     */
+    public static function onShowTab(array $params): void
+    {
+        $item = $params['item'] ?? null;
+        if (!$item instanceof Domain || $item->isNewItem() || !Session::haveRight('domain', READ)) {
+            return;
+        }
+
+        $domains_id = (int) $item->getID();
+        $state      = DomainState::getForDomain($domains_id);
+        $is_managed = $state !== null && (bool) $state->fields['is_managed'];
+
+        $hide_native_buttons = false;
+        $tab_itemtype        = $params['options']['itemtype'] ?? '';
+        if ($is_managed && $state !== null && $tab_itemtype === DomainRecord::class) {
+            $hide_native_buttons = DnsRecordWriteback::isDomainDnsEditable($state)
+                && !DnsRecordWriteback::userMayCreateAnyType();
+        }
+
+        self::renderManagedIndicator($is_managed, $hide_native_buttons);
+    }
+
+    /**
+     * Shared by `inject()` (main tab) and `onShowTab()` (every other tab) so
+     * the "managed" icon/hide-buttons script only ever has one
+     * implementation to keep in sync (§9 Phase 36).
+     *
+     * @param  bool $is_managed
+     * @param  bool $hide_native_buttons
+     * @return void
+     */
+    private static function renderManagedIndicator(bool $is_managed, bool $hide_native_buttons): void
+    {
+        if (!$is_managed && !$hide_native_buttons) {
+            return;
+        }
+
+        TemplateRenderer::getInstance()->display('@domainmanager/domain_managed_indicator.html.twig', [
+            'is_managed'          => $is_managed,
+            'hide_native_buttons' => $hide_native_buttons,
         ]);
     }
 

@@ -1,0 +1,70 @@
+{#
+ # -------------------------------------------------------------------------
+ # Domain Manager plugin for GLPI
+ # Copyright (C) 2026 by the TICGAL Team.
+ # https://www.tic.gal
+ # -------------------------------------------------------------------------
+ # LICENSE
+ # This file is part of the Domain Manager plugin.
+ # Domain Manager plugin is free software; you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation; either version 3 of the License, or
+ # (at your option) any later version.
+ # Domain Manager plugin is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ # GNU General Public License for more details.
+ # You should have received a copy of the GNU General Public License
+ # along with Domain Manager. If not, see <http://www.gnu.org/licenses/>.
+ # -------------------------------------------------------------------------
+ # @package   domainmanager
+ # @author    the TICGAL team
+ # @copyright Copyright (c) 2026 TICGAL team
+ # @license   AGPL License 3.0 or (at your option) any later version
+ #            http://www.gnu.org/licenses/agpl-3.0-standalone.html
+ # @link      https://www.tic.gal
+ # @since     2026
+ # -------------------------------------------------------------------------
+ #}
+{#
+ # Rendered from `DomainForm::inject()` (main tab) and `DomainForm::onShowTab()`
+ # (every other tab, e.g. Records) — see §9 Phase 36. `.navigationheader-title`
+ # is core's own item-title element (`src/CommonGLPI.php::showNavigationHeader()`),
+ # rendered once per page load regardless of which tab is active/forced, so a
+ # single idempotent insert here covers every tab without re-injecting on
+ # client-side ajax tab switches (the header itself is never swapped).
+ #}
+{% if is_managed %}
+    <script>
+        (function () {
+            var title = document.querySelector('.navigationheader-title');
+            if (title && !title.querySelector('.domainmanager-managed-icon')) {
+                var icon = document.createElement('i');
+                icon.className = 'ti ti-world-cog ms-2 domainmanager-managed-icon';
+                icon.title = {{ __('Managed by Domain Manager', 'domainmanager')|json_encode|raw }};
+                title.appendChild(icon);
+            }
+        })();
+    </script>
+{% endif %}
+{% if hide_native_buttons %}
+    {#
+     # Hides core's own "Link a record" + "New Domain record for this item"
+     # controls (`DomainRecord::showForDomain()`) as a unit: both live as
+     # siblings inside the same wrapping `<div class="mb-3">`, whose only
+     # other stable (non-random, non-translated) hook is the "Link a record"
+     # form's `id="domain_form{{ rand }}"` — so hiding that form's closest
+     # `div.mb-3` ancestor takes the whole block with it, without matching on
+     # translated button text or a `mt-rand()` suffix.
+     #}
+    <script>
+        (function () {
+            document.querySelectorAll('form[id^="domain_form"]').forEach(function (form) {
+                var wrapper = form.closest('div.mb-3');
+                if (wrapper) {
+                    wrapper.style.display = 'none';
+                }
+            });
+        })();
+    </script>
+{% endif %}

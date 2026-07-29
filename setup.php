@@ -40,7 +40,7 @@ use GlpiPlugin\Domainmanager\Profile as DomainmanagerProfile;
 use GlpiPlugin\Domainmanager\Service\DnsRecordWriteback;
 use GlpiPlugin\Domainmanager\SupplierTab;
 
-define('PLUGIN_DOMAINMANAGER_VERSION', '1.2.0-beta1');
+define('PLUGIN_DOMAINMANAGER_VERSION', '1.2.0-beta2');
 define('PLUGIN_DOMAINMANAGER_MIN_GLPI', '11.0.0');
 define('PLUGIN_DOMAINMANAGER_MAX_GLPI', '11.0.99');
 define('PLUGIN_DOMAINMANAGER_REPOSITORY_URL', 'https://github.com/TICGAL-GLPI-Plugins/domainmanager');
@@ -745,6 +745,14 @@ function plugin_init_domainmanager(): void
         ];
 
         $PLUGIN_HOOKS[Hooks::POST_ITEM_FORM]['domainmanager'] = [DomainForm::class, 'inject'];
+
+        // §9 Phase 36: POST_ITEM_FORM above only fires on the Domain item's
+        // own main form tab — POST_SHOW_TAB fires for every *other* tab
+        // (Records, Historical, …), needed so the "managed by Domain
+        // Manager" indicator (and, on the Records tab, hiding the native
+        // add controls) shows up regardless of which tab a user lands on
+        // first. See DomainForm::onShowTab().
+        $PLUGIN_HOOKS[Hooks::POST_SHOW_TAB]['domainmanager'] = [DomainForm::class, 'onShowTab'];
 
         // Registrar assignment mirrors Infocom's own "Supplier" field
         // (read-only in the Domain Manager panel, §6.2) rather than being a
