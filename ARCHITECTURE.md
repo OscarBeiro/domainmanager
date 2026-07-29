@@ -1543,10 +1543,26 @@ Confirm against the live `11.0/bugfixes` branch and live provider docs. **Never 
   (NS/MX/etc.) and non-IONOS domains (Cloudflare/Dinahosting/unmanaged) are unaffected, falling
   through to existing `LockEnforcer` logic unchanged (§11.7). Dead `DnsRecordWriteController`
   (Phase 34's controller/modals) is unreachable from routing; pre-flight logic ported into the
-  hooks per §11.15a. Live GLPI container was not running; verification was static code-level
-  inspection only, not live HTTP. §11.15's table marks Phase 35 as implemented; §10 amendment
-  for pre-release changelog consolidation is recorded (pre-release sections remain separate in
-  the file; the final `1.2.0` section consolidates them into one section at release time).
+  hooks per §11.15a. Static verification only, not live HTTP, in this first pass.
+- **Live addendum (2026-07-29, same day):** `glpi-claude` (port 65008) brought up and the
+  plugin installed/activated for real, migrating cleanly from `1.2.0-alpha4` to `1.2.0-beta1`.
+  Because this container's suppliers carry real production IONOS/Dinahosting/Cloudflare
+  credentials (not throwaway test accounts), the live pass was deliberately scoped to
+  **read-only checks** (confirmed with Óscar first, rather than assumed): per-type rights
+  registration confirmed in the DB (32 rows, all default `0`, matching "not auto-granted to any
+  profile"); rights matrix confirmed live-rendered on the Profile "Domain Manager" tab via a
+  real authenticated HTTP session (Playwright/Chromium), matching `Profile::getAllRights()`
+  exactly; the native `DomainRecord` tab on a real IONOS-managed domain (`desmarque.es`, 18
+  real records) confirmed rendering normally with a working "New Domain record" button,
+  live-reconfirming §11.15a's "Add Record was never actually gated" finding. A real
+  create/update/delete round trip (confirming an actual push reaches IONOS, and that a push
+  attempted without the per-type right creates the record locally with no upstream call) was
+  **not** performed — deliberately deferred, not silently skipped, same as the live-driver-call
+  precedent in §3.8/§3.9: it needs a throwaway zone or Óscar's direct involvement, not a routine
+  read-only pass. See `TESTING.md` §35.17 for the full detail. §11.15's table marks Phase 35 as
+  implemented; §10 amendment for pre-release changelog consolidation is recorded (pre-release
+  sections remain separate in the file; the final `1.2.0` section consolidates them into one
+  section at release time).
 
 ### 11.17 Deferred and rejected, recorded so they are not silently revisited
 

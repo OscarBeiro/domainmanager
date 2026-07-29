@@ -3021,11 +3021,60 @@ against the actual implementation.
   succeeding at IONOS while failing to save locally.
 - [x] Code verified
 
+### 35.17 Live addendum (2026-07-29): plugin installed/activated on `glpi-claude`, rights matrix and native tab confirmed by real HTTP round trip
+
+The static-only verification above was later supplemented with a real, live pass against the
+`glpi-claude` dev container (port 65008, GLPI 11.0.8) — not merely re-read from docs. Because
+this container's suppliers carry **real, live credentials for real production domains** (IONOS:
+`desmarque.es`, `beiro.net`, etc. — not throwaway test data), the live pass was deliberately
+scoped to **read-only checks only**: no record was created/updated/deleted, so nothing was ever
+actually pushed to a real IONOS zone. This scoping was an explicit decision (asked of and
+confirmed by Óscar before proceeding), not an oversight — a full create/update/delete round trip
+against a real domain remains a deliberately deferred verification, to be done only with Óscar's
+direct involvement/throwaway zone, same precedent as the live driver-verification calls in
+§3.8/§3.9.
+
+- **Plugin lifecycle**: `bin/console glpi:plugin:install`/`glpi:plugin:activate` run cleanly
+  against the existing `glpi-claude` DB (already on a pre-1.2.0-beta1 schema) — migration to
+  `1.2.0-beta1` applied with no errors, `glpi:plugin:list` reports `Enabled`. Confirms the
+  `Installer::addRdapColumns()`-style idempotent-migration discipline (§9 Phase 27) extends
+  cleanly to this phase's schema too (no new schema in Phase 35 itself, but the upgrade path
+  from `1.2.0-alpha4` was exercised for real).
+- **Per-type rights registration**: `SELECT name FROM glpi_profilerights WHERE name LIKE
+  '%dns_records%'` returned exactly 4 rows × 8 profiles = 32 rows (`_a`/`_aaaa`/`_cname`/`_txt`),
+  all defaulting to `0` — confirms §11.6/CHANGELOG's "not auto-granted to any profile" claim
+  live, not just by reading the installer code.
+- **Rights matrix rendering** (`front/profile.form.php?id=3&forcetab=...Profile$1`, real
+  authenticated session via Playwright/Chromium): screenshot confirmed a "Domain Manager" tab
+  showing the exact matrix described in §11.6 — one row for "Unlock imported domain data"
+  (single UPDATE checkbox, no CREATE/DELETE columns) and four rows "DNS record write-back:
+  A/AAAA/CNAME/TXT", each with real UPDATE/CREATE/DELETE checkboxes plus a per-row
+  "select/unselect all" column — matching `Profile::getAllRights()`'s hand-built `$rights` array
+  exactly, live-rendered through core's `displayRightsChoiceMatrix()`, not just present in source.
+- **Native `DomainRecord` tab on a real IONOS-managed domain** (`front/domain.form.php?id=3`,
+  `desmarque.es`, `dns_status=ok`, IONOS driver, 18 existing real records): tab rendered
+  normally with a working "New Domain record for this item" button and the full real record
+  list (A/MX/NS/TXT rows) — confirms §11.15a's "Add Record was never actually gated" finding
+  live: the button/tab is unconditionally visible regardless of the per-type rights above
+  (enforcement is at hook-time, not UI-visibility-time, a deliberate design choice per §11.6).
+- **Not performed, deliberately**: an actual create/update/delete round trip confirming a
+  real push reaches IONOS and a real Historical line is written, and confirming the reverse
+  (an add attempt *without* the per-type right creates the record locally but performs no
+  IONOS call — code-verified in §35.3/§404-410 of `DnsRecordWriteback::hasRight()`, but not
+  exercised against the live driver). This remains the one gap between "code-verified" and
+  "live-verified, end-to-end" for this phase — flagged here explicitly rather than silently
+  left implicit, matching this document's own standing convention.
+
 ---
 
 **Summary:** All Phase 34b design elements (hooks, rights, pre-flight checks, Historical logging,
 soft-delete, ImportedRecord ownership, live NS re-check, live re-fetch-and-diff) are present
 and code-correct. No discrepancies between ARCHITECTURE.md §11 and the actual implementation
-found. Dead controller code is unreachable but preserved for the record. Phase 35 gates the
-release as `1.2.0-beta1`; subsequent `1.2.0` release will consolidate all alpha/beta bullets
-into a single section per §10 amendment.
+found. Dead controller code is unreachable but preserved for the record. A live pass on
+`glpi-claude` (§35.17) additionally confirmed plugin activation/migration, per-type rights
+registration, live rights-matrix rendering, and native-tab rendering against a real IONOS-managed
+domain — scoped to read-only checks by deliberate choice, since this container's suppliers hold
+real production credentials. The one remaining gap is a live create/update/delete round trip,
+explicitly deferred rather than silently skipped. Phase 35 gates the release as `1.2.0-beta1`;
+subsequent `1.2.0` release will consolidate all alpha/beta bullets into a single section per §10
+amendment.
