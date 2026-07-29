@@ -34,6 +34,7 @@ namespace GlpiPlugin\Domainmanager\Driver;
 use DateTimeImmutable;
 use GlpiPlugin\Domainmanager\Contract\ConnectionTestableInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsPipelineInterface;
+use GlpiPlugin\Domainmanager\Contract\DnsRecordWriterInterface;
 use GlpiPlugin\Domainmanager\Contract\DomainDiscoveryInterface;
 use GlpiPlugin\Domainmanager\Contract\RegistrarDriverInterface;
 use GlpiPlugin\Domainmanager\Dto\ConnectionTestResult;
@@ -110,7 +111,7 @@ use Toolbox;
  *   returns a JSON **array** of `{"code": "...", "message": "..."}`
  *   objects instead. describeDomainsApiError() handles both.
  */
-class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, ConnectionTestableInterface, DomainDiscoveryInterface
+class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, DnsRecordWriterInterface, ConnectionTestableInterface, DomainDiscoveryInterface
 {
     private const BASE_URI = 'https://api.hosting.ionos.com/dns/v1/';
 
@@ -452,6 +453,152 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Con
     }
 
     /**
+     * {@inheritDoc}
+     *
+     * §9 Phase 33, verified against the live spec fetched from
+     * `https://developer.hosting.ionos.de/assets/kms-swagger-specs/dns.yaml`
+     * (openapi 1.0.2, confirmed 2026-07-29): `POST /v1/zones/{zoneId}/records`
+     * takes a JSON **array** of `record` objects and replies `201` with a
+     * JSON array of `record-response` objects (which carry `id`) — one
+     * element each here, since this interface writes one record at a time.
+     * `remote_id` is read straight off that response, no follow-up GET.
+     */
+    public function createRecord(string $domain, string $type, string $name, string $data, int $ttl): ZoneRecord
+    {
+        $type   = self::assertWritableType($type);
+        $domain = self::normalizeDomain($domain);
+        $zoneId = $this->findZoneId($domain);
+
+        $response = $this->request('POST', 'zones/' . rawurlencode($zoneId) . '/records', [
+            [
+                'name'     => rtrim($name, '.'),
+                'type'     => $type,
+                'content'  => self::toWireContent($type, $data),
+                'ttl'      => $ttl,
+                'prio'     => 0,
+                'disabled' => false,
+            ],
+        ]);
+
+        $row = $response[0] ?? null;
+        if (!is_array($row)) {
+            throw new DriverException(__('IONOS did not return the created record', 'domainmanager'));
+        }
+
+        return self::toZoneRecord($type, $row);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * §9 Phase 33: the live spec's `record-update` request schema is
+     * `{disabled, content, ttl, prio}` only — **no `name`/`type`** — and the
+     * `200` response is a full `record-response` body. This corrects
+     * ARCHITECTURE.md §11.9, which assumed (from the reference client alone)
+     * that `PUT` is a full replace with no response body; the authoritative
+     * spec says otherwise on both counts. `$name`/`$type` are accepted here
+     * only to shape the returned `ZoneRecord` and because IONOS's own
+     * response body already includes them regardless.
+     */
+    public function updateRecord(string $domain, string $remoteId, string $type, string $name, string $data, int $ttl): ZoneRecord
+    {
+        $type   = self::assertWritableType($type);
+        $domain = self::normalizeDomain($domain);
+        $zoneId = $this->findZoneId($domain);
+
+        $row = $this->request('PUT', 'zones/' . rawurlencode($zoneId) . '/records/' . rawurlencode($remoteId), [
+            'content'  => self::toWireContent($type, $data),
+            'ttl'      => $ttl,
+            'prio'     => 0,
+            'disabled' => false,
+        ]);
+
+        return self::toZoneRecord($type, $row);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * `DELETE /v1/zones/{zoneId}/records/{recordId}` replies `200` with no
+     * documented response body (confirmed against the live spec).
+     */
+    public function deleteRecord(string $domain, string $remoteId): void
+    {
+        $domain = self::normalizeDomain($domain);
+        $zoneId = $this->findZoneId($domain);
+
+        $this->request('DELETE', 'zones/' . rawurlencode($zoneId) . '/records/' . rawurlencode($remoteId), null, true);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function fetchRecord(string $domain, string $remoteId): ZoneRecord
+    {
+        $domain = self::normalizeDomain($domain);
+        $zoneId = $this->findZoneId($domain);
+
+        $row  = $this->request('GET', 'zones/' . rawurlencode($zoneId) . '/records/' . rawurlencode($remoteId));
+        $type = strtoupper((string) ($row['type'] ?? ''));
+
+        return self::toZoneRecord($type, $row);
+    }
+
+    /**
+     * @param  string $type
+     * @return string upper-cased, validated $type
+     * @throws DriverException when $type is outside self::WRITABLE_TYPES
+     */
+    private static function assertWritableType(string $type): string
+    {
+        $type = strtoupper(trim($type));
+        if (!in_array($type, self::WRITABLE_TYPES, true)) {
+            throw new DriverException(
+                sprintf(__('Record type %s is not writable through Domain Manager', 'domainmanager'), $type),
+            );
+        }
+
+        return $type;
+    }
+
+    /**
+     * Inverse of extractContent()'s TXT unquoting: this driver's own
+     * ZoneRecord::$data convention stores TXT content unquoted (§9 Phase
+     * 33, see DnsRecordWriterInterface docblock), IONOS's wire format
+     * requires it quoted — the two representations must stay exact inverses
+     * of each other or a round trip (create/update, then the next sync)
+     * would churn record_hash.
+     *
+     * @param  string $type
+     * @param  string $data
+     * @return string
+     */
+    private static function toWireContent(string $type, string $data): string
+    {
+        if ($type === 'TXT') {
+            return '"' . addcslashes($data, '"\\') . '"';
+        }
+
+        return $data;
+    }
+
+    /**
+     * @param  string $type
+     * @param  array  $row decoded record-response
+     * @return ZoneRecord
+     */
+    private static function toZoneRecord(string $type, array $row): ZoneRecord
+    {
+        return new ZoneRecord(
+            $type,
+            (string) ($row['name'] ?? ''),
+            self::extractContent($type, $row),
+            (int) ($row['ttl'] ?? 0),
+            (string) ($row['id'] ?? ''),
+        );
+    }
+
+    /**
      * Resolve the zone id of a domain. The API has no filter-by-name query
      * parameter (confirmed against the reference client, which also fetches
      * all zones and filters client-side), so this fetches the full zone
@@ -483,15 +630,18 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Con
      * Perform an API call; technical detail goes to the plugin log file,
      * thrown messages are safe to persist
      *
-     * @param  string $method
-     * @param  string $path
-     * @return array decoded body (a list for `zones`, a map for `zones/{id}`)
+     * @param  string     $method
+     * @param  string     $path
+     * @param  array|null $json           request body, sent as `json` when not null (§9 Phase 33)
+     * @param  bool       $allowEmptyBody accept a 2xx response with no body, returning [] (§9 Phase 33, deleteRecord())
+     * @return array decoded body (a list for `zones`/create, a map for `zones/{id}`/update/fetch, [] for an allowed empty body)
      * @throws DriverException
      */
-    private function request(string $method, string $path): array
+    private function request(string $method, string $path, ?array $json = null, bool $allowEmptyBody = false): array
     {
         try {
-            $response = $this->getClient()->request($method, $path);
+            $options  = $json !== null ? ['json' => $json] : [];
+            $response = $this->getClient()->request($method, $path, $options);
         } catch (GuzzleException $e) {
             PluginLogger::error("IONOS HTTP failure on $path", $e->getMessage());
             throw new DriverException(__('IONOS API is unreachable', 'domainmanager'));
@@ -510,8 +660,6 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Con
             );
         }
 
-        $decoded = json_decode($body, true);
-
         if ($status < 200 || $status >= 300) {
             $summary = self::describeError($body);
             PluginLogger::error("IONOS API error on $path (HTTP $status): $summary");
@@ -522,6 +670,12 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Con
                 ),
             );
         }
+
+        if ($allowEmptyBody && trim($body) === '') {
+            return [];
+        }
+
+        $decoded = json_decode($body, true);
 
         if (!is_array($decoded)) {
             PluginLogger::error("IONOS non-JSON response on $path (HTTP $status)");

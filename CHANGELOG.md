@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0-alpha2] - 2026-07-29
+### Added
+- **`DnsRecordWriterInterface` and a real IONOS implementation** (ARCHITECTURE.md §11, Phase 33 of 35): `createRecord()`, `updateRecord()`, `deleteRecord()`, `fetchRecord()`, restricted to the four writable types (A, AAAA, CNAME, TXT — §11.4). No controller, modal, or menu entry yet — nothing user-reachable changes in this release. Verified against the live `dns.yaml` OpenAPI spec (`developer.hosting.ionos.de`, version 1.0.2) rather than the reference client alone, which corrected two assumptions in ARCHITECTURE.md §11.9: IONOS's record update is a partial update (`{content, ttl, prio, disabled}`, no `name`/`type`), not a full replace, and its `200` response does carry the updated record rather than an empty body. The spec also confirms `ALIAS` is absent from the API's record-type enum entirely, corroborating §11.4's prior evidence-based exclusion.
+
 ## [1.2.0-alpha1] - 2026-07-29
 ### Added
 - **First step of manual DNS record write-back to IONOS** (ARCHITECTURE.md §11, Phase 32 of 35): schema and rights groundwork only, no write path yet. New `is_glpi_created` column on `glpi_plugin_domainmanager_records` (non-nullable, default `0`), immutable history of which records this future feature creates versus the reconciler. New `domainmanager:dns_records` right (CREATE/UPDATE/DELETE bits, not auto-granted to any profile) that will gate the write panel once it exists. New "Created from GLPI" search option (id 9430, widening the plugin's reserved 9400-9429 block by one — 9425/9426/9429 were briefly live in a same-day-superseded Phase 26/27 change and stay permanent gaps) on DomainRecord.

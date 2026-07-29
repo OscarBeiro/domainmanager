@@ -1155,28 +1155,40 @@ through `GLPIKey`.
 ### 11.9 IONOS implementation
 
 Base `https://api.hosting.ionos.com/dns/v1`, auth `X-API-Key: <prefix>.<secret>` — both already
-in use by `fetchZoneRecords()` (§3.9). Endpoints and payload shape below are taken from the
-maintained `libdns/ionos` reference client, the same source §3.9 used to establish the read wire
-format, because IONOS's docs portal is a JS-rendered SPA with nothing scrapable.
+in use by `fetchZoneRecords()` (§3.9).
+
+**Endpoints and payload shape below are taken from the authoritative live spec**,
+`https://developer.hosting.ionos.de/assets/kms-swagger-specs/dns.yaml` (openapi 1.0.2, fetched
+and read directly 2026-07-29 — the DNS counterpart of the `domains.yaml` spec §3.9 already used,
+served the same way: `application/octet-stream`, pulled with `curl`). This **corrects two
+assumptions** an earlier draft made from the `libdns/ionos` reference client alone (kept below,
+struck through in spirit, for the record):
 
 | Operation | Request | Notes |
 |---|---|---|
-| create | `POST /zones/{zoneId}/records` | Body is a JSON **array**; response is an array of created records **including their ids** |
-| update | `PUT /zones/{zoneId}/records/{recordId}` | **No response body** |
-| delete | `DELETE /zones/{zoneId}/records/{recordId}` | |
+| create | `POST /zones/{zoneId}/records` | Body is a JSON **array**; response is `201` with an array of created records **including their ids** — reference client was right here |
+| update | `PUT /zones/{zoneId}/records/{recordId}` | Body is the `record-update` schema, **`{content, ttl, prio, disabled}` only — no `name`/`type`**; response is `200` **with a full record body** (`record-response`) |
+| delete | `DELETE /zones/{zoneId}/records/{recordId}` | `200`, no documented response body |
 
-Record payload: `{name, type, content, ttl, prio, disabled}`.
+Create payload (`record` schema): `{name, type, content, ttl, prio, disabled}`. Update payload
+(`record-update` schema) is the narrower `{content, ttl, prio, disabled}` shown above.
 
-**Five wire-level traps, each with a required response:**
+**Wire-level traps, each with a required response:**
 
-1. **`PUT` is a full replace, not a `PATCH`.** Every field must be sent on every edit. This makes
-   the live re-fetch in §11.10 *structurally required* to build a valid body — not merely a
-   safety nicety.
-2. **TTL below 60 is rejected with HTTP 400.** The reference client omits the field entirely
-   when TTL is 0. Both belong in modal validation, client- and server-side.
-3. **`disabled` must be sent explicitly as `false`.** The reference client marks it `omitempty`
-   with an unresolved comment about the default being `true`; omitting it risks creating a
-   disabled record that resolves nowhere while looking correct in GLPI.
+1. **`PUT` is a partial update, not a full replace — corrected 2026-07-29.** The spec's own
+   `record-update` request schema has no `name`/`type` field, and its `200` response is a full
+   `record-response` body, not empty. Both halves of the original assumption (full-replace body
+   required; no response body) were wrong, sourced from the reference client rather than the
+   spec. This removes the "live re-fetch structurally required to build a valid body" rationale
+   §11.10 originally gave for its live re-fetch step — that step is kept for the confirmation-modal
+   UX itself (§11.10), not because the API demands a full payload.
+2. **TTL below 60 is rejected with HTTP 400.** Not asserted anywhere in the schema itself (no
+   `minimum` on `ttl`), so this remains reference-client/live-probing knowledge, not spec-verified.
+   The reference client omits the field entirely when TTL is 0. Both belong in modal validation,
+   client- and server-side.
+3. **`disabled` must be sent explicitly as `false`.** The schema defaults it to `false`, but the
+   reference client's own comments raised doubt about the server-side default; sending it
+   explicitly removes the ambiguity regardless of which is correct.
 4. **Names are absolute at IONOS and carry no trailing dot.** The read path relativises against
    the zone name; the write path must re-absolutise and strip any trailing dot.
 5. **The create response carries the provider id**, so `remote_id` is captured at push time from
@@ -1184,9 +1196,19 @@ Record payload: `{name, type, content, ttl, prio, disabled}`.
    remains of an earlier "store the provider id" work item: the `remote_id` column already
    exists and is indexed, and `RecordReconciler` already matches on it first, falling back to
    `record_hash`.)
+6. **`ALIAS` is absent from the spec's `recordTypes` enum entirely** — confirms, rather than
+   merely infers (§11.4), that it doesn't exist on the Hosting DNS API.
 
 **Zone resolution** reuses `findZoneId()` unchanged, including its client-side case-insensitive
 match — the API has no filter-by-name parameter for zones.
+
+**Implementation note (Phase 33):** `IonosDriver` stores/round-trips `$data` in the same
+convention `ZoneRecord::$data` already uses for reads (TXT unquoted, CNAME with no trailing dot —
+see `DnsRecordWriterInterface`'s docblock), not the literal core field-join convention this
+section originally described. That is consistent with what `fetchZoneRecords()` and
+`RecordReconciler` already do today: `extractContent()` unquotes TXT on read and never appends a
+CNAME dot, so a plugin-written record's `$data` matches what the next sync would read back —
+which is the actual property §11.5 was protecting.
 
 ### 11.10 Immediate push, with three purpose-built confirmations
 
@@ -1379,15 +1401,18 @@ Confirm against the live `11.0/bugfixes` branch and live provider docs. **Never 
   was never confirmed, and GLPI uses `version_compare` for `minGlpiVersion` elsewhere. Cheap to
   check; the whole schema path depends on it.
 
-**Before Phase 33:**
-- Fetch and read `https://developer.hosting.ionos.de/assets/kms-swagger-specs/dns.yaml` — the DNS
-  counterpart of the `domains.yaml` spec §3.9 already uses. It is served as
-  `application/octet-stream`, so it must be pulled with `curl` rather than a browser-oriented
-  fetcher. Read the **record-type enum** and required fields from it. This is the authoritative
-  answer to two open questions: whether `ALIAS` exists on the Hosting API at all (§11.4), and
-  whether TTL/priority constraints match the reference client's behaviour.
-- Confirm the create/update/delete paths and payload schema against that spec rather than
-  relying solely on the reference client.
+**Before Phase 33: done (2026-07-29).**
+- Fetched and read `https://developer.hosting.ionos.de/assets/kms-swagger-specs/dns.yaml`
+  (`curl`, served as `application/octet-stream` as expected; openapi 1.0.2). Confirmed: `ALIAS`
+  is **absent** from the `recordTypes` enum entirely (§11.4's evidence-based exclusion is now
+  spec-confirmed, not just inferred); no `minimum`/`maximum` constraint is declared on `ttl` or
+  `prio` anywhere in the schema, so the "TTL below 60 is rejected" and priority behaviour remain
+  reference-client/live-probing knowledge, not spec-verified — unchanged risk, now explicitly
+  labelled as such in §11.9 rather than silently assumed.
+- Confirmed create/update/delete paths and payload schema against the spec, **correcting** two
+  reference-client-only assumptions in the original §11.9: `PUT` (update) takes a narrower
+  `{content, ttl, prio, disabled}` body (no `name`/`type`) and its `200` response is a full record
+  body, not empty. Detail moved into §11.9 itself so it isn't duplicated here.
 
 **Before Phase 34:**
 - GLPI 11's own confirmation-modal convention, before hand-rolling one.
