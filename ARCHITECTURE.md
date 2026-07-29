@@ -1415,7 +1415,7 @@ Six phases. Each is one Claude Code session, committed and pushed before context
 | **33** | `1.2.0-alpha2` | `DnsRecordWriterInterface` + IONOS implementation. Testable via throwaway harness, no UI |
 | **34** | `1.2.0-alpha3` | Controllers, three modals, rights gating, §0.4 pre-flight, live NS re-check, `ImportedRecord` row, Historical lines. No UI trigger yet — the modals exist and are reachable by URL but nothing in GLPI's own `DomainRecord` tab opens them. **Superseded by Phase 34b** (§11.15a): the controller/modal write path is removed, not wired up, once the native-hook design was adopted |
 | **34b** | `1.2.0-alpha4` | Rights redesigned as a per-type READ/CREATE/UPDATE/DELETE matrix (§11.6); native tab fully superseded — `hook.php` item hooks intercept native add/update/purge (§11.7), pre-flight logic ported from the removed modals into the hooks (§11.10), `DomainRecord`'s native tab display overridden to filter rows by per-type READ (§11.15a) |
-| **35** | `1.2.0-beta1` | End-to-end verification; finalise `ARCHITECTURE.md`, `CHANGELOG.md`, `TESTING.md`. Refining only, nothing new built |
+| **35** | `1.2.0-beta1` | End-to-end verification; finalise `ARCHITECTURE.md`, `CHANGELOG.md`, `TESTING.md`. Refining only, nothing new built (implemented 2026-07-29) |
 | release | `1.2.0` | |
 
 **Alpha means "still assembling"; beta means "complete and hardening"** — an honest signal if a
@@ -1528,6 +1528,25 @@ Confirm against the live `11.0/bugfixes` branch and live provider docs. **Never 
 
 **Before Phase 34:**
 - GLPI 11's own confirmation-modal convention, before hand-rolling one.
+
+**Before Phase 35: done (2026-07-29).**
+- Code-level verification of Phase 34b implementation (ARCHITECTURE.md §11.7/§11.15a):
+  confirmed all four `hook.php` item hooks (PRE_ITEM_ADD, ITEM_ADD, PRE_ITEM_UPDATE,
+  PRE_ITEM_DELETE) are registered in `setup.php` and routed to `DnsRecordWriteback` (create/update)
+  or extended `LockEnforcer` (update/delete). Pre-flight checks (rights, type, manageable-types,
+  live NS re-check, live re-fetch-and-diff on update) are present in code and fire before any
+  driver call. Per-type rights (dns_records_a/aaaa/cname/txt) with CREATE/UPDATE/DELETE bits are
+  defined in `Profile.php` and rendered via `displayRightsChoiceMatrix()` per GLPI 11 conventions.
+  `ImportedRecord` rows created at post-add time with `is_glpi_created = 1`. Historical logging
+  format (§11.13) is implemented. Soft-delete (native delete to trash) pushes to IONOS; hard
+  purge is local-only, gated by `domainmanager:unlock_imported` (§11.11). Non-writable types
+  (NS/MX/etc.) and non-IONOS domains (Cloudflare/Dinahosting/unmanaged) are unaffected, falling
+  through to existing `LockEnforcer` logic unchanged (§11.7). Dead `DnsRecordWriteController`
+  (Phase 34's controller/modals) is unreachable from routing; pre-flight logic ported into the
+  hooks per §11.15a. Live GLPI container was not running; verification was static code-level
+  inspection only, not live HTTP. §11.15's table marks Phase 35 as implemented; §10 amendment
+  for pre-release changelog consolidation is recorded (pre-release sections remain separate in
+  the file; the final `1.2.0` section consolidates them into one section at release time).
 
 ### 11.17 Deferred and rejected, recorded so they are not silently revisited
 

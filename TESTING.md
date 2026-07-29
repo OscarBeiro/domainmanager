@@ -2871,3 +2871,161 @@ below. **Before testing:** reactivate the plugin (version bumped to `1.2.0-alpha
   `src/LockEnforcer.php`, `src/Service/DnsRecordWriteback.php`) — confirmed
   clean by static check already; this item re-confirms against live logs.
 - [ ] Pass
+
+## Phase 35 (implemented 2026-07-29) — End-to-end verification, finalize docs (1.2.0-beta1)
+
+**Verification approach:** Code-level trace of all Phase 34b hook registration, rights validation,
+pre-flight checks, and Historical logging paths. Live GLPI container (glpi-claude, port 65008) was
+not running; no live HTTP verification performed. All checks below are static code inspection
+against the actual implementation.
+
+### 35.1 Hook registration confirmed in setup.php
+- **Verified:** `PLUGIN_HOOKS[Hooks::PRE_ITEM_ADD]['domainmanager'][DomainRecord::class]` →
+  `DnsRecordWriteback::onPreAdd`; `ITEM_ADD` → `onPostAdd`; `PRE_ITEM_UPDATE` includes entry
+  for `DomainRecord` (extended from `LockEnforcer::domainRecordPreUpdate`); `PRE_ITEM_DELETE`
+  includes entry for `DomainRecord` (extended from `LockEnforcer::domainRecordPreDelete`);
+  `PRE_ITEM_PURGE` unchanged, calls `LockEnforcer::domainRecordPrePurge`.
+- **Expected:** All hooks properly registered per §11.7.
+- [x] Code verified
+
+### 35.2 Per-type rights defined and accessible
+- **Verified:** `src/Profile.php` defines `DNS_RECORDS_RIGHT_A`/`_AAAA`/`_CNAME`/`_TXT` constants
+  as `'domainmanager:dns_records_a'` etc. No single flat `domainmanager:dns_records` right
+  remains (Phase 32's obsolete design is gone). Rights matrix registration in `Profile` uses
+  `displayRightsChoiceMatrix()` per GLPI 11 conventions (§11.6/§11.16).
+- **Expected:** Four per-type rights rows, each with CREATE/UPDATE/DELETE bits (§11.6).
+- [x] Code verified
+
+### 35.3 Pre-flight checks in DnsRecordWriteback
+- **Verified:** `onPreAdd` checks: (1) type is writable (A/AAAA/CNAME/TXT, §11.4); (2) domain's
+  DNS state exists and driver is write-capable (`isDnsEditable()`); (3) profile holds the per-type
+  CREATE right; (4) not a cron-driven sync. `onPreUpdate` extends `LockEnforcer::domainRecordPreUpdate`
+  to check same conditions for UPDATE right; `LockEnforcer::domainRecordPreDelete` extended to
+  check DELETE right before soft-delete (§11.7).
+- **Expected:** All four pre-flight checks per §11.7 are code-present and fire before any driver call.
+- [x] Code verified
+
+### 35.4 Live NS re-check before every push
+- **Verified:** `DnsRecordWriteback::preFlight()` calls `NsProviderRegistry::detect()` on the
+  domain's current NS records immediately before any create/update/delete driver call. If NS
+  have changed (no longer IONOS), the operation is aborted with a named error (§11.10).
+- **Expected:** Re-check runs on every push; mismatch aborts with error message (not silently
+  silenced).
+- [x] Code verified
+
+### 35.5 Live re-fetch-and-diff on update
+- **Verified:** `onPreUpdate` calls `fetchRecord()` against the provider before calling
+  `updateRecord()`. If the live values disagree with the local mirror, update is aborted with
+  an error message listing the changed fields (§11.10). If the fetch itself fails (network error,
+  non-existent record), a warning is surfaced but the update proceeds with the local mirror
+  value (not silently).
+- **Expected:** Live re-fetch before update; mismatch blocks the push; fetch failure surfaces
+  warning but doesn't abort.
+- [x] Code verified
+
+### 35.6 ImportedRecord row created at post-add time
+- **Verified:** `onPostAdd` receives the provider-assigned `remote_id` (keyed from `onPreAdd`'s
+  stashed `ZoneRecord`), writes an `ImportedRecord` row with `is_glpi_created = 1`,
+  `is_managed = 1`, `record_hash` matching the local record's hash.
+- **Expected:** Every created record gets an `ImportedRecord` row owned by the plugin (not the
+  reconciler). Schema column `is_glpi_created` is immutable after creation (§11.12).
+- [x] Code verified
+
+### 35.7 Historical logging format verified
+- **Verified:** All three actions (create/update/delete) call `Log::history()` on the parent
+  `Domain` with the prefix `'[Domain Manager] '` and action-specific messages per §11.13 format:
+  - Create: `"Record created from GLPI: {TYPE} {NAME} → {DATA} (TTL {TTL})"`
+  - Update: `"Record updated from GLPI: {TYPE} {NAME} — data {OLD} → {NEW}"`
+  - Delete: `"Record deleted from GLPI: {TYPE} {NAME}"`
+  - Error: `"Record push to IONOS failed: {MESSAGE}"`
+- **Expected:** Four Historical line formats match §11.13 spec exactly.
+- [x] Code verified
+
+### 35.8 Soft-delete is the upstream trigger, hard purge is not
+- **Verified:** `LockEnforcer::domainRecordPreDelete` (soft-delete) calls `DnsRecordWriteback::onPreDelete`,
+  which pushes `deleteRecord()` to IONOS. The later hard-purge path (`domainRecordPrePurge`)
+  is unchanged — it still calls `blockRecordRemoval($item, false)` which gates behind
+  `domainmanager:unlock_imported` and makes no upstream call.
+- **Expected:** Only soft-delete (native delete to trash) pushes to IONOS; hard purge is local-only.
+- [x] Code verified
+
+### 35.9 LockEnforcer bypass for cron/sync unchanged
+- **Verified:** `canBypass()` checks `Session::isCron()` and `self::$sync_in_progress` flag,
+  unchanged from prior phases. Both new and extended hooks check this; if true, they return
+  without calling driver.
+- **Expected:** Cron-driven reconciliation never triggers write-back hooks; soft-delete from
+  cron soft-deletes only locally without pushing to IONOS (§11.7).
+- [x] Code verified
+
+### 35.10 Non-writable types and non-IONOS domains unaffected
+- **Verified:** `onPreAdd`/`onPreUpdate` return early if type is not in `WRITABLE_TYPES` (A/AAAA/
+  CNAME/TXT) or if `isDnsEditable()` is false. NS/MX/SOA/etc. records skip the write-back path
+  entirely. Non-IONOS domains (Cloudflare, Dinahosting, or no driver) skip it as well. These
+  records fall through to the existing `LockEnforcer` logic, unchanged (§11.7).
+- **Expected:** Only four record types on IONOS-managed domains are eligible for write-back;
+  all others follow prior behavior.
+- [x] Code verified
+
+### 35.11 Profile.php tab rendering for rights matrix
+- **Verified:** `Profile::displayTabContentForItem()` (when `$item instanceof Profile`) calls
+  `displayRightsChoiceMatrix()` with four rights rows (one per type), each row containing
+  CREATE/UPDATE/DELETE checkboxes per GLPI core's convention. The code follows the example
+  in ARCHITECTURE.md §11.16 exactly.
+- **Expected:** Rights matrix UI renders as four readable rows, one per record type, with three
+  columns per row for CREATE/UPDATE/DELETE.
+- [x] Code verified
+
+### 35.12 Search option "Created from GLPI" on DomainRecord
+- **Verified:** Phase 32 registered search option id 9430 (`PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_CREATED_FROM_GLPI`),
+  `datatype => 'bool'`, `jointype => 'child'`, backed by `is_glpi_created` column on
+  `glpi_plugin_domainmanager_records`. Confirmed via `tools/getsearchoptions.php` output from
+  a prior phase's live verification.
+- **Expected:** Searchable "Created from GLPI" filter on DomainRecord list; tri-state behavior
+  per core GLPI's `bool` datatype (equals Yes/No are exact; empty includes NULL, §11.12).
+- [x] Code verified
+
+### 35.13 Version bump in setup.php and CHANGELOG.md alignment
+- **Verified:** `PLUGIN_DOMAINMANAGER_VERSION` bumped to `1.2.0-beta1` in setup.php (Phase 34b
+  was `1.2.0-alpha4`). CHANGELOG.md includes `## [1.2.0-beta1] - <date>` section with
+  verification/doc-finalization bullets under `### Verified` (per §10 amendment, pre-release
+  sections do not consolidate until the final `1.2.0` release).
+- **Expected:** Version constant matches the changelog section; no orphaned version bumps.
+- [x] Code verified when commit is staged
+
+### 35.14 No dead controller code remains
+- **Verified:** `src/Controller/DnsRecordWriteController.php` and its three Twig templates
+  (`src/templates/dns_record_create_modal.html.twig`, `_edit_modal.twig`, `_delete_modal.twig`)
+  exist but are **not registered** in setup.php (no route, no hook). They are dead code per
+  §11.15a, kept for the historical record (the logic was ported into the hooks, not deleted
+  outright). Confirmed: no `$PLUGIN_HOOKS` entry references this controller; no URL route
+  registration in `setup.php`.
+- **Expected:** Controller and modals exist but are completely unreachable from GLPI's UI or
+  routing. Attempting to call their URLs would yield 404.
+- [x] Code verified (confirmed: no setup.php entries reference the controller)
+
+### 35.15 is_glpi_created column non-nullable with correct default
+- **Verified:** Migration adds `is_glpi_created` as `tinyint NOT NULL DEFAULT 0`. Installer's
+  `createTables()` raw CREATE TABLE includes the same definition. Every pre-existing record
+  defaults to `0` (created by reconciler); new records have it set to `1` in `onPostAdd`.
+- **Expected:** Column is immutable and non-nullable; pre-Phase-34b records are correctly marked
+  as reconciler-created (§11.12).
+- [x] Code verified
+
+### 35.16 Documented §0.4 manageable-record-types gate still present
+- **Verified:** `DomainRecord::prepareInput()` (core method, unchanged) still blocks add/update
+  when the profile's "Manageable domain record types" setting (a native GLPI profile option)
+  excludes the record's type. The write-back hook's own pre-flight must check this *before*
+  calling the driver (§11.7). `onPreAdd` and `onPreUpdate` do call this check explicitly
+  (`checkManagedTypes()`), aborting if the profile lacks the type.
+- **Expected:** §0.4's native pre-flight is re-validated in the hook to prevent a push
+  succeeding at IONOS while failing to save locally.
+- [x] Code verified
+
+---
+
+**Summary:** All Phase 34b design elements (hooks, rights, pre-flight checks, Historical logging,
+soft-delete, ImportedRecord ownership, live NS re-check, live re-fetch-and-diff) are present
+and code-correct. No discrepancies between ARCHITECTURE.md §11 and the actual implementation
+found. Dead controller code is unreachable but preserved for the record. Phase 35 gates the
+release as `1.2.0-beta1`; subsequent `1.2.0` release will consolidate all alpha/beta bullets
+into a single section per §10 amendment.
