@@ -52,6 +52,17 @@ class Profile extends CoreProfile
     public const RIGHT_UNLOCK_IMPORTED = 1;
 
     /**
+     * Name of the DNS record write-back right (ARCHITECTURE.md §11.6,
+     * Phase 32) — carries core's own CREATE/UPDATE/DELETE bits, rendered
+     * via `Profile::displayRightsChoiceMatrix()` so it reads like any
+     * other GLPI right instead of a bespoke checkbox set. Distinct from
+     * `UNLOCK_RIGHT`: that one governs local overrides of plugin locks on
+     * the native form; this one authorises writes through the plugin
+     * panel, to the provider.
+     */
+    public const DNS_RECORDS_RIGHT = 'domainmanager:dns_records';
+
+    /**
      * {@inheritDoc}
      */
     public static function getTypeName($nb = 0)
@@ -94,6 +105,15 @@ class Profile extends CoreProfile
                 ],
                 'label'     => __('Unlock imported domain data', 'domainmanager'),
                 'field'     => self::UNLOCK_RIGHT,
+            ],
+            [
+                'rights'    => [
+                    CREATE => __('Create'),
+                    UPDATE => __('Update'),
+                    DELETE => __('Delete'),
+                ],
+                'label'     => __('DNS record write-back to provider', 'domainmanager'),
+                'field'     => self::DNS_RECORDS_RIGHT,
             ],
         ];
     }

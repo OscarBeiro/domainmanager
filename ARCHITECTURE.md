@@ -846,6 +846,8 @@ Right registered per-profile via `Migration::addRight` at install and manageable
 
 21. **Phase 31** — architecture only (this document, §11). No code. Stop for approval before Phase 32.
 
+22. **Phase 32 (implemented 2026-07-29) — schema, one right, one search option.** `PLUGIN_DOMAINMANAGER_VERSION` bumped to `1.2.0-alpha1` (§11.15's Phase-15-trap requirement). `is_glpi_created` added to `glpi_plugin_domainmanager_records` (non-nullable tinyint, default `0`, `addField()`/`addKey()`, already present in `createTables()`'s raw CREATE TABLE for fresh installs — §11.12). New right `domainmanager:dns_records` (CREATE/UPDATE/DELETE bits, not auto-granted to any profile), registered/deregistered via the existing `Installer::registerRights()`/`Profile::uninstall()` plumbing, rendered through `Profile::displayRightsChoiceMatrix()` alongside the existing unlock right (§11.6). New DomainRecord search option "Created from GLPI" (id **9430**, not 9425/9426/9429 — those were briefly live in the same-day-superseded Phase 26/27 change and stay permanent gaps per the plugin's own never-reassign rule, so the reserved block widens by one instead). No `DnsRecordWriterInterface`, no IONOS implementation, no UI yet — that's Phase 33 onward.
+
 Every phase leaves install → uninstall residue-free.
 
 ---

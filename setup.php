@@ -39,7 +39,7 @@ use GlpiPlugin\Domainmanager\LockEnforcer;
 use GlpiPlugin\Domainmanager\Profile as DomainmanagerProfile;
 use GlpiPlugin\Domainmanager\SupplierTab;
 
-define('PLUGIN_DOMAINMANAGER_VERSION', '1.1.0');
+define('PLUGIN_DOMAINMANAGER_VERSION', '1.2.0-alpha1');
 define('PLUGIN_DOMAINMANAGER_MIN_GLPI', '11.0.0');
 define('PLUGIN_DOMAINMANAGER_MAX_GLPI', '11.0.99');
 define('PLUGIN_DOMAINMANAGER_REPOSITORY_URL', 'https://github.com/TICGAL-GLPI-Plugins/domainmanager');
@@ -123,6 +123,14 @@ define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_LAST_CHANGED', 9423);
 define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_TRANSFER_DATE', 9424);
 define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_PENDING_DELETE', 9427);
 define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_PENDING_TRANSFER', 9428);
+// Real, filterable search option on DomainRecord (ARCHITECTURE.md §11.12,
+// Phase 32). NOT 9425/9426/9429: those look unused today but were briefly
+// live (§9 Phase 26, same day superseded by Phase 27) — a previously
+// -registered id must never silently change meaning, so they stay
+// permanent gaps rather than being recycled. The 9400-9429 block is fully
+// spoken for, so this widens it the same way 9400-9409 was widened to
+// 9400-9429 originally.
+define('PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_GLPI_CREATED', 9430);
 
 /**
  * Plugin_Version_Domainmanager
@@ -507,6 +515,27 @@ function plugin_domainmanager_getAddSearchOptionsNew($itemtype): array
             'field'         => 'is_proxied',
             'linkfield'     => 'domainrecords_id',
             'name'          => __('Proxy status', 'domainmanager'),
+            'datatype'      => 'bool',
+            'massiveaction' => false,
+            'joinparams'    => [
+                'jointype' => 'child',
+            ],
+        ];
+
+        // ARCHITECTURE.md §11.12 (Phase 32) — same single-hop 'child' join
+        // shape/table as the two options above. `is_glpi_created` is a
+        // non-nullable tinyint (default 0, backed by a NOT NULL column, so
+        // the known "'empty' means 0 OR NULL" 'bool' limitation is harmless
+        // here — every row genuinely has a real value). Not the same thing
+        // as "Managed" above: a record can be Managed without being
+        // GLPI-created (imported by sync) or GLPI-created and Managed at
+        // the same time (written via this feature, then reconciled).
+        $options[] = [
+            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_GLPI_CREATED,
+            'table'         => ImportedRecord::getTable(),
+            'field'         => 'is_glpi_created',
+            'linkfield'     => 'domainrecords_id',
+            'name'          => __('Created from GLPI', 'domainmanager'),
             'datatype'      => 'bool',
             'massiveaction' => false,
             'joinparams'    => [

@@ -65,6 +65,7 @@ class Installer
         self::migrateRecordManagedColumn($migration);
         self::addRegistrarMetadataColumns($migration);
         self::addRecordProxiedColumn($migration);
+        self::addRecordGlpiCreatedColumn($migration);
         self::addDomainManagedColumn($migration);
         self::addNameAsciiColumn($migration);
         self::addRdapColumns($migration);
@@ -193,6 +194,7 @@ class Installer
                     `last_seen` timestamp NULL DEFAULT NULL,
                     `is_managed` tinyint NOT NULL DEFAULT '0',
                     `is_proxied` tinyint NULL DEFAULT NULL,
+                    `is_glpi_created` tinyint NOT NULL DEFAULT '0',
                     `date_mod` timestamp NULL DEFAULT NULL,
                     `date_creation` timestamp NULL DEFAULT NULL,
                     PRIMARY KEY (`id`),
@@ -201,7 +203,8 @@ class Installer
                     KEY `remote_id` (`remote_id`),
                     KEY `record_hash` (`record_hash`),
                     KEY `is_managed` (`is_managed`),
-                    KEY `is_proxied` (`is_proxied`)
+                    KEY `is_proxied` (`is_proxied`),
+                    KEY `is_glpi_created` (`is_glpi_created`)
                 ) ENGINE=InnoDB DEFAULT CHARSET={$charset} COLLATE={$collation} ROW_FORMAT=DYNAMIC
                 SQL,
             'glpi_plugin_domainmanager_locks' => <<<SQL
@@ -367,6 +370,32 @@ class Installer
 
         $migration->addField($table, 'is_proxied', 'tinyint NULL DEFAULT NULL');
         $migration->addKey($table, 'is_proxied');
+    }
+
+    /**
+     * Add `is_glpi_created` to the records table (ARCHITECTURE.md §11.12,
+     * Phase 32) — same table `is_managed`/`is_proxied` already live on.
+     * Idempotent via `Migration::addField()`/`addKey()` for upgrades;
+     * already present in `createTables()`'s raw CREATE TABLE for fresh
+     * installs, same convention as `is_proxied`.
+     *
+     * Unlike `is_proxied`, this is a non-nullable tinyint defaulting to
+     * `0`: every pre-existing row was created by the reconciler, so
+     * default `0` ("not GLPI-created") is factually correct for every one
+     * of them and needs no backfill. Set once at creation by the write
+     * path (§11.12, reusing `RecordReconciler::createRecord()`), never
+     * changed afterwards — a record authored in GLPI stays authored in
+     * GLPI even after a later upstream edit updates its other fields.
+     *
+     * @param  Migration $migration
+     * @return void
+     */
+    private static function addRecordGlpiCreatedColumn(Migration $migration): void
+    {
+        $table = 'glpi_plugin_domainmanager_records';
+
+        $migration->addField($table, 'is_glpi_created', 'bool', ['value' => 0]);
+        $migration->addKey($table, 'is_glpi_created');
     }
 
     /**
@@ -720,6 +749,12 @@ class Installer
     private static function registerRights(Migration $migration): void
     {
         $migration->addRight(Profile::UNLOCK_RIGHT, Profile::RIGHT_UNLOCK_IMPORTED, ['config' => UPDATE]);
+        // ARCHITECTURE.md §11.6 (Phase 32): a new write-capable right, not
+        // auto-granted to any existing profile — unlike the unlock right
+        // above (piggybacked on config UPDATE), pushing changes to a live
+        // provider is sensitive enough that an admin must grant it
+        // explicitly per profile.
+        $migration->addRight(Profile::DNS_RECORDS_RIGHT, 0);
         // Migration::addRight() inserts rows directly: reset the rights cache
         ProfileRight::cleanAllPossibleRights();
     }

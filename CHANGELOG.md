@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0-alpha1] - 2026-07-29
+### Added
+- **First step of manual DNS record write-back to IONOS** (ARCHITECTURE.md §11, Phase 32 of 35): schema and rights groundwork only, no write path yet. New `is_glpi_created` column on `glpi_plugin_domainmanager_records` (non-nullable, default `0`), immutable history of which records this future feature creates versus the reconciler. New `domainmanager:dns_records` right (CREATE/UPDATE/DELETE bits, not auto-granted to any profile) that will gate the write panel once it exists. New "Created from GLPI" search option (id 9430, widening the plugin's reserved 9400-9429 block by one — 9425/9426/9429 were briefly live in a same-day-superseded Phase 26/27 change and stay permanent gaps) on DomainRecord.
+
 ## [1.1.0] - 2026-07-28
 ### Added
 - **RDAP as a fallback/supplementary data source (§9 Phases 21-23)**: a new `PluginDomainmanagerCronRdapEnrichment` Automatic Action (default every 10 minutes) queries `rdap.org` directly for one gap-eligible domain per tick and fills in whatever the configured registrar driver left blank — registration/expiration dates, a new RDAP-only "last changed" timestamp, and new tri-state pending-delete/pending-transfer flags. DNSSEC gets the same gap-fill only when the driver itself doesn't already report it (e.g. Dinahosting, not IONOS). Registrar-of-record (name + IANA ID) and the nameserver list are also fetched every lookup, purely as read-only diagnostics — never wired into the Infocom `suppliers_id` mirror or the DNS sync pipeline. A domain's TLD not being covered by RDAP (a 404 from `rdap.org`) is treated as a normal outcome, not an error; `last_rdap_check_date` still advances so it isn't retried until the next day.
