@@ -1339,19 +1339,52 @@ it needs choosing once, in writing, before Phase 32's first version bump lands.
 
 ### 11.15 Phases and versioning
 
-Five phases. Each is one Claude Code session, committed and pushed before context is cleared.
+Six phases. Each is one Claude Code session, committed and pushed before context is cleared.
 
 | Phase | Version | Content |
 |---|---|---|
 | **31** | — | This architecture section. **No code.** Stop for approval. |
 | **32** | `1.2.0-alpha1` | Schema (`is_glpi_created`), one right, one search option |
 | **33** | `1.2.0-alpha2` | `DnsRecordWriterInterface` + IONOS implementation. Testable via throwaway harness, no UI |
-| **34** | `1.2.0-alpha3` | Controllers, three modals, rights gating, §0.4 pre-flight, live NS re-check, `ImportedRecord` row, Historical lines |
+| **34** | `1.2.0-alpha3` | Controllers, three modals, rights gating, §0.4 pre-flight, live NS re-check, `ImportedRecord` row, Historical lines. No UI trigger yet — the modals exist and are reachable by URL but nothing in GLPI's own `DomainRecord` tab opens them |
+| **34b** | `1.2.0-alpha4` | UI wiring: native buttons only (§11.15a) — no bespoke row/toolbar design, wired into GLPI core's own `DomainRecord` tab exactly as core renders it elsewhere |
 | **35** | `1.2.0-beta1` | End-to-end verification; finalise `ARCHITECTURE.md`, `CHANGELOG.md`, `TESTING.md`. Refining only, nothing new built |
 | release | `1.2.0` | |
 
 **Alpha means "still assembling"; beta means "complete and hardening"** — an honest signal if a
 client is to test before release.
+
+### 11.15a Phase 34b: native UI wiring, not a bespoke design
+
+**Explicit constraint, set by Óscar when Phase 34 landed with no UI trigger:** the create/edit/
+delete actions must be surfaced as **GLPI's own native buttons/icons**, in GLPI's own native
+`DomainRecord` tab, not a plugin-designed toolbar or row layout bolted alongside it. Concretely,
+before writing any Phase 34b code:
+
+- Confirm (against the live `11.0/bugfixes` source, not from recall) exactly how core renders the
+  `DomainRecord` list under a `Domain`'s tab — whether it is a `Search::show()`-driven list (in
+  which case the native mechanism is a `massiveaction`/row action or a `getSpecificValueToDisplay`
+  hook the plugin can extend) or a hand-rolled `showForDomain()`-style table (in which case core's
+  own icon/button markup for that specific view is what to copy, not core conventions from an
+  unrelated screen).
+- Reuse whatever pattern core itself already uses for a comparable itemtype's inline
+  create/edit/delete affordance — same icon set (`ti-*` classes as already used elsewhere in this
+  plugin per the icon-convention memory), same button placement, same modal-open mechanism
+  (`Ajax::createModalWindow()` is this plugin's own established convention — see
+  `SupplierTab.php`'s `import_modal_script`/`Ajax::createModalWindow()` pair and
+  `supplier_tab.html.twig`'s `{{ import_modal_script|raw }}` — reuse it here rather than a second
+  wiring mechanism).
+- Phase 34's routes are POST-only; `Ajax::createModalWindow()`'s `.load()` issues a GET. Resolve
+  this by adding GET-loadable modal routes (mirroring the existing `create/modal`,
+  `edit/modal/{id}`, `delete/modal/{id}` actions, which already just *render*, not mutate) rather
+  than by changing the loader mechanism.
+- The edit/delete buttons must only render for rows where `DomainRecord` is actually
+  write-capable per §11.2/§11.3's derived-capability rule (IONOS-managed, editable type) — a
+  button that opens a modal doomed to fail server-side pre-flight is worse than no button.
+- Rights-gate the buttons themselves (hide, don't just disable) using the same
+  `domainmanager:dns_records` CREATE/UPDATE/DELETE checks already enforced server-side in
+  `DnsRecordWriteController` — the button is a convenience, the controller remains the actual
+  enforcement per §11.7.
 
 **Phase 32 must bump `PLUGIN_DOMAINMANAGER_VERSION` (from `1.1.0`) or `Installer::install()`
 never re-runs** and the migration silently does not apply. This is the Phase 15 trap; it is the
