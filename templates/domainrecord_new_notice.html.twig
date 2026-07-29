@@ -27,28 +27,13 @@
  # -------------------------------------------------------------------------
  #}
 {#
- # Rendered from `DomainForm::inject()` (main tab) and `DomainForm::onShowTab()`
- # (every other tab, e.g. Records) — see §9 Phase 36. `.navigationheader-title`
- # is core's own item-title element (`src/CommonGLPI.php::showNavigationHeader()`),
- # rendered once per page load regardless of which tab is active/forced, so a
- # single idempotent insert here covers every tab without re-injecting on
- # client-side ajax tab switches (the header itself is never swapped).
+ # Rendered from `DomainForm::injectDomainRecord()` (§9 Phase 37 addendum) on
+ # GLPI's own generic, blank "New Domain record" form — reachable from the
+ # global Domains-records list / top-nav "+", independently of the Domain's
+ # own Records tab custom add panel. The domain isn't known yet here (still a
+ # dropdown), so this is a generic notice, not a domain-specific one.
  #}
-{#
- # Only ever rendered when `is_managed` is true (guarded by the caller), but
- # kept as a defensive belt-and-braces check since this is always injected
- # unconditionally into a page a user is actively viewing.
- #}
-{% if is_managed %}
-    <script>
-        (function () {
-            var title = document.querySelector('.navigationheader-title');
-            if (title && !title.querySelector('.domainmanager-managed-icon')) {
-                var icon = document.createElement('i');
-                icon.className = 'ti ti-world-cog ms-2 domainmanager-managed-icon';
-                icon.title = {{ __('Managed by Domain Manager', 'domainmanager')|json_encode|raw }};
-                title.appendChild(icon);
-            }
-        })();
-    </script>
-{% endif %}
+<div class="alert alert-warning d-flex align-items-center mb-3" role="alert">
+    <i class="ti ti-world-cog me-2"></i>
+    <div>{{ __('If the domain you select above is managed by Domain Manager with DNS write-back enabled, creating this record here pushes it live to the provider immediately, with no undo.', 'domainmanager') }}</div>
+</div>

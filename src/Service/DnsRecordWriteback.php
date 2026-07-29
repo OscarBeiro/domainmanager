@@ -47,6 +47,7 @@ use GlpiPlugin\Domainmanager\Profile;
 use GlpiPlugin\Domainmanager\SupplierConfig;
 use Log;
 use Session;
+use Supplier;
 use Throwable;
 
 /**
@@ -139,7 +140,15 @@ class DnsRecordWriteback
         try {
             $driver = self::getWritableDriver($state);
             $zoneName = $domain->fields['name'];
-            $absoluteName = $zoneName . '.' . (($name !== '' && $name !== '@') ? $name . '.' : '');
+            // §9 Phase 37 addendum (found live, 2026-07-29): this was
+            // building "$zoneName.$name" (e.g. "beiro.net.dnss") — backwards.
+            // `DnsRecordWriterInterface::createRecord()`'s own docblock
+            // already specified the correct convention ("record name,
+            // absolute, e.g. www.example.com" — subdomain first); only this
+            // call site's construction disagreed with it. A non-apex name is
+            // "$name.$zoneName"; an apex record ('@' or empty `name`) is
+            // just the zone itself, no label prepended.
+            $absoluteName = ($name !== '' && $name !== '@') ? $name . '.' . $zoneName : $zoneName;
             $created = $driver->createRecord($zoneName, $type, $absoluteName, $data, $ttl);
             self::$pendingCreated[spl_object_id($item)] = $created;
         } catch (Throwable $e) {
@@ -444,6 +453,91 @@ class DnsRecordWriteback
     public static function isDomainDnsEditable(DomainState $state): bool
     {
         return self::isDnsEditable($state);
+    }
+
+    /**
+     * Public wrapper around `hasRight()` (§9 Phase 37) — lets a caller check
+     * a *specific* right/bit combination (not just "any CREATE"), needed by
+     * the custom add panel (per-type CREATE, to build the type dropdown) and
+     * the edit-page banner/lock (per-type UPDATE/DELETE for one known type).
+     *
+     * @param  string $type
+     * @param  int    $bit CREATE|UPDATE|DELETE
+     * @return bool
+     */
+    public static function hasTypeRight(string $type, int $bit): bool
+    {
+        return self::hasRight($type, $bit);
+    }
+
+    /**
+     * Public accessor for `WRITABLE_TYPES` (§9 Phase 37) — the set of
+     * `DomainRecordType` names write-back may ever touch, independent of any
+     * particular domain/user's rights.
+     *
+     * @return string[]
+     */
+    public static function writableTypes(): array
+    {
+        return self::WRITABLE_TYPES;
+    }
+
+    /**
+     * Record types the current user may create via write-back on this
+     * domain (§9 Phase 37) — empty whenever the domain's DNS isn't under
+     * IONOS write-back at all, or the user holds none of the four per-type
+     * CREATE rights. Backs the custom add panel's type dropdown
+     * (`DomainForm::renderRecordWritePanel()`): only ever offering types
+     * that will actually succeed, instead of the native form's full
+     * type list.
+     *
+     * @param  int $domains_id
+     * @return string[]
+     */
+    public static function creatableTypesForDomain(int $domains_id): array
+    {
+        $state = DomainState::getForDomain($domains_id);
+        if ($state === null || !self::isDnsEditable($state)) {
+            return [];
+        }
+
+        $types = [];
+        foreach (self::WRITABLE_TYPES as $type) {
+            if (self::hasRight($type, CREATE)) {
+                $types[] = $type;
+            }
+        }
+
+        return $types;
+    }
+
+    /**
+     * Display name of the Supplier backing this domain's DNS write-back
+     * (§9 Phase 37) — used purely for the "this creates/updates the record
+     * live at <Supplier>" copy; `null` whenever the domain's DNS isn't under
+     * write-back (nothing to name).
+     *
+     * @param  int $domains_id
+     * @return string|null
+     */
+    public static function writableSupplierName(int $domains_id): ?string
+    {
+        $state = DomainState::getForDomain($domains_id);
+        if ($state === null || !self::isDnsEditable($state)) {
+            return null;
+        }
+
+        $supplier_id = (int) ($state->fields['dns_suppliers_id'] ?? 0);
+        if ($supplier_id <= 0) {
+            return null;
+        }
+
+        $supplier = new Supplier();
+        if (!$supplier->getFromDB($supplier_id)) {
+            return null;
+        }
+
+        return $supplier->fields['name'] ?? null;
     }
 
     /**

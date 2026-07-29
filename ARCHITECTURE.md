@@ -1417,6 +1417,7 @@ Six phases. Each is one Claude Code session, committed and pushed before context
 | **34b** | `1.2.0-alpha4` | Rights redesigned as a per-type READ/CREATE/UPDATE/DELETE matrix (§11.6); native tab fully superseded — `hook.php` item hooks intercept native add/update/purge (§11.7), pre-flight logic ported from the removed modals into the hooks (§11.10), `DomainRecord`'s native tab display overridden to filter rows by per-type READ (§11.15a) |
 | **35** | `1.2.0-beta1` | End-to-end verification; finalise `ARCHITECTURE.md`, `CHANGELOG.md`, `TESTING.md`. Refining only, nothing new built (implemented 2026-07-29) |
 | **36** | `1.2.0-beta2` | Managed-domain indicator + conditional hiding of native `DomainRecord::showForDomain()` add controls (§11.18) — client-side companion to §11.15a/§11.17's "no hook substitutes what the tab renders" finding: that's still true server-side, but `POST_SHOW_TAB` can drive a JS hide of the *rendered* controls |
+| **37** | `1.2.0-beta3` | Custom write-back UI supersedes Phase 36's conditional hiding (§11.19): native add controls always hidden and replaced by a Domain-Manager-branded, per-type-rights-scoped add form on any write-back-editable domain; "goes live" banner/field-lock on a plugin-imported record's own edit page; delete/purge confirmation. UI-visibility layer only — no change to the underlying, already-authoritative `LockEnforcer`/`DnsRecordWriteback` enforcement |
 | release | `1.2.0` | |
 
 **Alpha means "still assembling"; beta means "complete and hardening"** — an honest signal if a
@@ -1583,7 +1584,8 @@ Confirm against the live `11.0/bugfixes` branch and live provider docs. **Never 
 | Rollback / compensating writes | **Rejected permanently** (§11.14). |
 | Single flat `domainmanager:dns_records` right (Phase 32 shape) | **Superseded** by a per-type CREATE/UPDATE/DELETE matrix, once the write surface moved to native-tab hooks (§11.6). |
 | Plugin-owned write panel + 3 confirmation modals + `DnsRecordWriteController` (Phase 34 shape) | **Superseded** by native-tab `hook.php` interception (§11.7/§11.10/§11.15a); the controller/modals become dead code, pre-flight logic ported into the hooks. |
-| Per-type `READ` right hiding rows from the native `DomainRecord` tab | **Investigated and rejected**, not deferred: no native hook lets a plugin substitute `DomainRecord::displayTabContentForItem()`'s output (`PRE_SHOW_TAB`/`POST_SHOW_TAB` fire around it, not instead of it); only HTML-scraping or a wholesale duplicate of `showForDomain()` would work, and both are fragile in a way genuinely worse than not having the feature (§11.6, §11.15a). Note this is about server-side row filtering specifically — client-side JS hiding of the whole add-controls block via the same hooks is a different, much smaller surface, and was implemented in Phase 36 (§11.18). |
+| Per-type `READ` right hiding rows from the native `DomainRecord` tab | **Investigated and rejected**, not deferred: no native hook lets a plugin substitute `DomainRecord::displayTabContentForItem()`'s output (`PRE_SHOW_TAB`/`POST_SHOW_TAB` fire around it, not instead of it); only HTML-scraping or a wholesale duplicate of `showForDomain()` would work, and both are fragile in a way genuinely worse than not having the feature (§11.6, §11.15a). Note this is about server-side row filtering specifically — client-side JS hiding of the whole add-controls block via the same hooks is a different, much smaller surface, and was implemented in Phase 36 (§11.18), then superseded by Phase 37's custom add panel (§11.19). |
+| Native add controls hidden only when the user holds *no* per-type CREATE right at all (Phase 36 shape) | **Superseded** by Phase 37 (§11.19): native add controls are now always hidden on a write-back-editable domain and replaced by a custom, rights-scoped add panel, regardless of how many CREATE rights the user holds. |
 
 ### 11.18 Phase 36: managed-domain indicator + conditional hiding of native add controls
 
@@ -1638,6 +1640,99 @@ insertion is idempotent (checks for an existing `.domainmanager-managed-icon` ch
 appending) and only needs to run once per full page load — `showNavigationHeader()` renders the
 header once, tab-agnostic, and is never replaced by client-side ajax tab switching, so there's no
 need to re-run on every tab click.
+
+### 11.19 Phase 37: custom write-back UI, superseding Phase 36's conditional hiding
+
+**Trigger:** live-testing Phase 36 with a real profile (`tech`/Technician) surfaced that the
+underlying concern wasn't really "hide the buttons when rights are missing" — it's that reusing
+core's generic native controls for a write-back action gives no visual cue that a click is about
+to reach a real external provider live, with no rollback (§11.14), regardless of whether the user
+technically holds the right to do it. Óscar's explicit call: distinct, plugin-branded controls for
+create — reusing native buttons here specifically risks an accidental live create/edit/delete —
+plus visible "this goes live" warnings on edit/delete, plus front-end blocking of editing locked
+(non-writable-type) records, not just the existing server-side strip-after-the-fact.
+
+**Explicitly kept driver-agnostic, not IONOS-specific**, per Óscar's instruction: every new
+`DnsRecordWriteback` helper (`hasTypeRight()`, `writableTypes()`, `creatableTypesForDomain()`,
+`writableSupplierName()`) and every new template gate on `isDomainDnsEditable()` (true for *any*
+`DnsRecordWriterInterface` driver — currently only `IonosDriver`, but the check itself never names
+it) and on the generic per-type rights matrix (§11.6) — nothing here hardcodes IONOS. Adding a
+second write-capable driver (Cloudflare, Dinahosting) needs no change to this UI layer at all.
+
+**Three surfaces, one underlying principle — make the existing, already-authoritative
+enforcement visible *before* the click, not just after:**
+
+1. **Add, replacing native entirely (`templates/domainrecord_add_panel.html.twig`,
+   `DomainForm::renderRecordWritePanel()`).** Supersedes Phase 36's "hide only when the user holds
+   *no* per-type CREATE right at all" — now, on any write-back-editable domain, the native "Link a
+   record"/"New Domain record" block (§11.15a/§11.18) is unconditionally hidden and replaced with a
+   Domain-Manager-branded form, same DOM relocation technique as §11.18 (`form[id^="domain_form"]`
+   → closest `div.mb-3`). The replacement form's type `<select>` is built server-side from
+   `DnsRecordWriteback::creatableTypesForDomain()` — only types this user holds CREATE for — so
+   there is no type option in the form that could ever be silently rejected or fall through to a
+   local-only add; if that list is empty, the panel shows an explanatory message instead of an
+   empty form. The form still POSTs to `DomainRecord::getFormURLWithID(0)` with a plain `name="add"`
+   submit — GLPI's own generic `CommonDBTM::add()` flow, so `DnsRecordWriteback::onPreAdd()`/
+   `onPostAdd()` fire exactly as they do for the native path (§11.7). This is a *new UI*, not a
+   revival of Phase 34's removed controller/modals (§11.15a) — no new controller, no new route, no
+   duplicated business logic; only a differently-styled, narrower-scoped `<form>` posting to the
+   same native endpoint.
+2. **Edit — banner or lock, never silent (`templates/domainrecord_edit_panel.html.twig`,
+   `DomainForm::injectDomainRecord()`).** Reached through `DomainForm::inject()`'s existing
+   `Hooks::POST_ITEM_FORM` registration (GLPI allows exactly one callback per plugin per hook, so
+   `inject()` now dispatches on `$item instanceof Domain` vs. `instanceof DomainRecord` rather than
+   registering a second hook entry). For a plugin-imported record (`ImportedRecord::isPluginOwned()`)
+   of a writable type where the user holds the per-type UPDATE right: a ribbon banner names the
+   live-update consequence. Otherwise — non-writable type (NS/MX/SOA/…) *or* a writable type the
+   user lacks UPDATE for — every editable field (`name`/`data`/`ttl`/`domainrecordtypes_id`) is
+   cosmetically disabled with a lock icon, same convention `injectDomain()` already uses for
+   Domain's own synced fields. This directly answers "block editing of the locked records": the
+   *enforcement* already existed (`LockEnforcer::domainRecordPreUpdate()` silently strips these
+   fields either way), this phase only stops the round trip that used to be needed to discover that.
+3. **Delete/purge confirmation, same template/hook.** When the user holds the per-type DELETE right
+   for a writable, plugin-imported record, a `window.confirm()` guards the native "Put in
+   trashbin"/"Delete permanently" buttons (`name="delete"`/`name="purge"`, confirmed verbatim on
+   `11.0/bugfixes`'s `templates/components/form/buttons.html.twig`). No confirmation is added when
+   the user lacks the right — `LockEnforcer::blockRecordRemoval()` already blocks it server-side
+   with an error message; adding a client-side warning for an action that's going to be rejected
+   anyway would be noise, not signal.
+
+**Deliberately not built, and why:** per-row custom edit/delete buttons *inside* the Records-tab
+table itself remain out of scope, unchanged from §11.15a's Finding 1 — `showForDomain()` still has
+no per-row extension point, and this phase's edit/delete affordances live on the record's own
+native full-page edit form instead, which *does* have a clean hook (`POST_ITEM_FORM`). Bulk/massive-
+action delete (checkbox selection across multiple rows on the Records tab) is not given a per-row-
+type-aware confirmation — cheaply determining which selected checkbox ids are writable+permitted
+before the confirm dialog would need extra plumbing disproportionate to the value versus the
+single-record edit-page confirmation above; flagged as a known, deliberate gap rather than silently
+skipped.
+
+**Live-testing addendum (found immediately, 2026-07-29, before this phase was even committed):**
+hands-on testing of the new add panel surfaced three more issues, all fixed in the same change:
+
+- **Real bug, predates this phase:** `DnsRecordWriteback::onPreAdd()`'s absolute-name construction
+  was backwards — `"$zoneName.$name"` (e.g. `beiro.net.dnss`) instead of
+  `DnsRecordWriterInterface::createRecord()`'s own already-correctly-documented convention,
+  `"$name.$zoneName"` (`dnss.beiro.net`). IONOS rejected every non-apex create with
+  `INVALID_RECORD`/`invalidFields: ["name"]` because of this — not a driver-side or IONOS-side
+  problem, this call site simply built the string in the wrong order. Fixed at the one place that
+  builds it (§11.9/§11.10 unaffected otherwise — `onPreUpdate()` never built an absolute name at
+  all, passing the relative `name` field straight through, which is why only `create` was broken).
+- **Redirect control:** GLPI's generic add handler
+  (`front/domainrecord.form.php`: `if ($_SESSION['glpibackcreated'] && !isset($_POST['_in_modal']))
+  Html::redirect(...); Html::back();`) would otherwise bounce the user to the new record's own
+  native edit page after a successful create — jarring right after emphasizing "you're now on a
+  Domain-Manager-branded panel, not the native UI." The custom add panel now sets a hidden
+  `_in_modal=1` (not an actual modal, just the one existing switch that forces the `Html::back()`
+  branch) so submitting stays on the Records tab, regardless of the submitting user's own
+  `glpibackcreated` preference.
+- **Gap in scope, closed:** GLPI's own generic, blank "New Domain record" form — reachable from the
+  global Domains-records list / top-nav "+", entirely independent of a Domain's own Records tab —
+  reaches the exact same `onPreAdd()` live push as every other entry point, but Phase 37's original
+  `injectDomainRecord()` returned early for any `isNewItem()` record, so this entry point had *no*
+  warning at all. Since the domain isn't chosen yet at render time there (still a dropdown), the fix
+  is necessarily a generic (not domain-specific) notice: "if the domain you select is write-back
+  managed, this pushes live" — `templates/domainrecord_new_notice.html.twig`.
 
 ---
 

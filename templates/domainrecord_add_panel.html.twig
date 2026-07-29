@@ -1,0 +1,127 @@
+{#
+ # -------------------------------------------------------------------------
+ # Domain Manager plugin for GLPI
+ # Copyright (C) 2026 by the TICGAL Team.
+ # https://www.tic.gal
+ # -------------------------------------------------------------------------
+ # LICENSE
+ # This file is part of the Domain Manager plugin.
+ # Domain Manager plugin is free software; you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation; either version 3 of the License, or
+ # (at your option) any later version.
+ # Domain Manager plugin is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ # GNU General Public License for more details.
+ # You should have received a copy of the GNU General Public License
+ # along with Domain Manager. If not, see <http://www.gnu.org/licenses/>.
+ # -------------------------------------------------------------------------
+ # @package   domainmanager
+ # @author    the TICGAL team
+ # @copyright Copyright (c) 2026 TICGAL team
+ # @license   AGPL License 3.0 or (at your option) any later version
+ #            http://www.gnu.org/licenses/agpl-3.0-standalone.html
+ # @link      https://www.tic.gal
+ # @since     2026
+ # -------------------------------------------------------------------------
+ #}
+{#
+ # Rendered from `DomainForm::renderRecordWritePanel()` (§9 Phase 37) on the
+ # Records tab of any domain whose DNS is genuinely under write-back — driver
+ # agnostic, never gated on IONOS specifically (`DnsRecordWriteback::isDomainDnsEditable()`
+ # only checks for `DnsRecordWriterInterface`). Always hides core's native
+ # "Link a record"/"New Domain record for this item" controls
+ # (`DomainRecord::showForDomain()`) on such a domain and replaces them with
+ # this Domain-Manager-branded form — scoped to only the types `type_options`
+ # actually lists (this user's per-type CREATE rights), so every click here
+ # is guaranteed to either succeed live or be denied loudly, never silently
+ # local-only.
+ #}
+{% import 'components/form/basic_inputs_macros.html.twig' as inputs %}
+<div id="domainmanager-add-record-panel" class="d-none">
+    <div class="card m-n2 border-0 shadow-none">
+        <div class="card-header">
+            <div class="ribbon ribbon-bookmark ribbon-top ribbon-start bg-blue s-1">
+                <i class="ti ti-world-cog fa-2x"></i>
+            </div>
+            <h4 class="card-title ps-5">{{ __('Add a DNS record (Domain Manager)', 'domainmanager') }}</h4>
+        </div>
+        <div class="card-body">
+            {% if type_options is empty %}
+                <div class="text-muted small">
+                    {{ __('You do not hold write-back rights for any record type on this domain — ask an administrator for the "Domain Manager" per-type rights on your profile.', 'domainmanager') }}
+                </div>
+            {% else %}
+                <div class="text-muted small mb-2">
+                    {{ live_notice }}
+                </div>
+                <form method="post" action="{{ add_form_url }}" data-submit-once>
+                    {{ inputs.hidden('_glpi_csrf_token', csrf_token()) }}
+                    {{ inputs.hidden('domains_id', domains_id) }}
+                    {#
+                     # `front/domainrecord.form.php`'s own add-handling redirects to the
+                     # new record's own native edit page whenever the submitting user's
+                     # `glpibackcreated` preference is on (`Html::redirect($record->getFormURLWithID($newID))`),
+                     # and only falls back to `Html::back()` (return to the referring
+                     # page — this Records tab) when `_in_modal` is set on the request,
+                     # regardless of that per-user preference. This isn't really a modal,
+                     # but it's the one native switch that keeps the user on this tab
+                     # after a create instead of bouncing them to the generic native form.
+                     #}
+                    {{ inputs.hidden('_in_modal', 1) }}
+                    <div class="d-flex flex-wrap gap-2 align-items-end">
+                        <div style="width: 8rem;">
+                            <label class="form-label">{{ _n('Type', 'Types', 1) }}</label>
+                            <select name="domainrecordtypes_id" class="form-select" required>
+                                {% for id, name in type_options %}
+                                    <option value="{{ id }}">{{ name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div style="width: 10rem;">
+                            <label class="form-label">{{ __('Name') }}</label>
+                            <input type="text" name="name" class="form-control" placeholder="@">
+                        </div>
+                        <div class="flex-grow-1" style="min-width: 10rem;">
+                            <label class="form-label">{{ _n('Target', 'Targets', 1) }}</label>
+                            <input type="text" name="data" class="form-control" required>
+                        </div>
+                        <div style="width: 6rem;">
+                            <label class="form-label">TTL</label>
+                            <input type="number" name="ttl" class="form-control" value="3600" min="60" max="99999" maxlength="5">
+                        </div>
+                        <div>
+                            <button type="submit" name="add" class="btn btn-primary text-nowrap">
+                                <i class="ti ti-plus"></i>
+                                {{ __('New record', 'domainmanager') }}
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{#
+ # Hides the native block (same selector strategy as Phase 36: the one
+ # stable, non-translated, non-`mt_rand()` hook is the "Link a record"
+ # form's `id="domain_form{{ rand }}"` prefix, walking up to its closest
+ # `div.mb-3` — that wrapper holds both the "Link a record" form and the
+ # "New Domain record" button as siblings) and relocates this panel into its
+ # place, mirroring the existing "Update Now" button relocation convention
+ # already used in `domain_panel.html.twig`.
+ #}
+<script>
+    (function () {
+        var panel = document.getElementById('domainmanager-add-record-panel');
+        document.querySelectorAll('form[id^="domain_form"]').forEach(function (form) {
+            var wrapper = form.closest('div.mb-3');
+            if (wrapper && panel) {
+                wrapper.insertAdjacentElement('afterend', panel);
+                panel.classList.remove('d-none');
+                wrapper.style.display = 'none';
+            }
+        });
+    })();
+</script>

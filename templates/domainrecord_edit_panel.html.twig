@@ -1,0 +1,95 @@
+{#
+ # -------------------------------------------------------------------------
+ # Domain Manager plugin for GLPI
+ # Copyright (C) 2026 by the TICGAL Team.
+ # https://www.tic.gal
+ # -------------------------------------------------------------------------
+ # LICENSE
+ # This file is part of the Domain Manager plugin.
+ # Domain Manager plugin is free software; you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation; either version 3 of the License, or
+ # (at your option) any later version.
+ # Domain Manager plugin is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ # GNU General Public License for more details.
+ # You should have received a copy of the GNU General Public License
+ # along with Domain Manager. If not, see <http://www.gnu.org/licenses/>.
+ # -------------------------------------------------------------------------
+ # @package   domainmanager
+ # @author    the TICGAL team
+ # @copyright Copyright (c) 2026 TICGAL team
+ # @license   AGPL License 3.0 or (at your option) any later version
+ #            http://www.gnu.org/licenses/agpl-3.0-standalone.html
+ # @link      https://www.tic.gal
+ # @since     2026
+ # -------------------------------------------------------------------------
+ #}
+{#
+ # Rendered from `DomainForm::injectDomainRecord()` (§9 Phase 37) on a
+ # plugin-imported `DomainRecord`'s own native edit page. Driver-agnostic —
+ # `can_update`/`can_delete` only depend on `DnsRecordWriteback::isDomainDnsEditable()`
+ # (any `DnsRecordWriterInterface` driver) plus this user's per-type rights,
+ # never on which provider is actually configured.
+ #}
+{% if can_update %}
+    <div class="card m-n2 border-0 shadow-none mb-3">
+        <div class="card-header">
+            <div class="ribbon ribbon-bookmark ribbon-top ribbon-start bg-orange s-1">
+                <i class="ti ti-world-cog fa-2x"></i>
+            </div>
+            <h4 class="card-title ps-5">{{ __('Managed by Domain Manager', 'domainmanager') }}</h4>
+        </div>
+        <div class="card-body">
+            <div class="text-muted small">
+                {% if supplier_name %}
+                    {{ __('Saving this form updates the record live at %s. There is no undo.', 'domainmanager')|replace({'%s': supplier_name}) }}
+                {% else %}
+                    {{ __('Saving this form updates the record live at the DNS provider. There is no undo.', 'domainmanager') }}
+                {% endif %}
+            </div>
+        </div>
+    </div>
+{% elseif locked_fields is not empty %}
+    <div class="alert alert-secondary d-flex align-items-center mb-3" role="alert">
+        <i class="ti ti-lock me-2"></i>
+        <div>{{ __('This record is imported by Domain Manager synchronization and cannot be edited here.', 'domainmanager') }}</div>
+    </div>
+{% endif %}
+<script>
+    (function () {
+        var lockedFields = {{ locked_fields|json_encode|raw }};
+        if (lockedFields.length) {
+            var form = document.getElementById('main-form') || document.querySelector('form[name="asset_form"]');
+            if (form) {
+                lockedFields.forEach(function (field) {
+                    form.querySelectorAll('[name="' + field + '"]').forEach(function (input) {
+                        input.disabled = true;
+                        var label = form.querySelector('label[for="' + input.id + '"]');
+                        if (label && !label.querySelector('.domainmanager-lock')) {
+                            var icon = document.createElement('i');
+                            icon.className = 'ti ti-lock ms-1 domainmanager-lock';
+                            icon.title = {{ __('Locked by Domain Manager synchronization', 'domainmanager')|json_encode|raw }};
+                            label.appendChild(icon);
+                        }
+                    });
+                });
+            }
+        }
+
+        {% if can_delete %}
+        var deleteButtons = document.querySelectorAll(
+            '.form-button-separator button[name="delete"], .form-button-separator button[name="purge"]'
+        );
+        deleteButtons.forEach(function (btn) {
+            btn.addEventListener('click', function (event) {
+                if (!window.confirm({{ __('This deletes the record live at the DNS provider. Continue?', 'domainmanager')|json_encode|raw }})) {
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                }
+            }, true);
+        });
+        {% endif %}
+    })();
+</script>

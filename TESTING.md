@@ -3139,3 +3139,118 @@ amendment.
 - **Expected:** This phase only changes button *visibility*; no change to what happens when an
   action is actually submitted.
 - [ ] Verified
+
+## Phase 37 — Custom write-back UI, superseding Phase 36's conditional hiding (ARCHITECTURE.md §11.19)
+
+### 37.1 Native add controls always hidden on a write-back-editable domain, custom panel shown instead
+- **Steps:** As a profile holding CREATE on at least one of the four per-type rights, open the
+  Records tab of a domain whose DNS is write-back-editable (`DnsRecordWriteback::isDomainDnsEditable()`
+  true).
+- **Expected:** The native "Link a record"/"New Domain record for this item" block is hidden
+  (unlike Phase 36, this now happens regardless of how many rights the user holds) and a
+  "Add a DNS record (Domain Manager)" panel appears in its place, with a "this creates the record
+  live at `<Supplier>`" notice.
+- [ ] Verified
+
+### 37.2 Add-panel type dropdown scoped to only this user's creatable types
+- **Steps:** As a profile holding CREATE on, say, only `A` and `CNAME` (not `AAAA`/`TXT`), open the
+  add panel from 37.1.
+- **Expected:** The type dropdown lists only `A` and `CNAME` — never a type the user can't create,
+  and never a non-writable type (NS/MX/SOA/…) at all.
+- [ ] Verified
+
+### 37.3 Add-panel shows an explanatory message, not an empty form, when the user holds no per-type CREATE right
+- **Steps:** As a profile holding CREATE on none of the four per-type rights, open the Records tab
+  of a write-back-editable domain.
+- **Expected:** Native controls still hidden; the custom panel shows a message explaining the user
+  lacks rights, not an empty/broken form.
+- [ ] Verified
+
+### 37.4 Submitting the add panel creates the record through the exact same path as the native form
+- **Steps:** Submit the add panel's form for a type/name/data/ttl combination.
+- **Expected:** `DomainRecord::getFormURLWithID(0)` receives a standard `name="add"` POST;
+  `DnsRecordWriteback::onPreAdd()`/`onPostAdd()` fire exactly as for a native-form submission
+  (§11.7) — same IONOS push, same `ImportedRecord`/`ImportLock`/Historical-line behavior. No new
+  business logic introduced by this phase.
+- [ ] Verified
+
+### 37.5 Native add controls untouched on a domain that isn't write-back-editable
+- **Steps:** Open the Records tab of a managed domain whose DNS supplier doesn't implement
+  `DnsRecordWriterInterface` (e.g. Dinahosting/Cloudflare in this repo's current state), or a
+  non-managed domain.
+- **Expected:** Native "Link a record"/"New Domain record" controls render exactly as before this
+  phase — no custom panel, no hiding. Confirms the feature is driver-capability-gated, not
+  IONOS-specific and not blanket-applied to every managed domain.
+- [ ] Verified
+
+### 37.6 Edit page: "goes live" banner for a writable, permitted record
+- **Steps:** Open the native edit page of a plugin-imported `A`/`AAAA`/`CNAME`/`TXT` record on a
+  write-back-editable domain, as a profile holding the per-type UPDATE right.
+- **Expected:** A ribbon banner reads "Managed by Domain Manager" with a "saving this updates the
+  record live at `<Supplier>`, no undo" message. All fields remain editable.
+- [ ] Verified
+
+### 37.7 Edit page: fields cosmetically locked for a non-writable type or missing UPDATE right
+- **Steps:** Open the native edit page of (a) a plugin-imported NS/MX/SOA/etc. record, and
+  separately (b) a plugin-imported writable-type record where the profile lacks the per-type
+  UPDATE right.
+- **Expected:** In both cases, `name`/`data`/`ttl`/`domainrecordtypes_id` are disabled with a lock
+  icon and tooltip, and an alert explains the record is imported and can't be edited here — instead
+  of letting the user attempt a save that gets silently stripped server-side (§11.7's existing
+  `LockEnforcer` behavior, now visible before the click).
+- [ ] Verified
+
+### 37.8 Edit page: no panel at all for a record that isn't plugin-imported
+- **Steps:** Open the native edit page of an ordinary, non-imported `DomainRecord`.
+- **Expected:** No Domain Manager banner, no field locking — entirely native, unaffected.
+- [ ] Verified
+
+### 37.9 Delete/purge confirmation for a writable, permitted record
+- **Steps:** On the edit page from 37.6 (per-type DELETE right held), click "Put in trashbin" (or
+  "Delete permanently" if visible).
+- **Expected:** A `window.confirm()` warns the deletion is live at the DNS provider with no undo;
+  cancelling the dialog aborts the submission entirely (no request sent).
+- [ ] Verified
+
+### 37.10 No delete confirmation added when the user lacks the DELETE right
+- **Steps:** Same as 37.9 but as a profile lacking the per-type DELETE right.
+- **Expected:** No extra confirmation dialog (the click proceeds straight to GLPI's own request,
+  which `LockEnforcer::blockRecordRemoval()` then rejects server-side with its existing error
+  message) — confirms this phase adds no client-side friction for an action that was going to be
+  blocked anyway.
+- [ ] Verified
+
+### 37.11 Driver-agnostic: no IONOS-specific gating anywhere in this phase
+- **Steps:** Code review of `DnsRecordWriteback::hasTypeRight()`/`writableTypes()`/
+  `creatableTypesForDomain()`/`writableSupplierName()` and both new templates.
+- **Expected:** Every gate keys off `isDomainDnsEditable()` (checks for `DnsRecordWriterInterface`,
+  not a specific driver class) and the generic per-type rights matrix — no string comparison
+  against `'ionos'`/`IonosDriver` anywhere in this phase's code.
+- [ ] Verified
+
+### 37.12 (Live addendum) Non-apex create sends the correctly-ordered absolute name
+- **Steps:** Submit the add panel for a non-apex name (e.g. `dnss`) with type `A` on a domain
+  managed via IONOS write-back.
+- **Expected:** The record is created at IONOS as `dnss.<zone>` (subdomain first) — not
+  `<zone>.dnss`, which IONOS previously rejected with `INVALID_RECORD`/`invalidFields: ["name"]`.
+  Verified live 2026-07-29 against `beiro.net`/IONOS: the bug reproduced with the old code and was
+  confirmed fixed with the corrected concatenation order.
+- [x] Verified (live, 2026-07-29, `glpi-claude`/IONOS)
+
+### 37.13 (Live addendum) Add-panel submission stays on the Records tab
+- **Steps:** Submit the add panel successfully as a user whose `glpibackcreated` preference is
+  enabled (GLPI's default for many profiles).
+- **Expected:** The page returns to the Domain's Records tab (`Html::back()`), not the new record's
+  own native edit page — confirmed live via the `_in_modal=1` hidden field forcing that branch in
+  `front/domainrecord.form.php`'s add handler.
+- [ ] Verified (mechanism confirmed via core source read; not yet exercised end-to-end through an
+  actual successful submit)
+
+### 37.14 (Live addendum) Generic "New Domain record" quick-add shows a warning notice
+- **Steps:** From the global Domains-records list (or top-nav "+"), open GLPI's own generic, blank
+  "New Domain record" form — not through any Domain's Records tab.
+- **Expected:** A warning notice appears: "If the domain you select above is managed by Domain
+  Manager with DNS write-back enabled, creating this record here pushes it live to the provider
+  immediately, with no undo." Confirmed rendering live 2026-07-29 via the `DomainRecord$main` tab's
+  ajax content.
+- [x] Verified (live, 2026-07-29, `glpi-claude`)
