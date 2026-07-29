@@ -39,7 +39,7 @@ use InvalidArgumentException;
  */
 final class ZoneRecord
 {
-    public const TYPES = ['A', 'AAAA', 'CNAME', 'MX', 'NS', 'TXT'];
+    public const TYPES = ['A', 'AAAA', 'ALIAS', 'CNAME', 'MX', 'NS', 'PTR', 'SOA', 'SRV', 'TXT', 'CAA'];
 
     public const MAX_NAME_LENGTH = 255;
     public const MAX_DATA_LENGTH = 65000;

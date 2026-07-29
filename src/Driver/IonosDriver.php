@@ -433,6 +433,15 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Dns
      * of "priority target" already used by CloudflareDriver); TXT `content`
      * is returned double-quoted by the API and must be unquoted.
      *
+     * Verified 2026-07-29 against the live spec (dns.yaml): the IONOS
+     * `record` schema has no per-type sub-fields beyond `prio` — ALIAS,
+     * PTR, SOA, SRV and CAA all arrive fully serialized in `content`
+     * (e.g. CAA's own spec example is `"0 issuewild \"example.org\""`),
+     * so the raw-`content` fallback below is correct for them as-is; no
+     * further parsing is needed for this driver specifically. Cloudflare
+     * and Dinahosting were NOT verified the same way and may need
+     * per-type handling of their own before relying on this pattern.
+     *
      * @param  string $type
      * @param  array  $row
      * @return string

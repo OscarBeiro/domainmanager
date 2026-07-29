@@ -43,7 +43,7 @@ class Installer
 {
     public const DOMAIN_TYPE_NAME = 'Internet Domain';
 
-    public const RECORD_TYPE_NAMES = ['A', 'AAAA', 'CNAME', 'MX', 'NS', 'TXT'];
+    public const RECORD_TYPE_NAMES = ['A', 'AAAA', 'ALIAS', 'CNAME', 'MX', 'NS', 'PTR', 'SOA', 'SRV', 'TXT', 'CAA'];
 
     public const TABLES = [
         'glpi_plugin_domainmanager_supplierconfigs',

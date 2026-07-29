@@ -31,8 +31,8 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
 - **Steps:** after install, run install again (expect "already installed" refusal),
   then check:
   `SELECT COUNT(*) FROM glpi_domaintypes WHERE name='Internet Domain';`
-  `SELECT name FROM glpi_domainrecordtypes WHERE name IN ('A','AAAA','CNAME','MX','NS','TXT');`
-- **Expected:** exactly 1 "Internet Domain" row; all six record types exist; no duplicates.
+  `SELECT name FROM glpi_domainrecordtypes WHERE name IN ('A','AAAA','ALIAS','CNAME','MX','NS','PTR','SOA','SRV','TXT','CAA');`
+- **Expected:** exactly 1 "Internet Domain" row; all eleven record types exist; no duplicates.
 - [ ] Pass
 
 ### 1.3 Plugin right registered with correct defaults (§8)
@@ -223,7 +223,7 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
 ## Phase 3 — Drivers, sync engine, reconciliation, lock enforcement
 
 ### 3.1 Zone record validation (§5 sanitisation)
-- **Steps:** construct `Dto\ZoneRecord` with an unsupported type (`SRV`), an
+- **Steps:** construct `Dto\ZoneRecord` with an unsupported type (`DS`), an
   oversized name (>255 chars), and a valid lowercase type (`a`).
 - **Expected:** the first two throw `InvalidArgumentException` (drivers skip such
   records); the third normalizes to `A`; `getHash()` is identical for equal
