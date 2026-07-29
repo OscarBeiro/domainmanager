@@ -37,9 +37,10 @@ use GlpiPlugin\Domainmanager\HookHandler;
 use GlpiPlugin\Domainmanager\ImportedRecord;
 use GlpiPlugin\Domainmanager\LockEnforcer;
 use GlpiPlugin\Domainmanager\Profile as DomainmanagerProfile;
+use GlpiPlugin\Domainmanager\Service\DnsRecordWriteback;
 use GlpiPlugin\Domainmanager\SupplierTab;
 
-define('PLUGIN_DOMAINMANAGER_VERSION', '1.2.0-alpha3');
+define('PLUGIN_DOMAINMANAGER_VERSION', '1.2.0-alpha4');
 define('PLUGIN_DOMAINMANAGER_MIN_GLPI', '11.0.0');
 define('PLUGIN_DOMAINMANAGER_MAX_GLPI', '11.0.99');
 define('PLUGIN_DOMAINMANAGER_REPOSITORY_URL', 'https://github.com/TICGAL-GLPI-Plugins/domainmanager');
@@ -753,14 +754,30 @@ function plugin_init_domainmanager(): void
             // §9 Phase 17 "Domain identity header": keeps the state row's
             // cached Punycode form (name_ascii) in sync for search.
             Domain::class  => [HookHandler::class, 'domainSaved'],
+            // ARCHITECTURE.md §11.7 (Phase 34b): row now has a local id —
+            // attach ImportedRecord/ImportLock/history for a record
+            // created via native-tab write-back (see the paired
+            // PRE_ITEM_ADD entry below, which does the actual IONOS push).
+            DomainRecord::class => [DnsRecordWriteback::class, 'onPostAdd'],
         ];
         $PLUGIN_HOOKS[Hooks::ITEM_UPDATE]['domainmanager'] = [
             Infocom::class => [HookHandler::class, 'infocomSaved'],
             Domain::class  => [HookHandler::class, 'domainSaved'],
         ];
 
+        // ARCHITECTURE.md §11.7 (Phase 34b): pushes createRecord() to IONOS
+        // before the local row exists, aborting the local add on failure —
+        // see DnsRecordWriteback::onPreAdd().
+        $PLUGIN_HOOKS[Hooks::PRE_ITEM_ADD]['domainmanager'] = [
+            DomainRecord::class => [DnsRecordWriteback::class, 'onPreAdd'],
+        ];
+
         $PLUGIN_HOOKS[Hooks::PRE_ITEM_UPDATE]['domainmanager'] = [
             Domain::class       => [HookHandler::class, 'domainPreUpdate'],
+            // ARCHITECTURE.md §11.7 (Phase 34b): now also the write-back
+            // push for writable types on an IONOS-managed domain, via
+            // DnsRecordWriteback::onPreUpdate() — every other record keeps
+            // the original plugin-import lock unchanged.
             DomainRecord::class => [LockEnforcer::class, 'domainRecordPreUpdate'],
             // §9 Phase 14: locks the Domain's Registrar (Infocom's Supplier)
             // once a confirmed working registrar match exists — see
@@ -768,6 +785,10 @@ function plugin_init_domainmanager(): void
             Infocom::class      => [LockEnforcer::class, 'infocomPreUpdate'],
         ];
         $PLUGIN_HOOKS[Hooks::PRE_ITEM_DELETE]['domainmanager'] = [
+            // ARCHITECTURE.md §11.7/§11.11 (Phase 34b): the soft-delete is
+            // what pushes the upstream IONOS deletion — see
+            // DnsRecordWriteback::onPreDelete(), called from here via
+            // LockEnforcer::domainRecordPreDelete().
             DomainRecord::class => [LockEnforcer::class, 'domainRecordPreDelete'],
         ];
         $PLUGIN_HOOKS[Hooks::PRE_ITEM_PURGE]['domainmanager'] = [

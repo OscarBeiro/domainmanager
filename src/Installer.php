@@ -749,12 +749,15 @@ class Installer
     private static function registerRights(Migration $migration): void
     {
         $migration->addRight(Profile::UNLOCK_RIGHT, Profile::RIGHT_UNLOCK_IMPORTED, ['config' => UPDATE]);
-        // ARCHITECTURE.md §11.6 (Phase 32): a new write-capable right, not
-        // auto-granted to any existing profile — unlike the unlock right
-        // above (piggybacked on config UPDATE), pushing changes to a live
-        // provider is sensitive enough that an admin must grant it
-        // explicitly per profile.
-        $migration->addRight(Profile::DNS_RECORDS_RIGHT, 0);
+        // ARCHITECTURE.md §11.6 (Phase 34b, superseding Phase 32's single
+        // flat right): one write-capable right per writable record type,
+        // none auto-granted to any existing profile — unlike the unlock
+        // right above (piggybacked on config UPDATE), pushing changes to a
+        // live provider is sensitive enough that an admin must grant each
+        // type explicitly per profile.
+        foreach (Profile::getDnsRecordRights() as $field) {
+            $migration->addRight($field, 0);
+        }
         // Migration::addRight() inserts rows directly: reset the rights cache
         ProfileRight::cleanAllPossibleRights();
     }

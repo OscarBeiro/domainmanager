@@ -2733,3 +2733,141 @@ Superseded: Phase 26 originally added parallel `rdap_transfer_lock`/`rdap_domain
   `src/SupplierTab.php`, `templates/domain_panel.html.twig`,
   `templates/supplier_tab.html.twig`).
 - [ ] Pass
+
+## Phase 34b (implemented 2026-07-29) — Native-tab DNS record write-back to IONOS, superseding Phase 34's controller/modal design (ARCHITECTURE.md §11.6/§11.7/§11.10/§11.15a)
+
+Phases 31-34 (schema, rights groundwork, `DnsRecordWriterInterface`, the original
+controller/modal write path) had no UI trigger and were never end-to-end testable, so
+this is the first phase in this feature with anything reachable through GLPI's own
+UI. Requires: a real IONOS-managed domain in the test instance, an IONOS API key/
+secret configured on its Supplier, and a test profile granted the new per-type rights
+below. **Before testing:** reactivate the plugin (version bumped to `1.2.0-alpha4`,
+§3.6.1 — GLPI auto-deactivates on every version change).
+
+### 34b.1 Per-type rights matrix appears correctly on the Profile tab
+- **Steps:** open a Profile's Domain Manager tab (Administration > Profiles >
+  [profile] > Domain Manager).
+- **Expected:** four rows appear — "DNS record write-back: A", "...: AAAA",
+  "...: CNAME", "...: TXT" — each with its own Create/Update/Delete checkboxes,
+  alongside the existing "Unlock imported domain data" row. No row for NS/MX. None
+  of the four are checked by default on any existing profile.
+- [ ] Pass
+
+### 34b.2 Native inline-create pushes a new record to IONOS (right granted)
+- **Steps:** as a user whose profile has `domainmanager:dns_records_a` CREATE
+  granted, open an IONOS-managed domain's native `DomainRecord` tab, use the
+  existing "New record for this item" inline form to add an A record (name, IP,
+  TTL), submit.
+- **Expected:** the record appears in the native list immediately; it also exists
+  at IONOS (verify via IONOS's own control panel or a fresh sync); a Historical
+  line "[Domain Manager] Record created from GLPI: A ..." appears on the parent
+  Domain; `ImportedRecord` has a row for it with `is_glpi_created = 1` and a
+  non-empty `remote_id`.
+- [ ] Pass
+
+### 34b.3 Native inline-create is refused when the right is not granted
+- **Steps:** same as 34b.2 but with `domainmanager:dns_records_a` CREATE not
+  granted to the acting profile.
+- **Expected:** the native form still submits (core's own create), but no IONOS
+  push happens and no `ImportedRecord`/Historical line is created for it — the
+  new record exists locally only, exactly as it would for any ordinary,
+  non-managed domain today. No error shown (this is "not eligible", not "blocked").
+- [ ] Pass
+
+### 34b.4 Driver failure on create aborts the local add entirely
+- **Steps:** with CREATE granted, temporarily break write-back (e.g. revoke the
+  Supplier's IONOS API key, or add a record whose data IONOS will reject — TTL
+  below 60), submit the inline create form.
+- **Expected:** the native add is aborted — no local `DomainRecord` row is created
+  at all (confirm via the tab list and a DB check), a native-style error message
+  is shown, and nothing exists at IONOS either. This is the key invariant: no
+  local success without a matching IONOS success (§11.7).
+- [ ] Pass
+
+### 34b.5 Native edit form pushes an update to IONOS (right granted)
+- **Steps:** as a user with `domainmanager:dns_records_txt` UPDATE granted, open
+  the native edit form (click the record's name link) for a TXT record created
+  in 34b.2's style, change its data, save.
+- **Expected:** save succeeds; the new value is live at IONOS; a Historical line
+  "[Domain Manager] Record updated from GLPI: ..." appears; `ImportLock` rows for
+  this record reflect the new value.
+- [ ] Pass
+
+### 34b.6 Live re-fetch-and-diff blocks a stale edit
+- **Steps:** change the same record's value directly in IONOS's own control
+  panel (simulating drift since last sync), then submit a *different* new value
+  through GLPI's native edit form without syncing first.
+- **Expected:** the save is aborted with an error naming that the record changed
+  at IONOS since the last sync; the local row is unchanged; IONOS's own
+  out-of-band value is untouched (never silently overwritten).
+- [ ] Pass
+
+### 34b.7 Native soft-delete pushes a delete to IONOS; the later hard purge does not push again
+- **Steps:** with `domainmanager:dns_records_cname` DELETE granted, delete a
+  CNAME record created in 34b.2's style via the native massive-action toolbar
+  (soft delete, into the trash). Confirm it is gone at IONOS. Then, separately,
+  empty the trash (hard purge) for that same row.
+- **Expected:** the soft-delete is what removes the record at IONOS (verify
+  immediately after the soft-delete, before touching the trash) and writes a
+  "[Domain Manager] Record deleted from GLPI: ..." Historical line; the later
+  hard purge only removes the local trashed row and makes no further IONOS call
+  (§11.11) — it should still be gated by `domainmanager:unlock_imported` exactly
+  as before this phase.
+- [ ] Pass
+
+### 34b.8 Live NS re-check blocks a push when IONOS is no longer authoritative
+- **Steps:** point the test domain's nameservers away from IONOS (or simulate by
+  adjusting `NsProviderRegistry`'s match data in a throwaway harness), then
+  attempt a native create/update/delete on a writable-type record with the
+  matching right granted.
+- **Expected:** the operation is aborted with an error stating the nameservers
+  have changed since last sync; no call reaches the IONOS write endpoints.
+- [ ] Pass
+
+### 34b.9 §0.4 manageable-record-types pre-flight still applies
+- **Steps:** as a user whose profile's own "Manageable domain record types"
+  setting (core's native profile option, distinct from this phase's new rights)
+  excludes AAAA, attempt a native create/update on an AAAA record with
+  `domainmanager:dns_records_aaaa` granted.
+- **Expected:** refused with a message naming the "Manageable domain record
+  types" setting specifically — no IONOS call is made (a local-only failure must
+  never follow a successful provider push, §11.7).
+- [ ] Pass
+
+### 34b.10 Non-writable types and non-managed domains are unaffected (regression)
+- **Steps:** (a) attempt to edit/delete an NS or MX record on any domain,
+  regardless of rights; (b) attempt to edit/delete a writable-type (A/AAAA/
+  CNAME/TXT) record on a domain that is not IONOS-managed or whose driver isn't
+  write-capable (e.g. Cloudflare, Dinahosting).
+- **Expected:** both behave exactly as before this phase — (a) is never eligible
+  for write-back regardless of any right; (b) falls through to the existing
+  plugin-import lock (`LockEnforcer`), blocked unless the acting profile holds
+  `domainmanager:unlock_imported`. No new IONOS calls, no new Historical lines.
+- [ ] Pass
+
+### 34b.11 Sync/cron writes are never mistaken for a manual write-back push
+- **Steps:** run a full domain sync (cron or "Sync now") that updates/creates/
+  deletes DomainRecords on an IONOS-managed domain via the ordinary reconciler
+  path (`RecordReconciler`), including at least one record of a writable type.
+- **Expected:** no IONOS write-back calls are triggered by the sync itself (the
+  sync's own read-only reconciliation is unaffected); no duplicate Historical
+  "created/updated/deleted from GLPI" lines appear for records the sync itself
+  touched.
+- [ ] Pass
+
+### 34b.12 Removed controller routes are actually gone
+- **Steps:** request (e.g. via `curl -X POST`) the old Phase 34 URLs directly:
+  `/plugins/domainmanager/dnsrecord/{domains_id}/create`, `.../create/modal`,
+  `.../edit/{id}`, `.../edit/modal/{id}`, `.../delete/{id}`, `.../delete/modal/{id}`.
+- **Expected:** all return 404 — `DnsRecordWriteController` and its three
+  confirmation-modal templates are fully removed, not just unreachable from the UI.
+- [ ] Pass
+
+### 34b.13 No new PHP warnings/notices from this phase
+- **Steps:** after exercising 34b.1-34b.12, check `/var/glpi/logs/php-errors.log`
+  and `domainmanager-errors.log` for any new entries.
+- **Expected:** no new warnings/notices; `php -l` and `phpcs` clean on every
+  touched file (`setup.php`, `src/Profile.php`, `src/Installer.php`,
+  `src/LockEnforcer.php`, `src/Service/DnsRecordWriteback.php`) — confirmed
+  clean by static check already; this item re-confirms against live logs.
+- [ ] Pass
