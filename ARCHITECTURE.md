@@ -1071,62 +1071,125 @@ double-quoted TXT as the one thing needing manual correction.
 
 ### 11.6 Rights
 
-**One right, three native bits:** `domainmanager:dns_records`, carrying core `CREATE`, `UPDATE`
-and `DELETE`.
+**Superseded 2026-07-29 (Phase 34b).** Phase 32 shipped a single right,
+`domainmanager:dns_records`, carrying `CREATE`/`UPDATE`/`DELETE`. That model assumed a
+plugin-owned write surface (§11.10, pre-Phase-34b) where one blanket right could gate every
+write regardless of type. Once Phase 34b moved to intercepting GLPI's own **native**
+`DomainRecord` tab (§11.15a) instead of a plugin panel, a single flat right stopped being
+granular enough: Óscar's explicit direction was that the plugin's rights should **fully
+supersede** native visibility and editability per record type, not just gate a separate panel.
 
-Rendered as a single right row using core's own action-label checkboxes, so it reads like every
-other GLPI right rather than a bespoke checkbox set, via `Profile::displayRightsChoiceMatrix()`
-(`src/Profile.php:3565` on `11.0/bugfixes` — confirmed to exist; an earlier draft's claim that it
-didn't was checked against the wrong branch, see §11.16). Since `Profile::getRightsForForm()` is
-core-only, the plugin's own `Profile`-tab hook builds a small `$rights` array itself and calls
-`displayRightsChoiceMatrix()` directly (see §11.16 for the exact call). Registered with one
-`Migration::addRight()` at install and removed with one `ProfileRight::deleteProfileRights()` at
-uninstall, following the existing `domainmanager:unlock_imported` plumbing.
+**Four rights rows, one per writable type, each carrying three bits — `CREATE`, `UPDATE`,
+`DELETE`:**
 
-Distinct from `domainmanager:unlock_imported`, which continues to govern editing plugin-tracked
-records through the *native* form and emptying the trash. The two do not overlap: this right
-authorises writes *through the plugin panel, to the provider*; that one authorises local
-overrides of plugin locks.
+- `domainmanager:dns_records_a`
+- `domainmanager:dns_records_aaaa`
+- `domainmanager:dns_records_cname`
+- `domainmanager:dns_records_txt`
 
-**Rejected alternatives, recorded:** a two-tier split (`…:dns_records` +
-`…:dns_records_critical`) became pointless once `NS`/`MX` were excluded — there is no critical
-tier left to gate. Six flat single-bit rights would work but produce an uglier profile UI and
-lose core's action-label grid. A single right with six custom bits keeps one row but discards
-the matrix helper's semantics.
+Each still rendered via `Profile::displayRightsChoiceMatrix()` (§11.16), one row per type, so the
+profile UI reads as four ordinary GLPI right rows rather than a bespoke matrix.
+`CREATE`/`UPDATE`/`DELETE` gate the corresponding native operation via the item hooks (§11.7).
+
+**No `READ` bit — investigated and rejected, not merely deferred (2026-07-29).** The original
+intent (Óscar: plugin rights should "completely supersede" native permissions) would extend to
+hiding unreadable record types from the native tab's row list. Traced against the live
+`11.0/bugfixes` source: `CommonGLPI::displayStandardTab()` (`src/CommonGLPI.php:674`) calls
+`DomainRecord::displayTabContentForItem()` directly; the only surrounding plugin hooks are
+`Hooks::PRE_SHOW_TAB`/`POST_SHOW_TAB`, which fire *before and after*, not *instead of* — there is
+no native mechanism to substitute what actually renders. The only two ways to filter rows would
+be output-buffering and scraping/stripping `<tr>`s out of `showForDomain()`'s rendered HTML, or
+duplicating `showForDomain()`'s ~90 lines wholesale as the plugin's own copy and rendering that
+instead. Both are fragile (silently drift the day core changes that method's markup) and neither
+is "native" in any meaningful sense — they'd just move the hack from a button into a scraper.
+Rejected in favour of leaving visibility native/core-gated for everyone; only CREATE/UPDATE/DELETE
+get per-type plugin rights. See §11.17.
+
+**Not a per-type expansion of `domainmanager:unlock_imported`.** That right is unchanged: it
+still governs local overrides of plugin locks on non-managed records and emptying the trash. The
+new per-type rights govern IONOS-managed records specifically, superseding native visibility and
+editability for exactly the four writable types; every other `DomainRecordType` (`NS`, `MX`, …)
+is untouched by this section and continues to be governed by core alone.
+
+**Rejected alternatives, recorded:** the original single flat right (Phase 32) is superseded, not
+merely extended, because "one row, three bits" cannot express "profile X can see and create TXT
+but not touch AAAA." A two-tier critical/non-critical split remains pointless (§11.4 already
+excludes `NS`/`MX`). Sixteen flat single-bit rights (4 types × 4 bits) would work but produce an
+unreadable profile UI and lose the matrix helper's per-row action-label grid — four matrix rows
+is the smallest shape that keeps both granularity and the native look.
 
 **Every entry point checks rights server-side**, entity-aware, as with every existing controller
-(§6.3). UI gating is cosmetic only.
+(§6.3). UI gating (hiding the native edit link or a row of the tab) is cosmetic only; the hooks
+in §11.7 are the actual enforcement.
 
 ### 11.7 Interaction with existing enforcement
 
-**`LockEnforcer` is not inverted, relaxed, or special-cased.** Native edit, delete and purge of
-plugin-tracked records remain blocked exactly as today, uniformly for every provider — IONOS and
-Cloudflare alike. There is no scenario where the same record is editable in one surface and
-locked in another, because the native surface stays locked for all of them.
+**Superseded 2026-07-29 (Phase 34b).** The original invariant — *"plugin-tracked records are
+edited through the plugin, or not at all,"* with `LockEnforcer` blocking native edit/delete
+unconditionally — assumed a plugin-owned panel as the sole write surface. Phase 34b inverts this:
+**the native `DomainRecord` tab (edit form, massive-action delete, inline create) becomes the
+write surface**, and the plugin intercepts it via `hook.php` item hooks rather than blocking it.
 
-**The plugin panel becomes the only write surface**, gated by `domainmanager:dns_records` plus a
-write-capable driver. This is the simpler invariant to hold: *plugin-tracked records are edited
-through the plugin, or not at all.*
+**`LockEnforcer` continues to block native edit/delete exactly as before for every field/type
+outside this section's scope** (imported non-DNS-provider fields, non-writable record types like
+`NS`/`MX`, or writable-type records on a domain whose driver isn't write-capable). For the four
+writable types on an IONOS-managed, write-capable domain, `LockEnforcer` steps aside and the item
+hooks below become the enforcement point instead — there is still exactly one gate active at a
+time per record, just not always the same one.
 
-Two mechanical requirements follow:
+**Three hooks on `DomainRecord`, mirroring core's own add/update/delete lifecycle — registered in
+`setup.php`'s `plugin_init_domainmanager()` (this plugin has no separate `hook.php` file; all
+`$PLUGIN_HOOKS` entries live there already):**
 
-1. **A record-level blanket guard** distinct in name from both native `Lockedfield` and the
-   plugin's own per-field `ImportLock`, so the three are not confused in code or logs.
-2. **The delete path needs the existing `LockEnforcer::$sync_in_progress` bypass**, the same one
-   `RecordReconciler::reconcile()` already sets around reconciliation, so the plugin's own
-   authorised delete is not blocked by the plugin's own guard.
+- `PRE_ITEM_ADD['DomainRecord']` (`pre_item_add`, before the local row exists) → runs pre-flight
+  (rights, type, §0.4 managed-types check, live NS re-check) then `createRecord()`. On failure,
+  aborts the local add the same way `LockEnforcer::blockRecordRemoval()` already does
+  (`$item->input = false`) — there is never a local row with no corresponding IONOS record. On
+  success, the returned `ZoneRecord` (carrying the provider-assigned id) is stashed keyed by
+  `spl_object_id($item)` for the paired post-hook below, since `pre_item_add` fires before the
+  row has a local id to attach anything to.
+- `ITEM_ADD['DomainRecord']` (`post_addItem`, row now exists with a local id) → new entry
+  alongside the existing `Infocom`/`Domain` entries already in that array. Retrieves the stashed
+  `ZoneRecord` for this same object instance and only then creates the `ImportedRecord` row
+  (`remote_id`, `record_hash`), `ImportLock::replaceLocks()`, and the Historical line — mirroring
+  what the removed controller's `create()` action did after its own local `add()` call.
+- `PRE_ITEM_UPDATE['DomainRecord']` (`pre_updateItem`) → **this itemtype already has an entry**,
+  `LockEnforcer::domainRecordPreUpdate` (blocks edits to plugin-imported records). Only one
+  callback per itemtype fits in `$PLUGIN_HOOKS[event]['domainmanager']`, so this is extended
+  in place, not added alongside: for a record that's a writable type on an IONOS-managed,
+  write-capable domain *and* the profile holds the matching per-type `UPDATE` right, it now runs
+  pre-flight (rights, type, live NS re-check, live re-fetch-and-diff — §11.10) and
+  `updateRecord()` instead of the unconditional block; every other record still hits the
+  original lock logic unchanged.
+- `PRE_ITEM_DELETE['DomainRecord']` (`pre_deleteItem`) → **also an existing entry**,
+  `LockEnforcer::domainRecordPreDelete`, extended the same way. Per §11.11, the *soft*-delete
+  (native delete without `$force`, into the trash) is what triggers the upstream IONOS
+  `deleteRecord()` call — not the later hard purge. `PRE_ITEM_PURGE['DomainRecord']`
+  (`LockEnforcer::domainRecordPrePurge`, emptying the trash) is **untouched by this phase**: the
+  record was already deleted at IONOS when it was soft-deleted, so purging the local trash row
+  remains gated by `domainmanager:unlock_imported` exactly as today.
 
-**Native `managed_domainrecordtypes` gate (§0.4) — pre-flight, not workaround.**
-`DomainRecord::prepareInput()` blocks add/update when the acting profile's manageable record
-types exclude the record's type, *unless* `Session::isCron()`. Full-control writes run under a
-web session, so core gates the **local** write independently of the new right — which could push
-successfully to IONOS and then fail to record it locally.
+Each hook checks, in order: is this record's domain IONOS-managed and write-capable (§11.2/§11.3)?
+Is the type one of A/AAAA/CNAME/TXT? Does the active profile hold the matching per-type
+`CREATE`/`UPDATE`/`DELETE` bit (§11.6)? Any "no" and the hook simply returns without calling the
+driver — native GLPI behaviour proceeds untouched, exactly as it does today for every other
+itemtype. Only when all three are "yes" does the hook call the driver; a driver failure throws,
+which GLPI surfaces as its own native form/massive-action error and aborts the native write —
+there is no scenario where a local write succeeds while the IONOS push silently fails, or vice
+versa.
 
-Handling: **pre-flight the type against the acting profile's manageable types and refuse before
-any driver call**, naming that specific profile setting in the message. No API request is made
-if the local write cannot succeed. Because the four writable types are all within the set
-profiles already need for "Update Now" today, **this requirement does not widen** — no new
-admin action, no new documentation burden.
+Two mechanical requirements carried over from the original design:
+
+1. **The delete path needs the existing `LockEnforcer::$sync_in_progress` bypass**, the same one
+   `RecordReconciler::reconcile()` already sets around reconciliation, so cron-driven
+   reconciliation is never mistaken for a hooked user-driven purge.
+2. **Native `managed_domainrecordtypes` gate (§0.4) still pre-flights independently.**
+   `DomainRecord::prepareInput()` blocks add/update when the acting profile's manageable record
+   types exclude the record's type, unless `Session::isCron()`. The hook's own pre-flight must
+   check this *before* calling the driver, naming the specific profile setting in the message —
+   otherwise a push could succeed at IONOS and then fail to save locally. Because the four
+   writable types are all within the set profiles already need for "Update Now" today, this
+   requirement does not widen.
 
 ### 11.8 `DnsRecordWriterInterface`
 
@@ -1155,28 +1218,40 @@ through `GLPIKey`.
 ### 11.9 IONOS implementation
 
 Base `https://api.hosting.ionos.com/dns/v1`, auth `X-API-Key: <prefix>.<secret>` — both already
-in use by `fetchZoneRecords()` (§3.9). Endpoints and payload shape below are taken from the
-maintained `libdns/ionos` reference client, the same source §3.9 used to establish the read wire
-format, because IONOS's docs portal is a JS-rendered SPA with nothing scrapable.
+in use by `fetchZoneRecords()` (§3.9).
+
+**Endpoints and payload shape below are taken from the authoritative live spec**,
+`https://developer.hosting.ionos.de/assets/kms-swagger-specs/dns.yaml` (openapi 1.0.2, fetched
+and read directly 2026-07-29 — the DNS counterpart of the `domains.yaml` spec §3.9 already used,
+served the same way: `application/octet-stream`, pulled with `curl`). This **corrects two
+assumptions** an earlier draft made from the `libdns/ionos` reference client alone (kept below,
+struck through in spirit, for the record):
 
 | Operation | Request | Notes |
 |---|---|---|
-| create | `POST /zones/{zoneId}/records` | Body is a JSON **array**; response is an array of created records **including their ids** |
-| update | `PUT /zones/{zoneId}/records/{recordId}` | **No response body** |
-| delete | `DELETE /zones/{zoneId}/records/{recordId}` | |
+| create | `POST /zones/{zoneId}/records` | Body is a JSON **array**; response is `201` with an array of created records **including their ids** — reference client was right here |
+| update | `PUT /zones/{zoneId}/records/{recordId}` | Body is the `record-update` schema, **`{content, ttl, prio, disabled}` only — no `name`/`type`**; response is `200` **with a full record body** (`record-response`) |
+| delete | `DELETE /zones/{zoneId}/records/{recordId}` | `200`, no documented response body |
 
-Record payload: `{name, type, content, ttl, prio, disabled}`.
+Create payload (`record` schema): `{name, type, content, ttl, prio, disabled}`. Update payload
+(`record-update` schema) is the narrower `{content, ttl, prio, disabled}` shown above.
 
-**Five wire-level traps, each with a required response:**
+**Wire-level traps, each with a required response:**
 
-1. **`PUT` is a full replace, not a `PATCH`.** Every field must be sent on every edit. This makes
-   the live re-fetch in §11.10 *structurally required* to build a valid body — not merely a
-   safety nicety.
-2. **TTL below 60 is rejected with HTTP 400.** The reference client omits the field entirely
-   when TTL is 0. Both belong in modal validation, client- and server-side.
-3. **`disabled` must be sent explicitly as `false`.** The reference client marks it `omitempty`
-   with an unresolved comment about the default being `true`; omitting it risks creating a
-   disabled record that resolves nowhere while looking correct in GLPI.
+1. **`PUT` is a partial update, not a full replace — corrected 2026-07-29.** The spec's own
+   `record-update` request schema has no `name`/`type` field, and its `200` response is a full
+   `record-response` body, not empty. Both halves of the original assumption (full-replace body
+   required; no response body) were wrong, sourced from the reference client rather than the
+   spec. This removes the "live re-fetch structurally required to build a valid body" rationale
+   §11.10 originally gave for its live re-fetch step — that step is kept for the confirmation-modal
+   UX itself (§11.10), not because the API demands a full payload.
+2. **TTL below 60 is rejected with HTTP 400.** Not asserted anywhere in the schema itself (no
+   `minimum` on `ttl`), so this remains reference-client/live-probing knowledge, not spec-verified.
+   The reference client omits the field entirely when TTL is 0. Both belong in modal validation,
+   client- and server-side.
+3. **`disabled` must be sent explicitly as `false`.** The schema defaults it to `false`, but the
+   reference client's own comments raised doubt about the server-side default; sending it
+   explicitly removes the ambiguity regardless of which is correct.
 4. **Names are absolute at IONOS and carry no trailing dot.** The read path relativises against
    the zone name; the write path must re-absolutise and strip any trailing dot.
 5. **The create response carries the provider id**, so `remote_id` is captured at push time from
@@ -1184,40 +1259,54 @@ Record payload: `{name, type, content, ttl, prio, disabled}`.
    remains of an earlier "store the provider id" work item: the `remote_id` column already
    exists and is indexed, and `RecordReconciler` already matches on it first, falling back to
    `record_hash`.)
+6. **`ALIAS` is absent from the spec's `recordTypes` enum entirely** — confirms, rather than
+   merely infers (§11.4), that it doesn't exist on the Hosting DNS API.
 
 **Zone resolution** reuses `findZoneId()` unchanged, including its client-side case-insensitive
 match — the API has no filter-by-name parameter for zones.
 
-### 11.10 Immediate push, with three purpose-built confirmations
+**Implementation note (Phase 33):** `IonosDriver` stores/round-trips `$data` in the same
+convention `ZoneRecord::$data` already uses for reads (TXT unquoted, CNAME with no trailing dot —
+see `DnsRecordWriterInterface`'s docblock), not the literal core field-join convention this
+section originally described. That is consistent with what `fetchZoneRecords()` and
+`RecordReconciler` already do today: `extractContent()` unquotes TXT on read and never appends a
+CNAME dot, so a plugin-written record's `$data` matches what the next sync would read back —
+which is the actual property §11.5 was protecting.
 
-**No staging, no pending state, no Apply step.** A staged model (queue changes locally, review,
-apply as a batch, allow cancellation) was designed and **rejected**: it required new pending-state
-columns, cancelable state transitions, batch-apply semantics and dual purge logging, all to
-prevent accidental changes. The same protection is achieved by making each individual action
-explicitly confirmed, at a fraction of the mechanism.
+### 11.10 Immediate push, pre-flight replaces the confirmation step
 
-**Three modals, each purpose-built rather than one generic prompt:**
+**Superseded 2026-07-29 (Phase 34b).** The original design (Phase 34) built three purpose-built
+confirmation modals in front of a plugin-owned write path. Phase 34b removes the plugin-owned
+path entirely (§11.7) in favour of intercepting GLPI's own native add/edit/purge — there is no
+modal to place a confirmation step in front of, because there is no longer a plugin-rendered
+step in the flow at all. **Every check the modals used to perform up front now runs as
+server-side pre-flight inside the item hook, and a failure aborts the native operation with
+GLPI's own native error surface**, rather than being caught earlier in a dedicated screen.
 
-- **Create** — shows the record about to be created: type, name, data, TTL, target domain and
-  provider.
-- **Edit** — shows **previous versus new, field by field**.
-- **Delete** — shows the record and states plainly that it cannot be undone.
+**No staging, no pending state, no Apply step** — unchanged from the original rejection: a queued/
+batch-apply model was designed and rejected as unnecessary mechanism (kept here for the record).
 
-**The edit modal's "previous" side is a live re-fetch from IONOS**, via `fetchRecord()`, not the
-local mirror. The mirror is only as fresh as the last sync, so someone editing in IONOS's own
-panel since then would have their change silently overwritten by a GLPI edit built on stale
-values. If the live values disagree with the local mirror, **surface the disagreement in the
-modal.** If the fetch fails, fall back to local values with a visible note that they could not be
-verified against the provider — never silently.
+**What the hooks check before calling the driver, all carried over from the modal design:**
 
-**A live NS re-check runs immediately before the push.** The modal's re-fetch proves the *record*
-still exists; it does not prove IONOS is still authoritative for the zone. Nameservers can have
-moved to another provider since the last sync while the zone remains present in the IONOS
-account, in which case the API accepts a write that changes nothing anyone resolves. Re-checking
-the domain's NS immediately before pushing closes that window (§11.3's volatility).
-
-**Confirmation-modal implementation follows GLPI 11's own convention.** §11.15 records this as a
-required verification against `11.0/bugfixes` before hand-rolling anything.
+- **Live re-fetch-and-diff before update.** `pre_updateItem` calls `fetchRecord()` against IONOS
+  before pushing, not the local mirror. The mirror is only as fresh as the last sync, so someone
+  editing in IONOS's own panel since then would have their change silently overwritten by a GLPI
+  edit built on stale values. If the live values disagree with the local mirror, **the hook aborts
+  the save and surfaces the disagreement in the native error message** (no modal to render it in
+  any more). If the fetch itself fails, proceed with the local values but attach a visible warning
+  that they could not be verified against the provider — never silently.
+- **A live NS re-check runs immediately before every push** (create/update/delete alike). The
+  re-fetch proves the *record* still exists; it does not prove IONOS is still authoritative for
+  the zone. Nameservers can have moved to another provider since the last sync while the zone
+  remains present in the IONOS account, in which case the API would accept a write that changes
+  nothing anyone resolves. Re-checking the domain's NS immediately before pushing closes that
+  window (§11.3's volatility) — this check now lives in the hook, not a modal's pre-submit step.
+- **Delete confirmation is native GLPI's own** (native "are you sure" on the row/massive-action
+  soft-delete) — no plugin-rendered delete modal remains; `pre_deleteItem`'s pre-flight (§11.7) is
+  the actual safety net that pushes the IONOS delete, the native confirm dialog is only UX. The
+  later hard purge (emptying the trash) has nothing left to push upstream — the record was
+  already deleted at IONOS when it was soft-deleted — so it stays exactly as gated today
+  (`domainmanager:unlock_imported`, §11.11).
 
 ### 11.11 Delete is a local soft-delete
 
@@ -1317,19 +1406,66 @@ it needs choosing once, in writing, before Phase 32's first version bump lands.
 
 ### 11.15 Phases and versioning
 
-Five phases. Each is one Claude Code session, committed and pushed before context is cleared.
+Six phases. Each is one Claude Code session, committed and pushed before context is cleared.
 
 | Phase | Version | Content |
 |---|---|---|
 | **31** | — | This architecture section. **No code.** Stop for approval. |
 | **32** | `1.2.0-alpha1` | Schema (`is_glpi_created`), one right, one search option |
 | **33** | `1.2.0-alpha2` | `DnsRecordWriterInterface` + IONOS implementation. Testable via throwaway harness, no UI |
-| **34** | `1.2.0-alpha3` | Controllers, three modals, rights gating, §0.4 pre-flight, live NS re-check, `ImportedRecord` row, Historical lines |
-| **35** | `1.2.0-beta1` | End-to-end verification; finalise `ARCHITECTURE.md`, `CHANGELOG.md`, `TESTING.md`. Refining only, nothing new built |
+| **34** | `1.2.0-alpha3` | Controllers, three modals, rights gating, §0.4 pre-flight, live NS re-check, `ImportedRecord` row, Historical lines. No UI trigger yet — the modals exist and are reachable by URL but nothing in GLPI's own `DomainRecord` tab opens them. **Superseded by Phase 34b** (§11.15a): the controller/modal write path is removed, not wired up, once the native-hook design was adopted |
+| **34b** | `1.2.0-alpha4` | Rights redesigned as a per-type READ/CREATE/UPDATE/DELETE matrix (§11.6); native tab fully superseded — `hook.php` item hooks intercept native add/update/purge (§11.7), pre-flight logic ported from the removed modals into the hooks (§11.10), `DomainRecord`'s native tab display overridden to filter rows by per-type READ (§11.15a) |
+| **35** | `1.2.0-beta1` | End-to-end verification; finalise `ARCHITECTURE.md`, `CHANGELOG.md`, `TESTING.md`. Refining only, nothing new built (implemented 2026-07-29) |
+| **36** | `1.2.0-beta2` | Managed-domain indicator + conditional hiding of native `DomainRecord::showForDomain()` add controls (§11.18) — client-side companion to §11.15a/§11.17's "no hook substitutes what the tab renders" finding: that's still true server-side, but `POST_SHOW_TAB` can drive a JS hide of the *rendered* controls |
+| **37** | `1.2.0-beta3` | Custom write-back UI supersedes Phase 36's conditional hiding (§11.19): native add controls always hidden and replaced by a Domain-Manager-branded, per-type-rights-scoped add form on any write-back-editable domain; "goes live" banner/field-lock on a plugin-imported record's own edit page; delete/purge confirmation. UI-visibility layer only — no change to the underlying, already-authoritative `LockEnforcer`/`DnsRecordWriteback` enforcement |
 | release | `1.2.0` | |
 
 **Alpha means "still assembling"; beta means "complete and hardening"** — an honest signal if a
 client is to test before release.
+
+### 11.15a Phase 34b: native tab superseded by per-type rights, not a bespoke design
+
+**Explicit constraint, set by Óscar when Phase 34 landed with no UI trigger:** the create/edit/
+delete actions must be surfaced as **GLPI's own native buttons/icons**, in GLPI's own native
+`DomainRecord` tab, not a plugin-designed toolbar or row layout bolted alongside it. Investigating
+this against the live `11.0/bugfixes` source changed the design further, twice, before landing
+here — recorded in order so the reasoning isn't lost:
+
+**Finding 1 — the native tab has no per-row extension point.** `DomainRecord::showForDomain()`
+(`src/DomainRecord.php:406`) is a hand-rolled table, not a `Search::show()`-driven list: it builds
+its own `$entries` array from a direct DB query and renders through
+`components/datatable.html.twig`. It already has native affordances — the `name` column links to
+core's own full-page edit form, `showmassiveactions` gives core's own checkbox/purge toolbar, and
+an inline "link a record" + collapsible create form covers creation — but none of them are a
+plugin extension point; core's edit form and massive-action purge write straight to
+`glpi_domainrecords` with no hook for an external API call. **This ruled out "add a button that
+opens our modal"**: there is nowhere in this specific view to attach a per-row custom button
+without hand-editing/duplicating `showForDomain()`, which is a bigger deviation from "native" than
+adding a button would have been in the first place.
+
+**Finding 2 — the real native extension point is `hook.php` item hooks.** GLPI's real convention
+for a plugin intercepting native CRUD on a *core* itemtype it doesn't own is `hook.php`'s
+`item_add`/`item_update`/`item_purge` per itemtype (§11.7) — core's own UI stays untouched, the
+plugin observes/vetoes at the model layer. Discussing scope, Óscar's initial goal was for the
+plugin's own rights to fully supersede native permissions, including which types a profile can
+even *see* — but that half (READ/visibility) turned out to have no hook equivalent at all:
+`CommonGLPI::displayStandardTab()` (`src/CommonGLPI.php:674`) calls
+`DomainRecord::displayTabContentForItem()` directly, and the only surrounding plugin hooks
+(`Hooks::PRE_SHOW_TAB`/`POST_SHOW_TAB`) fire before/after, never instead-of. Investigated and
+rejected rather than built — see §11.6's `READ` note and §11.17.
+
+**Resolution:** writes only, via the native extension point that actually exists. Create/update/
+purge go through the three `hook.php` item hooks in §11.7, leaving core's own edit form,
+massive-action toolbar and inline-create form completely untouched as UI — the plugin only ever
+intercepts at the model layer, never renders its own button, modal, or row filter. Visibility
+stays core-gated for every profile, same as any other `DomainRecord`.
+
+**Superseded from the original Phase 34b scope:** `Ajax::createModalWindow()`/`SupplierTab.php`'s
+modal-open convention, the GET-loadable modal route variants, and per-row edit/delete button
+rendering are all dropped — there is no plugin-rendered button or modal left in this design at
+all (§11.10). `src/Controller/DnsRecordWriteController.php` and its three Twig modals become dead
+code; their pre-flight logic (rights, type, live NS re-check, live re-fetch-and-diff) is ported
+into the `hook.php` handlers instead of being deleted outright.
 
 **Phase 32 must bump `PLUGIN_DOMAINMANAGER_VERSION` (from `1.1.0`) or `Installer::install()`
 never re-runs** and the migration silently does not apply. This is the Phase 15 trap; it is the
@@ -1379,24 +1515,62 @@ Confirm against the live `11.0/bugfixes` branch and live provider docs. **Never 
   was never confirmed, and GLPI uses `version_compare` for `minGlpiVersion` elsewhere. Cheap to
   check; the whole schema path depends on it.
 
-**Before Phase 33:**
-- Fetch and read `https://developer.hosting.ionos.de/assets/kms-swagger-specs/dns.yaml` — the DNS
-  counterpart of the `domains.yaml` spec §3.9 already uses. It is served as
-  `application/octet-stream`, so it must be pulled with `curl` rather than a browser-oriented
-  fetcher. Read the **record-type enum** and required fields from it. This is the authoritative
-  answer to two open questions: whether `ALIAS` exists on the Hosting API at all (§11.4), and
-  whether TTL/priority constraints match the reference client's behaviour.
-- Confirm the create/update/delete paths and payload schema against that spec rather than
-  relying solely on the reference client.
+**Before Phase 33: done (2026-07-29).**
+- Fetched and read `https://developer.hosting.ionos.de/assets/kms-swagger-specs/dns.yaml`
+  (`curl`, served as `application/octet-stream` as expected; openapi 1.0.2). Confirmed: `ALIAS`
+  is **absent** from the `recordTypes` enum entirely (§11.4's evidence-based exclusion is now
+  spec-confirmed, not just inferred); no `minimum`/`maximum` constraint is declared on `ttl` or
+  `prio` anywhere in the schema, so the "TTL below 60 is rejected" and priority behaviour remain
+  reference-client/live-probing knowledge, not spec-verified — unchanged risk, now explicitly
+  labelled as such in §11.9 rather than silently assumed.
+- Confirmed create/update/delete paths and payload schema against the spec, **correcting** two
+  reference-client-only assumptions in the original §11.9: `PUT` (update) takes a narrower
+  `{content, ttl, prio, disabled}` body (no `name`/`type`) and its `200` response is a full record
+  body, not empty. Detail moved into §11.9 itself so it isn't duplicated here.
 
 **Before Phase 34:**
 - GLPI 11's own confirmation-modal convention, before hand-rolling one.
+
+**Before Phase 35: done (2026-07-29).**
+- Code-level verification of Phase 34b implementation (ARCHITECTURE.md §11.7/§11.15a):
+  confirmed all four `hook.php` item hooks (PRE_ITEM_ADD, ITEM_ADD, PRE_ITEM_UPDATE,
+  PRE_ITEM_DELETE) are registered in `setup.php` and routed to `DnsRecordWriteback` (create/update)
+  or extended `LockEnforcer` (update/delete). Pre-flight checks (rights, type, manageable-types,
+  live NS re-check, live re-fetch-and-diff on update) are present in code and fire before any
+  driver call. Per-type rights (dns_records_a/aaaa/cname/txt) with CREATE/UPDATE/DELETE bits are
+  defined in `Profile.php` and rendered via `displayRightsChoiceMatrix()` per GLPI 11 conventions.
+  `ImportedRecord` rows created at post-add time with `is_glpi_created = 1`. Historical logging
+  format (§11.13) is implemented. Soft-delete (native delete to trash) pushes to IONOS; hard
+  purge is local-only, gated by `domainmanager:unlock_imported` (§11.11). Non-writable types
+  (NS/MX/etc.) and non-IONOS domains (Cloudflare/Dinahosting/unmanaged) are unaffected, falling
+  through to existing `LockEnforcer` logic unchanged (§11.7). Dead `DnsRecordWriteController`
+  (Phase 34's controller/modals) is unreachable from routing; pre-flight logic ported into the
+  hooks per §11.15a. Static verification only, not live HTTP, in this first pass.
+- **Live addendum (2026-07-29, same day):** `glpi-claude` (port 65008) brought up and the
+  plugin installed/activated for real, migrating cleanly from `1.2.0-alpha4` to `1.2.0-beta1`.
+  Because this container's suppliers carry real production IONOS/Dinahosting/Cloudflare
+  credentials (not throwaway test accounts), the live pass was deliberately scoped to
+  **read-only checks** (confirmed with Óscar first, rather than assumed): per-type rights
+  registration confirmed in the DB (32 rows, all default `0`, matching "not auto-granted to any
+  profile"); rights matrix confirmed live-rendered on the Profile "Domain Manager" tab via a
+  real authenticated HTTP session (Playwright/Chromium), matching `Profile::getAllRights()`
+  exactly; the native `DomainRecord` tab on a real IONOS-managed domain (`desmarque.es`, 18
+  real records) confirmed rendering normally with a working "New Domain record" button,
+  live-reconfirming §11.15a's "Add Record was never actually gated" finding. A real
+  create/update/delete round trip (confirming an actual push reaches IONOS, and that a push
+  attempted without the per-type right creates the record locally with no upstream call) was
+  **not** performed — deliberately deferred, not silently skipped, same as the live-driver-call
+  precedent in §3.8/§3.9: it needs a throwaway zone or Óscar's direct involvement, not a routine
+  read-only pass. See `TESTING.md` §35.17 for the full detail. §11.15's table marks Phase 35 as
+  implemented; §10 amendment for pre-release changelog consolidation is recorded (pre-release
+  sections remain separate in the file; the final `1.2.0` section consolidates them into one
+  section at release time).
 
 ### 11.17 Deferred and rejected, recorded so they are not silently revisited
 
 | Item | Disposition |
 |---|---|
-| Read-scope expansion to all 11 GLPI types | **Deferred as a standalone feature.** Independently valuable (better mirror fidelity for zones with SRV/CAA/SOA) but unrelated to write-back once write scope became a subset of read scope. Carries the real cost: multi-field `data` serialization across three drivers, a one-time record influx on existing installs at first sync, and a widened `managed_domainrecordtypes` requirement. Schedule against a client who needs SRV or CAA. |
+| Read-scope expansion to all 11 GLPI types | **Implemented** (post-1.2.0). `ZoneRecord::TYPES` / `Installer::RECORD_TYPE_NAMES` now list all 11 GLPI types (added `ALIAS`, `PTR`, `SOA`, `SRV`, `CAA`), so the three drivers' read-scope filter no longer blocks them. **IONOS needs no further work**: verified 2026-07-29 against its live spec that `content` always carries the fully-serialized RDATA for these types (no split sub-fields exist in the IONOS schema), so `IonosDriver::extractContent()`'s raw fallback is already correct. Cloudflare and Dinahosting were **not** verified the same way — their APIs may expose structured sub-fields (e.g. Cloudflare's `data` object) that need per-type serialization before those two drivers can be trusted for SRV/SOA/CAA. **Follow-up phase**: verify + implement per-type `data` handling for Cloudflare and Dinahosting specifically. |
 | `ALIAS` writable | **Dropped on evidence** (§11.4). Settle definitively via the spec enum, or a single POST against a throwaway zone. |
 | `NS` / `MX` writable | **Excluded by design** (§11.4), not an oversight. |
 | Apex-NS detection, apex read-only rule, "delegation lives at the registrar" modal copy | **Moot** — `NS` is not writable. Reasoning preserved in §11.4 so it is not re-derived. |
@@ -1408,6 +1582,157 @@ Confirm against the live `11.0/bugfixes` branch and live provider docs. **Never 
 | `supportedRecordTypes()` on the writer interface | **Deferred** until a second writer driver exists (§11.8). |
 | Editability as a searchable field | **Deferred**; Option 3 (mirror column on `states`) noted in §11.12. |
 | Rollback / compensating writes | **Rejected permanently** (§11.14). |
+| Single flat `domainmanager:dns_records` right (Phase 32 shape) | **Superseded** by a per-type CREATE/UPDATE/DELETE matrix, once the write surface moved to native-tab hooks (§11.6). |
+| Plugin-owned write panel + 3 confirmation modals + `DnsRecordWriteController` (Phase 34 shape) | **Superseded** by native-tab `hook.php` interception (§11.7/§11.10/§11.15a); the controller/modals become dead code, pre-flight logic ported into the hooks. |
+| Per-type `READ` right hiding rows from the native `DomainRecord` tab | **Investigated and rejected**, not deferred: no native hook lets a plugin substitute `DomainRecord::displayTabContentForItem()`'s output (`PRE_SHOW_TAB`/`POST_SHOW_TAB` fire around it, not instead of it); only HTML-scraping or a wholesale duplicate of `showForDomain()` would work, and both are fragile in a way genuinely worse than not having the feature (§11.6, §11.15a). Note this is about server-side row filtering specifically — client-side JS hiding of the whole add-controls block via the same hooks is a different, much smaller surface, and was implemented in Phase 36 (§11.18), then superseded by Phase 37's custom add panel (§11.19). |
+| Native add controls hidden only when the user holds *no* per-type CREATE right at all (Phase 36 shape) | **Superseded** by Phase 37 (§11.19): native add controls are now always hidden on a write-back-editable domain and replaced by a custom, rights-scoped add panel, regardless of how many CREATE rights the user holds. |
+
+### 11.18 Phase 36: managed-domain indicator + conditional hiding of native add controls
+
+**Trigger:** live testing surfaced that GLPI core's own "Link a record" dropdown+Add and "New
+Domain record for this item" controls (§11.15a) are unconditionally visible on *every*
+`DomainRecord` tab, including on an IONOS-managed domain for a profile holding none of the
+per-type write-back rights (§11.6) — confusing, since a native add there either falls through to
+a local-only row or gets rejected outright by `DnsRecordWriteback::onPreAdd()`. Separately, there
+was no visual indicator anywhere on the `DomainRecord` tab (or the item header) that a domain is
+under Domain Manager's management at all — only `supplier_domains_list.html.twig` and
+`domain_panel.html.twig`'s own status cards show that, and neither is visible from the Records tab.
+
+**Two features, both client-side, both hooked the same way:**
+
+1. **Managed indicator** — a small `ti ti-world-cog` icon appended to core's own
+   `.navigationheader-title` element (`src/CommonGLPI.php::showNavigationHeader()`, confirmed on
+   `11.0/bugfixes`), shown whenever `DomainState.is_managed` is true for the domain being viewed.
+   Deliberately an icon with a `title` tooltip, not a badge/banner — Óscar's own call, after an
+   initial "managed" badge suggestion read as too heavy for something that should read as native
+   chrome, not a bolted-on notice.
+2. **Conditional hiding of the native add controls** — on the Records tab specifically
+   (`options['itemtype'] === DomainRecord::class`), hidden only when *both* (a) the domain's DNS
+   is under IONOS write-back (`DnsRecordWriteback::isDomainDnsEditable()`) and (b) the current user
+   holds none of the four per-type CREATE rights (`DnsRecordWriteback::userMayCreateAnyType()`).
+   Per Óscar's explicit call: a user who *can* write at least one type keeps seeing the native
+   controls unchanged — this is a permission-driven visibility choice, not a blanket "managed
+   domains never get native add" rule.
+
+**Why this doesn't contradict §11.15a/§11.17's rejection of server-side row-hiding:** that finding
+is still correct — no hook substitutes what `DomainRecord::displayTabContentForItem()` renders.
+What's new here is a *client-side* DOM hide, driven by `Hooks::POST_SHOW_TAB` (confirmed on
+`11.0/bugfixes`, `src/CommonGLPI.php::displayStandardTab()`: fires once per non-main tab actually
+rendered — including on the very page load where that tab is the `forcetab`-forced one, not only
+on later ajax tab switches — via `Plugin::doHook(Hooks::POST_SHOW_TAB, ['item' => $item, 'options'
+=> $options])`, a plain (non-itemtype-keyed) hook whose callback filters on `$item instanceof
+Domain` itself, same convention as the existing `POST_ITEM_FORM` → `DomainForm::inject()`). It
+hides the *whole* add-controls block (the outer `<div class="mb-3">` wrapping both the "Link a
+record" form and the "New Domain record" button+collapsible form — confirmed verbatim from
+`src/DomainRecord.php::showForDomain()`) by selecting on the one stable, non-translated,
+non-`mt_rand()` hook available: `form[id^="domain_form"]`, then hiding its closest `div.mb-3`
+ancestor. Matching on visible button text was ruled out (locale-dependent); matching on the
+`mt_rand()`-suffixed `add_new_record_btn{{ rand }}` id alone was ruled out (doesn't reach the
+sibling "Link a record" form in one selector).
+
+**Two hook entry points needed, not one:** `POST_ITEM_FORM` (existing, `DomainForm::inject()`)
+only fires on the Domain item's own main form tab — a user landing directly on the Records tab
+(`forcetab=DomainRecord$1`) never triggers it. `POST_SHOW_TAB` (new, `DomainForm::onShowTab()`)
+covers every *other* tab. Both call the same private `DomainForm::renderManagedIndicator()`
+helper, rendering one shared Twig partial (`templates/domain_managed_indicator.html.twig`), so the
+icon-insertion script has exactly one implementation regardless of which hook fired it. The icon
+insertion is idempotent (checks for an existing `.domainmanager-managed-icon` child before
+appending) and only needs to run once per full page load — `showNavigationHeader()` renders the
+header once, tab-agnostic, and is never replaced by client-side ajax tab switching, so there's no
+need to re-run on every tab click.
+
+### 11.19 Phase 37: custom write-back UI, superseding Phase 36's conditional hiding
+
+**Trigger:** live-testing Phase 36 with a real profile (`tech`/Technician) surfaced that the
+underlying concern wasn't really "hide the buttons when rights are missing" — it's that reusing
+core's generic native controls for a write-back action gives no visual cue that a click is about
+to reach a real external provider live, with no rollback (§11.14), regardless of whether the user
+technically holds the right to do it. Óscar's explicit call: distinct, plugin-branded controls for
+create — reusing native buttons here specifically risks an accidental live create/edit/delete —
+plus visible "this goes live" warnings on edit/delete, plus front-end blocking of editing locked
+(non-writable-type) records, not just the existing server-side strip-after-the-fact.
+
+**Explicitly kept driver-agnostic, not IONOS-specific**, per Óscar's instruction: every new
+`DnsRecordWriteback` helper (`hasTypeRight()`, `writableTypes()`, `creatableTypesForDomain()`,
+`writableSupplierName()`) and every new template gate on `isDomainDnsEditable()` (true for *any*
+`DnsRecordWriterInterface` driver — currently only `IonosDriver`, but the check itself never names
+it) and on the generic per-type rights matrix (§11.6) — nothing here hardcodes IONOS. Adding a
+second write-capable driver (Cloudflare, Dinahosting) needs no change to this UI layer at all.
+
+**Three surfaces, one underlying principle — make the existing, already-authoritative
+enforcement visible *before* the click, not just after:**
+
+1. **Add, replacing native entirely (`templates/domainrecord_add_panel.html.twig`,
+   `DomainForm::renderRecordWritePanel()`).** Supersedes Phase 36's "hide only when the user holds
+   *no* per-type CREATE right at all" — now, on any write-back-editable domain, the native "Link a
+   record"/"New Domain record" block (§11.15a/§11.18) is unconditionally hidden and replaced with a
+   Domain-Manager-branded form, same DOM relocation technique as §11.18 (`form[id^="domain_form"]`
+   → closest `div.mb-3`). The replacement form's type `<select>` is built server-side from
+   `DnsRecordWriteback::creatableTypesForDomain()` — only types this user holds CREATE for — so
+   there is no type option in the form that could ever be silently rejected or fall through to a
+   local-only add; if that list is empty, the panel shows an explanatory message instead of an
+   empty form. The form still POSTs to `DomainRecord::getFormURLWithID(0)` with a plain `name="add"`
+   submit — GLPI's own generic `CommonDBTM::add()` flow, so `DnsRecordWriteback::onPreAdd()`/
+   `onPostAdd()` fire exactly as they do for the native path (§11.7). This is a *new UI*, not a
+   revival of Phase 34's removed controller/modals (§11.15a) — no new controller, no new route, no
+   duplicated business logic; only a differently-styled, narrower-scoped `<form>` posting to the
+   same native endpoint.
+2. **Edit — banner or lock, never silent (`templates/domainrecord_edit_panel.html.twig`,
+   `DomainForm::injectDomainRecord()`).** Reached through `DomainForm::inject()`'s existing
+   `Hooks::POST_ITEM_FORM` registration (GLPI allows exactly one callback per plugin per hook, so
+   `inject()` now dispatches on `$item instanceof Domain` vs. `instanceof DomainRecord` rather than
+   registering a second hook entry). For a plugin-imported record (`ImportedRecord::isPluginOwned()`)
+   of a writable type where the user holds the per-type UPDATE right: a ribbon banner names the
+   live-update consequence. Otherwise — non-writable type (NS/MX/SOA/…) *or* a writable type the
+   user lacks UPDATE for — every editable field (`name`/`data`/`ttl`/`domainrecordtypes_id`) is
+   cosmetically disabled with a lock icon, same convention `injectDomain()` already uses for
+   Domain's own synced fields. This directly answers "block editing of the locked records": the
+   *enforcement* already existed (`LockEnforcer::domainRecordPreUpdate()` silently strips these
+   fields either way), this phase only stops the round trip that used to be needed to discover that.
+3. **Delete/purge confirmation, same template/hook.** When the user holds the per-type DELETE right
+   for a writable, plugin-imported record, a `window.confirm()` guards the native "Put in
+   trashbin"/"Delete permanently" buttons (`name="delete"`/`name="purge"`, confirmed verbatim on
+   `11.0/bugfixes`'s `templates/components/form/buttons.html.twig`). No confirmation is added when
+   the user lacks the right — `LockEnforcer::blockRecordRemoval()` already blocks it server-side
+   with an error message; adding a client-side warning for an action that's going to be rejected
+   anyway would be noise, not signal.
+
+**Deliberately not built, and why:** per-row custom edit/delete buttons *inside* the Records-tab
+table itself remain out of scope, unchanged from §11.15a's Finding 1 — `showForDomain()` still has
+no per-row extension point, and this phase's edit/delete affordances live on the record's own
+native full-page edit form instead, which *does* have a clean hook (`POST_ITEM_FORM`). Bulk/massive-
+action delete (checkbox selection across multiple rows on the Records tab) is not given a per-row-
+type-aware confirmation — cheaply determining which selected checkbox ids are writable+permitted
+before the confirm dialog would need extra plumbing disproportionate to the value versus the
+single-record edit-page confirmation above; flagged as a known, deliberate gap rather than silently
+skipped.
+
+**Live-testing addendum (found immediately, 2026-07-29, before this phase was even committed):**
+hands-on testing of the new add panel surfaced three more issues, all fixed in the same change:
+
+- **Real bug, predates this phase:** `DnsRecordWriteback::onPreAdd()`'s absolute-name construction
+  was backwards — `"$zoneName.$name"` (e.g. `beiro.net.dnss`) instead of
+  `DnsRecordWriterInterface::createRecord()`'s own already-correctly-documented convention,
+  `"$name.$zoneName"` (`dnss.beiro.net`). IONOS rejected every non-apex create with
+  `INVALID_RECORD`/`invalidFields: ["name"]` because of this — not a driver-side or IONOS-side
+  problem, this call site simply built the string in the wrong order. Fixed at the one place that
+  builds it (§11.9/§11.10 unaffected otherwise — `onPreUpdate()` never built an absolute name at
+  all, passing the relative `name` field straight through, which is why only `create` was broken).
+- **Redirect control:** GLPI's generic add handler
+  (`front/domainrecord.form.php`: `if ($_SESSION['glpibackcreated'] && !isset($_POST['_in_modal']))
+  Html::redirect(...); Html::back();`) would otherwise bounce the user to the new record's own
+  native edit page after a successful create — jarring right after emphasizing "you're now on a
+  Domain-Manager-branded panel, not the native UI." The custom add panel now sets a hidden
+  `_in_modal=1` (not an actual modal, just the one existing switch that forces the `Html::back()`
+  branch) so submitting stays on the Records tab, regardless of the submitting user's own
+  `glpibackcreated` preference.
+- **Gap in scope, closed:** GLPI's own generic, blank "New Domain record" form — reachable from the
+  global Domains-records list / top-nav "+", entirely independent of a Domain's own Records tab —
+  reaches the exact same `onPreAdd()` live push as every other entry point, but Phase 37's original
+  `injectDomainRecord()` returned early for any `isNewItem()` record, so this entry point had *no*
+  warning at all. Since the domain isn't chosen yet at render time there (still a dropdown), the fix
+  is necessarily a generic (not domain-specific) notice: "if the domain you select is write-back
+  managed, this pushes live" — `templates/domainrecord_new_notice.html.twig`.
 
 ---
 

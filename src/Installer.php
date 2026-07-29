@@ -43,7 +43,7 @@ class Installer
 {
     public const DOMAIN_TYPE_NAME = 'Internet Domain';
 
-    public const RECORD_TYPE_NAMES = ['A', 'AAAA', 'CNAME', 'MX', 'NS', 'TXT'];
+    public const RECORD_TYPE_NAMES = ['A', 'AAAA', 'ALIAS', 'CNAME', 'MX', 'NS', 'PTR', 'SOA', 'SRV', 'TXT', 'CAA'];
 
     public const TABLES = [
         'glpi_plugin_domainmanager_supplierconfigs',
@@ -749,12 +749,15 @@ class Installer
     private static function registerRights(Migration $migration): void
     {
         $migration->addRight(Profile::UNLOCK_RIGHT, Profile::RIGHT_UNLOCK_IMPORTED, ['config' => UPDATE]);
-        // ARCHITECTURE.md §11.6 (Phase 32): a new write-capable right, not
-        // auto-granted to any existing profile — unlike the unlock right
-        // above (piggybacked on config UPDATE), pushing changes to a live
-        // provider is sensitive enough that an admin must grant it
-        // explicitly per profile.
-        $migration->addRight(Profile::DNS_RECORDS_RIGHT, 0);
+        // ARCHITECTURE.md §11.6 (Phase 34b, superseding Phase 32's single
+        // flat right): one write-capable right per writable record type,
+        // none auto-granted to any existing profile — unlike the unlock
+        // right above (piggybacked on config UPDATE), pushing changes to a
+        // live provider is sensitive enough that an admin must grant each
+        // type explicitly per profile.
+        foreach (Profile::getDnsRecordRights() as $field) {
+            $migration->addRight($field, 0);
+        }
         // Migration::addRight() inserts rows directly: reset the rights cache
         ProfileRight::cleanAllPossibleRights();
     }
@@ -791,7 +794,7 @@ class Installer
             [
                 'state'         => CronTask::STATE_WAITING,
                 'logs_lifetime' => 30,
-                'comment'       => __('Fill registrar-reported gaps (dates, lock/DNSSEC status, pending flags) from RDAP', 'domainmanager'),
+                'comment'       => __('Fill registrar-reported gaps (dates, lock/DNSSEC status, pending flags) from RDAP. Processes one domain per execution, gated by a daily per-domain check limit, to avoid overloading the RDAP API', 'domainmanager'),
             ],
         );
     }

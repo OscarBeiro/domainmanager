@@ -32,7 +32,10 @@
 namespace GlpiPlugin\Domainmanager;
 
 use Domain;
+use DomainRecord;
+use DomainRecordType;
 use Glpi\Application\View\TemplateRenderer;
+use GlpiPlugin\Domainmanager\Service\DnsRecordWriteback;
 use GlpiPlugin\Domainmanager\Service\DomainStatusResolver;
 use GlpiPlugin\Domainmanager\Service\NsResolver;
 use Session;
@@ -46,7 +49,13 @@ use Supplier;
 class DomainForm
 {
     /**
-     * post_item_form hook entry point (fires for every itemtype form)
+     * `Hooks::POST_ITEM_FORM` entry point (fires for every itemtype form —
+     * a plain, non-itemtype-keyed hook, so this single callback dispatches
+     * on `$item`'s actual class). Handles both the Domain item's own main
+     * form (`injectDomain()`, unchanged since §6.2) and, as of §9 Phase 37,
+     * a `DomainRecord`'s own edit form (`injectDomainRecord()`) — the
+     * "managed by Domain Manager, saving here goes live" banner and the
+     * cosmetic field-lock for records the user isn't allowed to write back.
      *
      * @param  array $params {item, options}
      * @return void
@@ -54,7 +63,22 @@ class DomainForm
     public static function inject(array $params): void
     {
         $item = $params['item'] ?? null;
-        if (!$item instanceof Domain || !Session::haveRight('domain', READ)) {
+        if ($item instanceof Domain) {
+            self::injectDomain($item);
+            return;
+        }
+        if ($item instanceof DomainRecord) {
+            self::injectDomainRecord($item);
+        }
+    }
+
+    /**
+     * @param  Domain $item
+     * @return void
+     */
+    private static function injectDomain(Domain $item): void
+    {
+        if (!Session::haveRight('domain', READ)) {
             return;
         }
 
@@ -163,6 +187,194 @@ class DomainForm
             'ns_mismatch'        => $ns_mismatch,
             'registrar_mismatch' => $registrar_mismatch,
         ]);
+
+        self::renderManagedIndicator($state !== null && (bool) $state->fields['is_managed']);
+    }
+
+    /**
+     * `DomainRecord`'s own edit form (§9 Phase 37) — reached via
+     * `inject()`'s dispatch above, not a separate hook registration (GLPI
+     * only allows one `POST_ITEM_FORM` callback per plugin). Renders:
+     * - a "managed by Domain Manager, this updates live" banner when the
+     *   record is plugin-imported, of a writable type (A/AAAA/CNAME/TXT),
+     *   the domain's DNS is under write-back, and the user holds the
+     *   per-type UPDATE right;
+     * - otherwise, whenever the record is plugin-imported at all, a
+     *   cosmetic field-lock (same convention as `injectDomain()`'s own
+     *   `locked_fields`) — covers both non-writable types (NS/MX/…) and a
+     *   writable type the user simply lacks the right for. Prevents the
+     *   "edit successfully, only to see it silently stripped after
+     *   redirect" experience `LockEnforcer::domainRecordPreUpdate()` already
+     *   produces server-side (authoritative, unchanged by this).
+     * - a delete/purge confirmation requiring an explicit "yes" before
+     *   submitting, whenever the user holds the per-type DELETE right (the
+     *   record would otherwise just be silently blocked server-side by
+     *   `LockEnforcer::blockRecordRemoval()`, same authoritative check).
+     *
+     * @param  DomainRecord $item
+     * @return void
+     */
+    private static function injectDomainRecord(DomainRecord $item): void
+    {
+        if (!Session::haveRight('domain', READ)) {
+            return;
+        }
+
+        if ($item->isNewItem()) {
+            // §9 Phase 37 addendum (found live, 2026-07-29): the domain isn't
+            // known yet on a blank new-item form (it's still a dropdown), so
+            // this can only be a generic, always-shown notice — not gated on
+            // any specific domain's write-back state/rights the way the
+            // existing-record banner below is. Covers the one entry point
+            // Phase 37's original scope missed: GLPI's own generic "New
+            // Domain record" quick-add (global Domains-records list /
+            // top-nav "+"), which reaches the exact same `onPreAdd()` live
+            // push as every other entry point (§11.7) but previously had no
+            // warning at all before a submit.
+            TemplateRenderer::getInstance()->display('@domainmanager/domainrecord_new_notice.html.twig', []);
+            return;
+        }
+
+        $records_id = (int) $item->getID();
+        if (!ImportedRecord::isPluginOwned($records_id)) {
+            // Not a plugin-imported record at all — entirely native,
+            // nothing for this panel to add.
+            return;
+        }
+
+        $domains_id = (int) $item->fields['domains_id'];
+        $type       = self::recordTypeName((int) $item->fields['domainrecordtypes_id']);
+        $state      = DomainState::getForDomain($domains_id);
+        $dns_editable = $state !== null && DnsRecordWriteback::isDomainDnsEditable($state);
+        $is_writable_type = $type !== null && in_array($type, DnsRecordWriteback::writableTypes(), true);
+
+        $can_update = $dns_editable && $is_writable_type && DnsRecordWriteback::hasTypeRight($type, UPDATE);
+        $can_delete = $dns_editable && $is_writable_type && DnsRecordWriteback::hasTypeRight($type, DELETE);
+
+        TemplateRenderer::getInstance()->display('@domainmanager/domainrecord_edit_panel.html.twig', [
+            'can_update'    => $can_update,
+            'can_delete'    => $can_delete,
+            'supplier_name' => $dns_editable ? DnsRecordWriteback::writableSupplierName($domains_id) : null,
+            // Cosmetic-only (server-side is authoritative, see docblock
+            // above): every editable field disabled unless the user can
+            // actually write this record back.
+            'locked_fields' => $can_update ? [] : ['name', 'data', 'ttl', 'domainrecordtypes_id'],
+        ]);
+    }
+
+    /**
+     * `Hooks::POST_SHOW_TAB` entry point — fires for every *non-main* tab of
+     * a Domain item (Records, Historical, Associated items, …), unlike
+     * `inject()` above which only runs on the Domain item's own main form
+     * tab. Needed so the "managed by Domain Manager" indicator (§9 Phase 36)
+     * shows up regardless of which tab a user lands on first, and so the
+     * Records tab specifically can also render the custom add panel (§9
+     * Phase 37, `renderRecordWritePanel()`).
+     *
+     * @param  array $params {item, options}
+     * @return void
+     */
+    public static function onShowTab(array $params): void
+    {
+        $item = $params['item'] ?? null;
+        if (!$item instanceof Domain || $item->isNewItem() || !Session::haveRight('domain', READ)) {
+            return;
+        }
+
+        $domains_id = (int) $item->getID();
+        $state      = DomainState::getForDomain($domains_id);
+        $is_managed = $state !== null && (bool) $state->fields['is_managed'];
+
+        self::renderManagedIndicator($is_managed);
+
+        $tab_itemtype = $params['options']['itemtype'] ?? '';
+        if ($is_managed && $state !== null && $tab_itemtype === DomainRecord::class) {
+            self::renderRecordWritePanel($domains_id, $state);
+        }
+    }
+
+    /**
+     * Shared by `injectDomain()` (main tab) and `onShowTab()` (every other
+     * tab) so the "managed" icon script only ever has one implementation to
+     * keep in sync (§9 Phase 36).
+     *
+     * @param  bool $is_managed
+     * @return void
+     */
+    private static function renderManagedIndicator(bool $is_managed): void
+    {
+        if (!$is_managed) {
+            return;
+        }
+
+        TemplateRenderer::getInstance()->display('@domainmanager/domain_managed_indicator.html.twig', []);
+    }
+
+    /**
+     * Records tab (§9 Phase 37, superseding Phase 36's blanket
+     * hide-when-no-rights-at-all approach): whenever this domain's DNS is
+     * genuinely under write-back (any driver implementing
+     * `DnsRecordWriterInterface` — not IONOS-specific), core's native "Link
+     * a record"/"New Domain record for this item" controls
+     * (`DomainRecord::showForDomain()`) are always hidden and replaced by a
+     * Domain-Manager-branded add form scoped to only the types this user
+     * actually holds CREATE for — so a click there always means "this
+     * creates a record live", never a silent local-only add or an outright
+     * rejection by `DnsRecordWriteback::onPreAdd()`. A domain whose DNS
+     * isn't write-back-editable (no supported driver configured, or the
+     * driver doesn't implement the interface) leaves the native controls
+     * completely untouched — this panel only ever applies where write-back
+     * is real.
+     *
+     * @param  int         $domains_id
+     * @param  DomainState $state
+     * @return void
+     */
+    private static function renderRecordWritePanel(int $domains_id, DomainState $state): void
+    {
+        if (!DnsRecordWriteback::isDomainDnsEditable($state)) {
+            return;
+        }
+
+        $creatable_types = DnsRecordWriteback::creatableTypesForDomain($domains_id);
+
+        $type_options = [];
+        foreach ($creatable_types as $name) {
+            $type = new DomainRecordType();
+            if ($type->getFromDBByCrit(['name' => $name])) {
+                $type_options[(int) $type->fields['id']] = $name;
+            }
+        }
+
+        $supplier_name = DnsRecordWriteback::writableSupplierName($domains_id);
+        $live_notice = $supplier_name !== null
+            ? sprintf(__('This creates the record live at %s. There is no undo.', 'domainmanager'), $supplier_name)
+            : __('This creates the record live at the DNS provider. There is no undo.', 'domainmanager');
+
+        TemplateRenderer::getInstance()->display('@domainmanager/domainrecord_add_panel.html.twig', [
+            'domains_id'   => $domains_id,
+            'type_options' => $type_options,
+            'live_notice'  => $live_notice,
+            'add_form_url' => DomainRecord::getFormURLWithID(0),
+        ]);
+    }
+
+    /**
+     * @param  int $type_id
+     * @return string|null
+     */
+    private static function recordTypeName(int $type_id): ?string
+    {
+        if ($type_id <= 0) {
+            return null;
+        }
+
+        $type = new DomainRecordType();
+        if ($type->getFromDB($type_id)) {
+            return $type->fields['name'] ?? null;
+        }
+
+        return null;
     }
 
     /**

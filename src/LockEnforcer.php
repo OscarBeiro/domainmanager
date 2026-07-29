@@ -33,6 +33,7 @@ namespace GlpiPlugin\Domainmanager;
 
 use Domain;
 use DomainRecord;
+use GlpiPlugin\Domainmanager\Service\DnsRecordWriteback;
 use Infocom;
 use Session;
 
@@ -111,6 +112,18 @@ class LockEnforcer
     public static function domainRecordPreUpdate(DomainRecord $item): void
     {
         if (self::canBypass() || !is_array($item->input)) {
+            // A sync-driven/cron/unlock-right update: never treated as a
+            // manual write-back push, same bypass as every other lock here.
+            return;
+        }
+
+        // §11.7 (Phase 34b): for a writable type on an IONOS-managed,
+        // write-capable domain where the profile holds the per-type UPDATE
+        // right, DnsRecordWriteback pushes the edit to IONOS (or aborts the
+        // save on failure) instead of this method's own unconditional
+        // block below. Every other record/type/profile falls through
+        // unchanged.
+        if (DnsRecordWriteback::onPreUpdate($item)) {
             return;
         }
 
@@ -202,7 +215,7 @@ class LockEnforcer
      */
     public static function domainRecordPreDelete(DomainRecord $item): void
     {
-        self::blockRecordRemoval($item);
+        self::blockRecordRemoval($item, true);
     }
 
     /**
@@ -213,18 +226,33 @@ class LockEnforcer
      */
     public static function domainRecordPrePurge(DomainRecord $item): void
     {
-        self::blockRecordRemoval($item);
+        self::blockRecordRemoval($item, false);
     }
 
     /**
      * Cancel deletion/purge of plugin-imported records ($input = false)
      *
      * @param  DomainRecord $item
+     * @param  bool         $is_soft_delete true from domainRecordPreDelete
+     *                                      (the soft-delete-into-trash
+     *                                      path), false from
+     *                                      domainRecordPrePurge (the hard
+     *                                      purge/empty-trash path) — only
+     *                                      the former is eligible for
+     *                                      write-back push (§11.7/§11.11)
      * @return void
      */
-    private static function blockRecordRemoval(DomainRecord $item): void
+    private static function blockRecordRemoval(DomainRecord $item, bool $is_soft_delete): void
     {
         if (self::canBypass()) {
+            return;
+        }
+
+        // §11.7 (Phase 34b): the soft-delete path only — per §11.11, that's
+        // the action that pushes the upstream IONOS delete; the later hard
+        // purge (emptying the trash) has nothing left to push and keeps its
+        // existing unconditional block below unchanged.
+        if ($is_soft_delete && DnsRecordWriteback::onPreDelete($item)) {
             return;
         }
 

@@ -52,15 +52,37 @@ class Profile extends CoreProfile
     public const RIGHT_UNLOCK_IMPORTED = 1;
 
     /**
-     * Name of the DNS record write-back right (ARCHITECTURE.md §11.6,
-     * Phase 32) — carries core's own CREATE/UPDATE/DELETE bits, rendered
-     * via `Profile::displayRightsChoiceMatrix()` so it reads like any
-     * other GLPI right instead of a bespoke checkbox set. Distinct from
-     * `UNLOCK_RIGHT`: that one governs local overrides of plugin locks on
-     * the native form; this one authorises writes through the plugin
-     * panel, to the provider.
+     * Per-type DNS record write-back rights (ARCHITECTURE.md §11.6, Phase
+     * 34b, superseding Phase 32's single `domainmanager:dns_records`
+     * right). One right per writable `DomainRecordType`, each carrying
+     * core's own CREATE/UPDATE/DELETE bits, rendered via
+     * `Profile::displayRightsChoiceMatrix()` so each reads like any other
+     * GLPI right. Distinct from `UNLOCK_RIGHT`: that one governs local
+     * overrides of plugin locks on the native form; these authorise the
+     * native `DomainRecord` tab's add/update/delete to be pushed to IONOS,
+     * per type, via `hook.php` item hooks (§11.7).
      */
-    public const DNS_RECORDS_RIGHT = 'domainmanager:dns_records';
+    public const DNS_RECORDS_RIGHT_A     = 'domainmanager:dns_records_a';
+    public const DNS_RECORDS_RIGHT_AAAA  = 'domainmanager:dns_records_aaaa';
+    public const DNS_RECORDS_RIGHT_CNAME = 'domainmanager:dns_records_cname';
+    public const DNS_RECORDS_RIGHT_TXT   = 'domainmanager:dns_records_txt';
+
+    /**
+     * Map of writable `DomainRecordType` name to its per-type right, kept
+     * here as the single source of truth (`DnsRecordWriteback` reads it
+     * rather than duplicating the mapping).
+     *
+     * @return array<string, string>
+     */
+    public static function getDnsRecordRights(): array
+    {
+        return [
+            'A'     => self::DNS_RECORDS_RIGHT_A,
+            'AAAA'  => self::DNS_RECORDS_RIGHT_AAAA,
+            'CNAME' => self::DNS_RECORDS_RIGHT_CNAME,
+            'TXT'   => self::DNS_RECORDS_RIGHT_TXT,
+        ];
+    }
 
     /**
      * {@inheritDoc}
@@ -98,7 +120,7 @@ class Profile extends CoreProfile
      */
     public function getAllRights(): array
     {
-        return [
+        $rights = [
             [
                 'rights'    => [
                     self::RIGHT_UNLOCK_IMPORTED => __('Edit fields and records imported by synchronization', 'domainmanager'),
@@ -106,16 +128,30 @@ class Profile extends CoreProfile
                 'label'     => __('Unlock imported domain data', 'domainmanager'),
                 'field'     => self::UNLOCK_RIGHT,
             ],
-            [
-                'rights'    => [
+        ];
+
+        // §11.6 (Phase 34b): one row per writable record type instead of
+        // Phase 32's single flat right, so a profile can be granted (e.g.)
+        // TXT write-back without also getting AAAA.
+        $labels = [
+            'A'     => __('DNS record write-back: A', 'domainmanager'),
+            'AAAA'  => __('DNS record write-back: AAAA', 'domainmanager'),
+            'CNAME' => __('DNS record write-back: CNAME', 'domainmanager'),
+            'TXT'   => __('DNS record write-back: TXT', 'domainmanager'),
+        ];
+        foreach (self::getDnsRecordRights() as $type => $field) {
+            $rights[] = [
+                'rights' => [
                     CREATE => __('Create'),
                     UPDATE => __('Update'),
                     DELETE => __('Delete'),
                 ],
-                'label'     => __('DNS record write-back to provider', 'domainmanager'),
-                'field'     => self::DNS_RECORDS_RIGHT,
-            ],
-        ];
+                'label'  => $labels[$type],
+                'field'  => $field,
+            ];
+        }
+
+        return $rights;
     }
 
     /**
