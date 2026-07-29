@@ -844,6 +844,8 @@ Right registered per-profile via `Migration::addRight` at install and manageable
     - Both comparisons moved out of the Twig template (`{% set ... = ... %}` boolean expressions, not really testable) into two new private static methods on `DomainForm`, computed once in `inject()` and passed to the template as plain booleans (`registrar_mismatch`, `ns_mismatch`).
     - **RDAP registrar of record now also shown on the Supplier's own Domain Manager tab** (`DomainState::getRdapRegistrarInfo()`, `SupplierTab.php`, `supplier_tab.html.twig`): the most recently RDAP-checked, still-populated `rdap_registrar_name`/`rdap_registrar_iana_id` among that Supplier's registrar-linked domains, shown as a plain read-only row next to the API driver selector. Addresses the "should we add the IANA to the Supplier tab" question raised during this same review — an admin can now confirm/record the real-world registrar identity once per Supplier rather than only discovering it per-Domain when a genuine mismatch happens to trip the cross-check panel. Same "informational only, never a source of truth" rule as the per-Domain panel (§9 Phase 21 "Registrar-of-record note") — this is a read-only display, no write path.
 
+21. **Phase 31** — architecture only (this document, §11). No code. Stop for approval before Phase 32.
+
 Every phase leaves install → uninstall residue-free.
 
 ---
@@ -852,6 +854,559 @@ Every phase leaves install → uninstall residue-free.
 
 `PLUGIN_DOMAINMANAGER_VERSION` in `setup.php` is the single source of truth for the plugin's version (no `composer.json` version field is used). **Every bump of that constant must land in the same commit as a matching `CHANGELOG.md` entry** — a new `## [x.y.z] - YYYY-MM-DD` section (Keep a Changelog format) containing whatever `### Added`/`### Changed`/`### Fixed` bullets accumulated under `[Unreleased]` since the previous version section, moved (not duplicated) out of `[Unreleased]` into the new version's section. A bump with no shipped content yet (e.g. a bare version-number increment immediately superseded by a later bump before anything else changed) still gets its own one-line section noting "version bump only — no functional changes", so the version history stays honest and every constant value that ever existed is traceable in the changelog. `[Unreleased]` itself is kept present but empty between releases, ready to accumulate the next round of bullets.
 
+**Pre-release amendment (resolved 2026-07-29, for §11.15's five-phase `-alphaN`/`-betaN` sequence):**
+each pre-release bump (`1.2.0-alpha1`, `-alpha2`, `-alpha3`, `-beta1`) still gets its own dated
+`## [1.2.0-alphaN] - YYYY-MM-DD` section at the time it lands, same as any other bump — nothing
+changes about *when* changelog entries are written. The amendment is about the eventual `1.2.0`
+release section: **it consolidates.** When the plain `## [1.2.0] - YYYY-MM-DD` section is written
+at release, its `### Added`/`### Changed`/`### Fixed` bullets are a clean rewrite of everything
+that shipped across `-alpha1` through `-beta1` — not a duplicate list, not a bare "see above"
+pointer. The four pre-release sections themselves are **not deleted**; they stay in the file as
+the honest historical record of how the feature actually landed session-by-session, but a reader
+who only cares about released versions gets one coherent `1.2.0` entry without needing to read
+the pre-release trail.
+
 ---
 
-*Open items awaiting your approval: the four deviations in §0.1–§0.4 (Registrar as plugin field, `date_domaincreation` mapping, plugin-owned lock layer replacing native `Lockedfield`, documented `managed_domainrecordtypes` gate on web-triggered record writes) and the CREATE TABLE exception in §0.6.*
+---
+
+## 11. Phases 31–35 — Manual DNS record write-back to IONOS ("Managed — editable")
+
+### 11.1 Scope
+
+The first **write-direction** capability in this plugin. Until now every pipeline has been
+strictly upstream → GLPI: `RecordReconciler` mirrors provider DNS records into native
+`DomainRecord` rows and the provider is always authoritative. This feature lets an operator
+create, edit and delete a **DNS record** from inside GLPI and have the change pushed to the
+provider.
+
+**In scope:** DNS records only, on IONOS only, for four record types (§11.4).
+
+**Explicitly out of scope, and not deferred-with-intent — simply not part of this feature:**
+
+- Domain lifecycle operations of any kind: registration, renewal, transfer, transfer-lock,
+  auto-renew, privacy, DNSSEC toggles. All of that is *domain-level registrar* metadata, read
+  by `fetchLifecycle()` and displayed read-only. Nothing here makes it writable.
+- Zone creation or deletion. Only records within an already-existing zone.
+- Cloudflare and Dinahosting write paths. The interface is provider-neutral; only IONOS
+  implements it.
+- Bulk or scripted editing. One record, one deliberate action, one confirmation.
+
+**Direction of authority is unchanged.** The provider remains the source of truth. A write from
+GLPI is a *request to change upstream*, after which upstream is re-read and continues to win.
+No part of this feature makes GLPI authoritative, and nothing in §5's reconciliation model is
+inverted.
+
+### 11.2 Provenance model: three categories, one of them derived
+
+The plugin already distinguishes two provenances for a native `DomainRecord`. This feature adds
+a third *capability* concept, which is deliberately **not** stored.
+
+| Category | Meaning | How it's known |
+|---|---|---|
+| **Manual** | Created by a user in GLPI, never touched by sync | **No** `glpi_plugin_domainmanager_records` row exists |
+| **Managed** | Plugin-tracked: imported and reconciled by sync | An `ImportedRecord` row exists (`is_managed = 1`) |
+| **Managed — editable** | A *sub-state of Managed*: the record can additionally be *written* upstream from GLPI | **Derived live** from the domain's DNS driver at render/action time |
+
+**"Managed" keeps exactly its existing meaning.** It is not renamed, not redefined, and not
+split. Both existing search options survive untouched — the Domain-level one backed by
+`glpi_plugin_domainmanager_states.is_managed`, and the record-level
+`PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_MANAGED` (id 9404) backed by
+`glpi_plugin_domainmanager_records.is_managed`. **No saved search built on either breaks.**
+
+**Editability is a derived capability, never a stored flag.** It is computed the same way
+`DomainState::resolvesToActiveDriver()` already computes driver availability: resolve the
+domain's DNS supplier → resolve its driver → ask whether that driver implements
+`DnsRecordWriterInterface`. Nothing is persisted.
+
+This was chosen over storing per-record boolean flags (an `is_readonly` + `is_managed` pair was
+considered and **rejected**). Storing an overlapping fact invents a synchronisation problem
+that does not otherwise exist: the two flags could disagree, or both be true, and code would
+need to define what that means. A derived capability cannot drift from reality, because it *is*
+read from reality on each use.
+
+**Naming: "Managed — editable", badge text "Editable from GLPI".** An earlier draft called this
+"Full control (records)" and that name was **rejected before shipping**, for reasons worth
+recording:
+
+- **It claimed more than the feature does.** Four record types out of eleven, no zone operations,
+  no registrar lifecycle. "Full" was wrong on its face.
+- **It read as a third sibling of Manual and Managed**, competing with them, when it is in fact a
+  *sub-state of Managed* — every editable record is by definition plugin-tracked. Nesting it
+  under Managed is the accurate relationship and invents no new vocabulary.
+- **It had no graceful degradation.** "Full control" is binary, and editability is not: it
+  degrades into distinguishable states that an operator needs told apart —
+  `editable` · `read-only` · `editable — unverified` · `read-only — provider credential lacks
+  DNS edit`. The last two do not arise on IONOS, whose API key is not scope-limited per zone, but
+  they are unavoidable for any provider with granular tokens.
+
+The domain-scope caveat the old parenthetical carried still holds and is stated plainly instead: a
+domain's *records* can be editable while its registrar metadata (transfer locks, auto-renew,
+expiry) stays read-only, because that metadata is domain-level and lives with the registrar.
+
+### 11.3 Capability keys off the DNS provider, not the registrar
+
+**Editability is decided by the domain's nameservers, not by who it was bought from.** This is
+the single most misreadable part of the feature and the reason the interface lives on the DNS
+side.
+
+- `ticgal.com` — registrar IONOS, DNS Cloudflare → **not** editable. The registrar can't
+  edit records it doesn't serve.
+- A domain with IONOS nameservers, registered elsewhere, or with no registrar recorded in GLPI
+  at all → **is** editable.
+
+The plugin already detects this: `dns_suppliers_id` on `DomainState` is populated by
+`NsResolver`/`NsProviderRegistry` from the domain's live NS records at sync time. Editability
+therefore reads off the *detected* DNS provider, and the new interface is
+**`DnsRecordWriterInterface`**, a sibling of `DnsPipelineInterface` — not a registrar concern.
+
+**Consequence: the capability is volatile, with no GLPI action involved.** Change nameservers at
+the registrar and the badge appears or disappears on the next sync. This is correct behaviour,
+not a defect, and it has one operational implication handled in §11.9: a stale page can offer a
+write against a zone IONOS no longer serves, so the driver re-checks immediately before pushing.
+
+### 11.4 Editable record types: A, AAAA, CNAME, TXT
+
+**Writable:** `A`, `AAAA`, `CNAME`, `TXT`. Nothing else, and no configuration switch to widen it.
+
+**Read scope is unchanged** — the existing six-type whitelist (`A`, `AAAA`, `NS`, `TXT`, `MX`,
+`CNAME`). Every writable type is already inside it, so **this feature touches no read path in
+any driver.**
+
+That containment is load-bearing, not incidental. If a type could be created that
+`fetchZoneRecords()` does not read, the following happens with no error anywhere: the push
+succeeds and the record is live upstream; the local `DomainRecord` and `ImportedRecord` rows are
+written; the next sync fetches the zone *without* that record because it isn't whitelisted;
+`RecordReconciler` correctly concludes the record vanished upstream and soft-deletes it to the
+trash. A live record, silently shown as deleted, by the plugin's own hand. Keeping write scope a
+strict subset of read scope makes that failure **structurally impossible** rather than guarded
+against.
+
+**Why these four and not more:**
+
+- They cover the ordinary daily work — host records and verification/policy strings.
+- `NS` and `MX` are excluded deliberately. Nobody should be re-pointing delegation or mail
+  routing from an inventory tool; both have zone-wide consequences, and NS in particular is what
+  *grants* this capability in the first place (§11.3), so editing it could revoke the authority
+  that permitted the edit and make the panel used to fix it disappear. Recovery would be manual
+  at IONOS. **This reasoning is recorded here specifically so NS/MX are not later re-added as an
+  obvious convenience.**
+- `SOA` is zone metadata; `PTR` belongs to reverse zones the account does not own; `CAA`
+  misconfigured blocks certificate issuance; `SRV` and the rest are niche and carry multi-field
+  RDATA. None are worth the surface.
+
+**Honest framing of "safe".** `TXT` already carries mail-affecting power, since SPF, DKIM and
+DMARC all live there. Excluding `MX` does **not** firewall mail. The claim this list supports is
+*bounded blast radius* — one hostname or one policy string per record — not "cannot break
+anything". A mangled SPF record is a bad afternoon. `TXT` stays because it is the type most often
+needed from outside and the cost of excluding it would be most of the feature's value.
+
+**`ALIAS` was requested and then dropped, on evidence.** GLPI does ship an `ALIAS`
+`DomainRecordType` (id 3, `fields => []`) — verified in `src/DomainRecordType.php::$knowtypes`
+on `11.0/bugfixes` — so the dropdown row exists and nothing would need inventing on the GLPI
+side. The problem is IONOS. Every source listing `ALIAS` describes **IONOS Cloud DNS**
+(`api.ionos.com`, the DCD panel, the `ionoscloud` Terraform provider, `ionosctl`), which is a
+*different product* from the Hosting/Developer DNS API this driver uses
+(`api.hosting.ionos.com/dns/v1`) — the same product confusion §3.9 already warns about for the
+IAM federation-domains API. On the Hosting side, `ALIAS` appears nowhere: IONOS's own DNS Pro
+template documentation lists supported types as A, AAAA, CNAME, MX, SRV, SPF (TXT) and TXT, its
+general DNS settings help covers A/AAAA, CNAME, MX, TXT, SRV and CAA, and neither the maintained
+`libdns/ionos` client nor community zone-export tooling models `ALIAS` at all. This is
+absence-of-evidence rather than a confirmed rejection (§11.15 records how to settle it), but it
+is not a basis for building UI. `ALIAS` remains **readable** in principle — it is one of GLPI's
+11 types — but on IONOS Hosting it will most likely never arrive from sync either.
+
+**Reference: GLPI's full seeded type set**, verified in `DomainRecordType::$knowtypes` on
+`11.0/bugfixes` (seeded by core install; the 9.5 migration calls `getDefaults()`). Recorded here
+because the plugin's installer asserts a subset of it by name.
+
+| id | name | declared `fields` |
+|---|---|---|
+| 1 | A | — |
+| 2 | AAAA | — |
+| 3 | ALIAS | — |
+| 4 | CNAME | `target` |
+| 5 | MX | `priority`, `server` |
+| 6 | NS | — |
+| 7 | PTR | — |
+| 8 | SOA | 7 fields |
+| 9 | SRV | `priority`, `weight`, `port`, `target` |
+| 10 | TXT | `data` |
+| 11 | CAA | `flag`, `tag`, `value` |
+
+### 11.5 The `data` string convention: match core, one transformation
+
+Core stores record RDATA in `DomainRecord.data` (text), with an optional `data_obj` that core
+itself clears on `data` change (§0.5). The plugin writes `data` only — unchanged here.
+
+Core has a **documented convention** for composing `data` from a type's declared fields,
+verified in `templates/pages/management/domainrecordtype_helper.html.twig`: field values are
+joined with a single space in declaration order, and two transforms apply per field —
+`is_fqdn` fields get a **trailing dot appended** if absent, and `quote_value` fields are
+**wrapped in double quotes** with inner quotes escaped.
+
+**Decision: the plugin follows core's convention.** Records created manually through GLPI's own
+form already exist in these zones; producing a second, subtly different representation for the
+same record would make plugin-created and user-created records differ by one character and churn
+`record_hash` on every sync.
+
+Applied to the four writable types, and cross-referenced against what IONOS actually returns:
+
+| Type | Core convention | IONOS Hosting wire format | Transformation needed |
+|---|---|---|---|
+| A | plain value | plain value | none |
+| AAAA | plain value | plain value | none |
+| CNAME | `target` is `is_fqdn` → **trailing dot** | **no** trailing dot | **strip on write, append on read** |
+| TXT | `data` is `quote_value` → **quoted** | **returned quoted** | none — the two agree |
+
+So the entire serialization burden of this feature is **one transformation, on one type, in one
+driver.** TXT's agreement is a genuine convergence, corroborated independently: `libdns/ionos`
+calls `strconv.Unquote` on TXT content, and a community zone-export tool's author documented
+double-quoted TXT as the one thing needing manual correction.
+
+`prio` is meaningful only for `MX` and `SRV`, both excluded, so the write payload always carries
+`prio: 0`. Multi-field RDATA (`MX`, `SOA`, `SRV`, `CAA`) is entirely outside this feature.
+
+### 11.6 Rights
+
+**One right, three native bits:** `domainmanager:dns_records`, carrying core `CREATE`, `UPDATE`
+and `DELETE`.
+
+Rendered as a single right row using core's own action-label checkboxes, so it reads like every
+other GLPI right rather than a bespoke checkbox set, via `Profile::displayRightsChoiceMatrix()`
+(`src/Profile.php:3565` on `11.0/bugfixes` — confirmed to exist; an earlier draft's claim that it
+didn't was checked against the wrong branch, see §11.16). Since `Profile::getRightsForForm()` is
+core-only, the plugin's own `Profile`-tab hook builds a small `$rights` array itself and calls
+`displayRightsChoiceMatrix()` directly (see §11.16 for the exact call). Registered with one
+`Migration::addRight()` at install and removed with one `ProfileRight::deleteProfileRights()` at
+uninstall, following the existing `domainmanager:unlock_imported` plumbing.
+
+Distinct from `domainmanager:unlock_imported`, which continues to govern editing plugin-tracked
+records through the *native* form and emptying the trash. The two do not overlap: this right
+authorises writes *through the plugin panel, to the provider*; that one authorises local
+overrides of plugin locks.
+
+**Rejected alternatives, recorded:** a two-tier split (`…:dns_records` +
+`…:dns_records_critical`) became pointless once `NS`/`MX` were excluded — there is no critical
+tier left to gate. Six flat single-bit rights would work but produce an uglier profile UI and
+lose core's action-label grid. A single right with six custom bits keeps one row but discards
+the matrix helper's semantics.
+
+**Every entry point checks rights server-side**, entity-aware, as with every existing controller
+(§6.3). UI gating is cosmetic only.
+
+### 11.7 Interaction with existing enforcement
+
+**`LockEnforcer` is not inverted, relaxed, or special-cased.** Native edit, delete and purge of
+plugin-tracked records remain blocked exactly as today, uniformly for every provider — IONOS and
+Cloudflare alike. There is no scenario where the same record is editable in one surface and
+locked in another, because the native surface stays locked for all of them.
+
+**The plugin panel becomes the only write surface**, gated by `domainmanager:dns_records` plus a
+write-capable driver. This is the simpler invariant to hold: *plugin-tracked records are edited
+through the plugin, or not at all.*
+
+Two mechanical requirements follow:
+
+1. **A record-level blanket guard** distinct in name from both native `Lockedfield` and the
+   plugin's own per-field `ImportLock`, so the three are not confused in code or logs.
+2. **The delete path needs the existing `LockEnforcer::$sync_in_progress` bypass**, the same one
+   `RecordReconciler::reconcile()` already sets around reconciliation, so the plugin's own
+   authorised delete is not blocked by the plugin's own guard.
+
+**Native `managed_domainrecordtypes` gate (§0.4) — pre-flight, not workaround.**
+`DomainRecord::prepareInput()` blocks add/update when the acting profile's manageable record
+types exclude the record's type, *unless* `Session::isCron()`. Full-control writes run under a
+web session, so core gates the **local** write independently of the new right — which could push
+successfully to IONOS and then fail to record it locally.
+
+Handling: **pre-flight the type against the acting profile's manageable types and refuse before
+any driver call**, naming that specific profile setting in the message. No API request is made
+if the local write cannot succeed. Because the four writable types are all within the set
+profiles already need for "Update Now" today, **this requirement does not widen** — no new
+admin action, no new documentation burden.
+
+### 11.8 `DnsRecordWriterInterface`
+
+New contract at `src/Contract/DnsRecordWriterInterface.php`, sibling of `DnsPipelineInterface`:
+
+- `createRecord()` — returns the provider-assigned record id
+- `updateRecord()`
+- `deleteRecord()`
+- `fetchRecord()` — single-record read, live from the provider
+
+**`fetchRecord()` belongs on the write interface, not the read one.** `DnsPipelineInterface`
+exists to fetch whole zones for reconciliation; a single-record read exists only to serve the
+edit confirmation modal (§11.9) and has no reconciliation role. Adding it to
+`DnsPipelineInterface` would oblige Cloudflare and Dinahosting to implement something neither
+needs.
+
+**No `supportedRecordTypes()` method.** With four types, all supported by the one implementing
+driver, it would encode nothing. It is the right addition at the moment a second writer driver
+disagrees with the first — not before.
+
+**Failures reuse the existing taxonomy** (`AUTH_FAILED`, `FORBIDDEN`, and the rest) through each
+driver's own `request()` helper and `DriverException`. **No new error classification is
+introduced.** Outbound HTTP continues through `Toolbox::getGuzzleClient()`; credentials continue
+through `GLPIKey`.
+
+### 11.9 IONOS implementation
+
+Base `https://api.hosting.ionos.com/dns/v1`, auth `X-API-Key: <prefix>.<secret>` — both already
+in use by `fetchZoneRecords()` (§3.9). Endpoints and payload shape below are taken from the
+maintained `libdns/ionos` reference client, the same source §3.9 used to establish the read wire
+format, because IONOS's docs portal is a JS-rendered SPA with nothing scrapable.
+
+| Operation | Request | Notes |
+|---|---|---|
+| create | `POST /zones/{zoneId}/records` | Body is a JSON **array**; response is an array of created records **including their ids** |
+| update | `PUT /zones/{zoneId}/records/{recordId}` | **No response body** |
+| delete | `DELETE /zones/{zoneId}/records/{recordId}` | |
+
+Record payload: `{name, type, content, ttl, prio, disabled}`.
+
+**Five wire-level traps, each with a required response:**
+
+1. **`PUT` is a full replace, not a `PATCH`.** Every field must be sent on every edit. This makes
+   the live re-fetch in §11.10 *structurally required* to build a valid body — not merely a
+   safety nicety.
+2. **TTL below 60 is rejected with HTTP 400.** The reference client omits the field entirely
+   when TTL is 0. Both belong in modal validation, client- and server-side.
+3. **`disabled` must be sent explicitly as `false`.** The reference client marks it `omitempty`
+   with an unresolved comment about the default being `true`; omitting it risks creating a
+   disabled record that resolves nowhere while looking correct in GLPI.
+4. **Names are absolute at IONOS and carry no trailing dot.** The read path relativises against
+   the zone name; the write path must re-absolutise and strip any trailing dot.
+5. **The create response carries the provider id**, so `remote_id` is captured at push time from
+   the response itself — no follow-up read, no reliance on the next sync. (This is all that
+   remains of an earlier "store the provider id" work item: the `remote_id` column already
+   exists and is indexed, and `RecordReconciler` already matches on it first, falling back to
+   `record_hash`.)
+
+**Zone resolution** reuses `findZoneId()` unchanged, including its client-side case-insensitive
+match — the API has no filter-by-name parameter for zones.
+
+### 11.10 Immediate push, with three purpose-built confirmations
+
+**No staging, no pending state, no Apply step.** A staged model (queue changes locally, review,
+apply as a batch, allow cancellation) was designed and **rejected**: it required new pending-state
+columns, cancelable state transitions, batch-apply semantics and dual purge logging, all to
+prevent accidental changes. The same protection is achieved by making each individual action
+explicitly confirmed, at a fraction of the mechanism.
+
+**Three modals, each purpose-built rather than one generic prompt:**
+
+- **Create** — shows the record about to be created: type, name, data, TTL, target domain and
+  provider.
+- **Edit** — shows **previous versus new, field by field**.
+- **Delete** — shows the record and states plainly that it cannot be undone.
+
+**The edit modal's "previous" side is a live re-fetch from IONOS**, via `fetchRecord()`, not the
+local mirror. The mirror is only as fresh as the last sync, so someone editing in IONOS's own
+panel since then would have their change silently overwritten by a GLPI edit built on stale
+values. If the live values disagree with the local mirror, **surface the disagreement in the
+modal.** If the fetch fails, fall back to local values with a visible note that they could not be
+verified against the provider — never silently.
+
+**A live NS re-check runs immediately before the push.** The modal's re-fetch proves the *record*
+still exists; it does not prove IONOS is still authoritative for the zone. Nameservers can have
+moved to another provider since the last sync while the zone remains present in the IONOS
+account, in which case the API accepts a write that changes nothing anyone resolves. Re-checking
+the domain's NS immediately before pushing closes that window (§11.3's volatility).
+
+**Confirmation-modal implementation follows GLPI 11's own convention.** §11.15 records this as a
+required verification against `11.0/bugfixes` before hand-rolling anything.
+
+### 11.11 Delete is a local soft-delete
+
+Upstream: the record is deleted at IONOS. Locally: **soft-deleted into GLPI's native trash**, via
+`DomainRecord::delete(['id' => $id])` **without** `$force` — `DELETE`, never `PURGE`.
+
+This is the established mechanism, not a new one: `glpi_domainrecords` genuinely has an
+`is_deleted` column, `DomainRecord::maybeDeleted()` is `true` on `11.0/bugfixes`, and §5.4 already
+routes upstream-vanished records through exactly this path. **§5.4's rule that the plugin never
+hard-deletes a native record stands unbroken.** Emptying the trash remains governed by the
+existing `domainmanager:unlock_imported`.
+
+**One residual risk, documented rather than mechanised:** an admin restoring such a record from
+the native trash gets a row that looks live in GLPI but no longer exists at IONOS. The next sync
+re-trashes it within one cron interval, because upstream remains authoritative. This is a
+**TESTING.md line**, not a reason to build restore-time interception.
+
+### 11.12 Schema: one column
+
+**`is_glpi_created`** — `tinyint`, default `0`, added to `glpi_plugin_domainmanager_records` via
+idempotent `Migration::addField()` + `addKey()`, exactly as `is_proxied` was.
+
+**Why store it at all**, when editability is deliberately derived (§11.2): this is *history*,
+not capability. It is unrecoverable if not captured at creation — nothing about a record later
+reveals who authored it. For the plugin's first write path, "show me every record this feature
+created" is a query worth being able to answer, in testing and in incident review.
+
+- **Default `0` is factually correct, so there is no backfill.** Every pre-existing row was
+  created by the reconciler.
+- **Set once at creation, never changed** — immutable, like `is_managed`. The reconciler's update
+  path must leave it alone; a record authored in GLPI stays authored in GLPI even after upstream
+  edits.
+- `tinyint` over a varchar enum, deliberately: the question is binary and stays binary.
+
+**The create path writes the `ImportedRecord` row by reusing `RecordReconciler::createRecord()`**
+— `remote_id` from the API response, `record_hash`, `is_managed = 1`, `is_glpi_created = 1`. Not a
+parallel implementation. A second code path constructing ownership rows is a second code path to
+drift.
+
+**Search option:** `datatype => 'bool'`, `massiveaction => false`, reusing 9404's
+`jointype => 'child'` shape. The id is allocated with `tools/getsearchoptions.php` against the
+live instance, checking existing ids for `DomainRecord` first to avoid collision.
+
+**Note the known `bool` search-engine behaviour (§5.7):** `equals`/`notequals` are exact, but
+`empty` means "0 **or** NULL" for the `bool` datatype in core, and cannot be overridden for a
+search option a plugin merely adds to a core itemtype. With a non-nullable default of `0` this is
+harmless here, but it is why the column is not nullable.
+
+**Editability is deliberately not searchable.** No mirror column, no two-hop-join search option
+— it is a live-computed badge only. Filtering the Domain list by DNS provider approximates it
+today, exactly, while IONOS is the only writer. A stored mirror on `states`, recomputed wherever
+`is_managed` already is, remains available as a small self-contained addition if a saved search is
+ever wanted.
+
+### 11.13 Historical logging: prefixed lines, zero new search options
+
+Every write logs to the **parent `Domain`'s** Historical tab — consistent with `SyncLogger` — via
+the plugin's established convention:
+
+```
+Log::history($items_id, Domain::class, [0, '', '[Domain Manager] ' . $message]);
+```
+
+`id_search_option = 0` plus a text prefix. **No search option is registered for logging.** Per
+§3.7.1, registering one purely to obtain a Historical label also makes it a permanent Search
+column and filter — GLPI 11 has no label-only flag — which is exactly why 9401/9402/9403 were
+removed (§9 Phase 27).
+
+Four lines, e.g.:
+
+```
+[Domain Manager] Record created from GLPI: A www → 1.2.3.4 (TTL 3600)
+[Domain Manager] Record updated from GLPI: CNAME shop — data 1.2.3.4 → 5.6.7.8
+[Domain Manager] Record deleted from GLPI: TXT _acme-challenge
+[Domain Manager] Record push to IONOS failed: <safe message>
+```
+
+### 11.14 No rollback, anywhere
+
+If the push succeeds and the local write then fails, **nothing is rolled back at the provider.**
+The reconciler is the backstop and it already does the right thing:
+
+- pushed upstream, local write failed → next sync **re-imports** the record
+- deleted upstream, local soft-delete failed → next sync **re-trashes** it
+
+Both converge because upstream is authoritative. Compensating writes would mean issuing a second
+provider mutation to undo a first, from a code path that has just demonstrated it is failing —
+strictly worse than letting the existing convergence mechanism do its job. **This is a deliberate
+design choice and should not be "fixed" later.**
+
+**§10 amendment (still required, not yet decided).** §10's changelog policy is written entirely
+around plain `x.y.z` sections; pre-release identifiers (`-alphaN`/`-betaN`, §11.15) are new to
+this plugin. §10 must be extended to state how those sections relate to the eventual `1.2.0`
+section — whether `1.2.0` consolidates the pre-release bullets into one section or is a bare bump
+referring back to them. §10 already has a rule for content-free bumps, so either is consistent —
+it needs choosing once, in writing, before Phase 32's first version bump lands.
+
+### 11.15 Phases and versioning
+
+Five phases. Each is one Claude Code session, committed and pushed before context is cleared.
+
+| Phase | Version | Content |
+|---|---|---|
+| **31** | — | This architecture section. **No code.** Stop for approval. |
+| **32** | `1.2.0-alpha1` | Schema (`is_glpi_created`), one right, one search option |
+| **33** | `1.2.0-alpha2` | `DnsRecordWriterInterface` + IONOS implementation. Testable via throwaway harness, no UI |
+| **34** | `1.2.0-alpha3` | Controllers, three modals, rights gating, §0.4 pre-flight, live NS re-check, `ImportedRecord` row, Historical lines |
+| **35** | `1.2.0-beta1` | End-to-end verification; finalise `ARCHITECTURE.md`, `CHANGELOG.md`, `TESTING.md`. Refining only, nothing new built |
+| release | `1.2.0` | |
+
+**Alpha means "still assembling"; beta means "complete and hardening"** — an honest signal if a
+client is to test before release.
+
+**Phase 32 must bump `PLUGIN_DOMAINMANAGER_VERSION` (from `1.1.0`) or `Installer::install()`
+never re-runs** and the migration silently does not apply. This is the Phase 15 trap; it is the
+single most likely way this feature fails to install.
+
+**Five bumps means five manual reactivations** on the live 11.0.8 instance — GLPI auto-deactivates
+a plugin on every version change until an admin reactivates it (§3.6.1). Expected, not a fault.
+
+### 11.16 Verifications required before the corresponding phase
+
+Confirm against the live `11.0/bugfixes` branch and live provider docs. **Never from recall.**
+
+**Before Phase 32:**
+- Exact core right-bit constants and the actual core mechanism for rendering a single right's
+  CREATE/UPDATE/DELETE checkboxes. **Resolved (2026-07-29), correcting an earlier error:**
+  `Profile::displayRightsChoiceMatrix()` **does exist** on `11.0/bugfixes` (`src/Profile.php:3565`)
+  — the prior note claiming it doesn't exist was checked against the wrong branch (`main`, i.e.
+  GLPI 12-dev) and is wrong; `glpi-plugin-builder`'s Trap 12 is being corrected to match. What is
+  true, and the actual reason a plugin can't just reuse core's tree wholesale: `Profile::getRightsForForm()`
+  (which assembles the *core* rights tree passed into that method from `base_tab.html.twig`) is
+  explicitly documented "only used for GLPI core rights and not rights added by plugins." A plugin
+  instead calls `displayRightsChoiceMatrix()` directly with its own hand-built `$rights` array:
+
+  ```php
+  $rights = [[
+      'label' => __('Domain Manager - DNS record write-back', 'domainmanager'),
+      'field' => 'plugin_domainmanager_dnsrecord',
+      'rights' => [
+          CREATE => __('Create'),
+          UPDATE => __('Update'),
+          DELETE => __('Delete'),
+      ],
+  ]];
+  $profile->displayRightsChoiceMatrix($rights, [
+      'canedit' => Session::haveRight('profile', UPDATE),
+      'title'   => __('Domain Manager'),
+  ]);
+  ```
+
+  called from the plugin's own `Profile`-tab hook (`getTabNameForItem`/`displayTabContentForItem`
+  when `$item instanceof Profile`), the same pattern core's own `base_tab.html.twig` macro uses.
+  `Html::showCheckboxMatrix()` is the renderer underneath `displayRightsChoiceMatrix()`, not
+  something the plugin calls directly. §11.6 is corrected to point at this mechanism.
+- That a non-semver-clean version suffix (`-alpha1`) triggers the migration re-run normally in
+  `src/Plugin.php` and is neither rejected nor mis-ordered by plugin validation. This is
+  **explicitly unverified** — an earlier assumption that the check is a plain string comparison
+  was never confirmed, and GLPI uses `version_compare` for `minGlpiVersion` elsewhere. Cheap to
+  check; the whole schema path depends on it.
+
+**Before Phase 33:**
+- Fetch and read `https://developer.hosting.ionos.de/assets/kms-swagger-specs/dns.yaml` — the DNS
+  counterpart of the `domains.yaml` spec §3.9 already uses. It is served as
+  `application/octet-stream`, so it must be pulled with `curl` rather than a browser-oriented
+  fetcher. Read the **record-type enum** and required fields from it. This is the authoritative
+  answer to two open questions: whether `ALIAS` exists on the Hosting API at all (§11.4), and
+  whether TTL/priority constraints match the reference client's behaviour.
+- Confirm the create/update/delete paths and payload schema against that spec rather than
+  relying solely on the reference client.
+
+**Before Phase 34:**
+- GLPI 11's own confirmation-modal convention, before hand-rolling one.
+
+### 11.17 Deferred and rejected, recorded so they are not silently revisited
+
+| Item | Disposition |
+|---|---|
+| Read-scope expansion to all 11 GLPI types | **Deferred as a standalone feature.** Independently valuable (better mirror fidelity for zones with SRV/CAA/SOA) but unrelated to write-back once write scope became a subset of read scope. Carries the real cost: multi-field `data` serialization across three drivers, a one-time record influx on existing installs at first sync, and a widened `managed_domainrecordtypes` requirement. Schedule against a client who needs SRV or CAA. |
+| `ALIAS` writable | **Dropped on evidence** (§11.4). Settle definitively via the spec enum, or a single POST against a throwaway zone. |
+| `NS` / `MX` writable | **Excluded by design** (§11.4), not an oversight. |
+| Apex-NS detection, apex read-only rule, "delegation lives at the registrar" modal copy | **Moot** — `NS` is not writable. Reasoning preserved in §11.4 so it is not re-derived. |
+| `SOA` / `PTR` special handling | **Moot**, same reason. |
+| Staged changes with an Apply step | **Rejected** (§11.10). |
+| Two-tier rights (`…_critical`) | **Rejected** — no critical tier remains (§11.6). |
+| Stored `is_readonly` / two-flag provenance | **Rejected** — derived capability cannot drift (§11.2). |
+| Reconciler exception list for unread types | **Rejected** — carves an exception into the one mechanism whose entire job is "upstream is authoritative". |
+| `supportedRecordTypes()` on the writer interface | **Deferred** until a second writer driver exists (§11.8). |
+| Editability as a searchable field | **Deferred**; Option 3 (mirror column on `states`) noted in §11.12. |
+| Rollback / compensating writes | **Rejected permanently** (§11.14). |
+
+---
+
+*Open items awaiting your approval: the four deviations in §0.1–§0.4 (Registrar as plugin field, `date_domaincreation` mapping, plugin-owned lock layer replacing native `Lockedfield`, documented `managed_domainrecordtypes` gate on web-triggered record writes), the CREATE TABLE exception in §0.6, and §11 (Phases 31–35 — Manual DNS record write-back to IONOS). The two items that were blocking Phase 32 — the rights-matrix rendering mechanism (§11.6/§11.16) and the §10 changelog-policy amendment for pre-release versions (§11.14) — are both resolved as of 2026-07-29; Phase 32 is unblocked.*
