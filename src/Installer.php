@@ -794,7 +794,7 @@ class Installer
             [
                 'state'         => CronTask::STATE_WAITING,
                 'logs_lifetime' => 30,
-                'comment'       => __('Fill registrar-reported gaps (dates, lock/DNSSEC status, pending flags) from RDAP', 'domainmanager'),
+                'comment'       => __('Fill registrar-reported gaps (dates, lock/DNSSEC status, pending flags) from RDAP. Processes one domain per execution, gated by a daily per-domain check limit, to avoid overloading the RDAP API', 'domainmanager'),
             ],
         );
     }
