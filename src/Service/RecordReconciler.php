@@ -90,7 +90,7 @@ class RecordReconciler
      *
      * @param  Domain       $domain
      * @param  ZoneRecord[] $records upstream snapshot
-     * @return array{added: int, updated: int, restored: int, stale: int, unchanged: int}
+     * @return array{added: int, updated: int, restored: int, trashed: int, unchanged: int}
      */
     public function reconcile(Domain $domain, array $records): array
     {
@@ -222,7 +222,7 @@ class RecordReconciler
                     'data'                 => $record->data,
                     'ttl'                  => $record->ttl,
                     'domainrecordtypes_id' => $type_ids[$record->type],
-                ]
+                ],
             );
 
             // is_proxied is refreshed on every sync regardless of which
@@ -287,7 +287,7 @@ class RecordReconciler
 
         if (!$records_id) {
             $this->logger->detail(
-                'Failed to create ' . $record->type . ' record "' . $record->name . '" for domain #' . $domain->getID()
+                'Failed to create ' . $record->type . ' record "' . $record->name . '" for domain #' . $domain->getID(),
             );
             return false;
         }
@@ -319,7 +319,7 @@ class RecordReconciler
                 'data'                 => $record->data,
                 'ttl'                  => $record->ttl,
                 'domainrecordtypes_id' => $type_ids[$record->type],
-            ]
+            ],
         );
 
         return true;

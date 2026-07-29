@@ -63,6 +63,28 @@
                     </div>
                 </div>
 
+                {# §9 Phase 28: read-only reference value, not an editable
+                   field — sourced from RDAP (rdap_registrar_name/iana_id on
+                   whichever of this Supplier's domains was checked most
+                   recently), shown here so an admin can confirm/record the
+                   real-world registrar identity once per Supplier instead
+                   of re-discovering it on each individual Domain form's own
+                   cross-check panel (§6.2). Purely informational, same as
+                   that panel — never a source of truth for anything. #}
+                {% if rdap_registrar_info %}
+                    <div class="mb-3 row">
+                        <label class="col-4 col-form-label">
+                            {{ __('RDAP registrar of record', 'domainmanager') }}
+                        </label>
+                        <div class="col-8 col-form-label text-muted">
+                            {{ rdap_registrar_info.name }}
+                            {% if rdap_registrar_info.iana_id %}
+                                (IANA #{{ rdap_registrar_info.iana_id }})
+                            {% endif %}
+                        </div>
+                    </div>
+                {% endif %}
+
                 {% for driver, fields in credential_fields %}
                     {% if fields is not empty %}
                         <div class="domainmanager-driver-fields" data-driver="{{ driver }}"

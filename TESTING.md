@@ -2436,3 +2436,300 @@ diagnose the original bug).
 - [x] Pass — verified 2026-07-28: no new entries in either log after the
   above requests; `php -l` clean on every touched file (`setup.php`,
   `src/Installer.php`, `src/HookHandler.php`, `src/DomainForm.php`).
+
+## Phase 21-23 (implemented 2026-07-28) — RDAP as a fallback/supplementary data source (§9)
+
+### 21.1 Cron task registration
+- **Steps:** Setup > Automatic actions, locate "RdapEnrichment".
+- **Expected:** appears with default 10-minute frequency, independent of
+  the existing "DomainSync" task.
+- [ ] Pass
+
+### 21.2 Exactly one eligible domain processed per execution; already-checked-today domains skipped
+- **Steps:** run the RdapEnrichment task twice in the same day.
+- **Expected:** the first run processes one domain and sets its
+  `last_rdap_check_date` to today; the second run skips it (moves on to
+  the next oldest-/never-checked candidate, or no-ops if none remain).
+- [ ] Pass
+
+### 21.3 A domain whose driver already reports every in-scope field is never selected
+- **Steps:** run RdapEnrichment against a domain fully reported by its
+  driver (e.g. IONOS, which reports DNSSEC) once RDAP has already filled
+  its other gaps (dates, last-changed, pending flags).
+- **Expected:** `RdapGapChecker::hasGap()` returns `false`; the domain is
+  skipped in favor of the next candidate.
+- [ ] Pass
+
+### 21.4 A real `.es` domain gets a normal "no data" outcome, not an error
+- **Steps:** run RdapEnrichment against a `.es` domain.
+- **Expected:** `rdap.org` 404s; `domainmanager.log` gets a "no data for
+  domain" entry (not `domainmanager-errors.log`); `last_rdap_check_date`
+  is still set so it isn't retried until tomorrow.
+- [ ] Pass
+
+### 21.5 A real `.com` and a real `.gal` domain populate all applicable new columns
+- **Steps:** run RdapEnrichment against a `.com` and a `.gal` domain.
+- **Expected:** `rdap_last_changed_date`, `rdap_pending_delete`,
+  `rdap_pending_transfer`, `rdap_registrar_name`, `rdap_registrar_iana_id`,
+  `rdap_nameservers` populate where RDAP has data; registration/expiration
+  dates on `glpi_domains` fill in only if they were previously empty.
+- [ ] Pass
+
+### 21.6 DNSSEC gap-fill: skipped when the driver reports it, applied when it doesn't
+- **Steps:** compare an IONOS-registered domain (reports
+  `registrar_dnssec_enabled`) against a Dinahosting-registered domain
+  (doesn't) after both have had at least one RDAP pass.
+- **Expected:** the IONOS domain's `rdap_dnssec_signed` stays untouched by
+  gap-fill logic (not a gap); the Dinahosting domain gets
+  `rdap_dnssec_signed` populated and the Registrar details table's DNSSEC
+  cell shows the RDAP value with a "via RDAP" tooltip.
+- [ ] Pass
+
+### 21.7 Registrar-of-record mismatch badge — only on an actual mismatch
+- **Steps:** open the Domain form for a domain where `rdap_registrar_name`
+  differs from the Infocom Supplier's name, and for one where they agree
+  (or RDAP hasn't reported a registrar name at all).
+- **Expected:** the "RDAP cross-check" sub-panel and its "Registrar
+  mismatch" badge appear only in the first case; no sub-panel visible at
+  all in the second (no badge noise on the common/agreeing case).
+- [ ] Pass
+
+### 21.8 Nameserver cross-check badge — only on an actual mismatch, never fed into the DNS pipeline
+- **Steps:** open the Domain form for a domain where RDAP's
+  `rdap_nameservers` differs from a live NS lookup, and for one where they
+  match.
+- **Expected:** "Nameserver mismatch" badge shown only in the first case;
+  in both cases, confirm `rdap_nameservers` never appears in
+  `DomainRecord`/`RecordReconciler` — it's read via `DomainForm::inject()`
+  and rendered directly in Twig, never passed to the sync pipeline.
+- [ ] Pass
+
+### 21.9 Clean no-op tick — no error, no unnecessary log entries
+- **Steps:** run RdapEnrichment when every domain either was checked today
+  or has no gap.
+- **Expected:** a single "No domain eligible for RDAP enrichment" line in
+  `domainmanager.log`; nothing in `domainmanager-errors.log`.
+- [ ] Pass
+
+### 21.10 Config page status line
+- **Steps:** open the Domain Manager config page after at least one
+  RdapEnrichment run.
+- **Expected:** shows "N domain(s) pending RDAP enrichment, last processed
+  at [time]" with a real count and timestamp; before any run has ever
+  happened, shows "…none processed yet" instead.
+- [ ] Pass
+
+## Phase 24 (implemented 2026-07-28) — Richer automatic-action logs (§9)
+
+### 24.1 DomainSync log shows a per-entity breakdown
+- **Steps:** run the DomainSync task against domains spanning at least
+  two entities, then check Setup > Automatic actions > DomainSync > Logs
+  for that run.
+- **Expected:** the log description has the overall "Synchronized N
+  domain(s), M with errors" line, plus one line per entity actually
+  touched, each naming the entity and its own count/error total.
+- [ ] Pass
+
+### 24.2 DomainSync log shows a per-registrar-supplier breakdown
+- **Steps:** same run as 24.1, with domains spanning at least two
+  registrar Suppliers.
+- **Expected:** one additional log line per registrar Supplier touched
+  ("Registrar X: N domain(s) synchronized (M error(s))"); a domain with
+  no registrar assigned is excluded from this breakdown (not a bogus "no
+  registrar" line).
+- [ ] Pass
+
+### 24.3 RdapEnrichment log names the entity, registrar, and outcome for the single domain processed
+- **Steps:** run RdapEnrichment against a domain with a real gap and a
+  registrar assigned, then check its log line for that run.
+- **Expected:** one line reading `<Entity>: domain #<id> (<name>),
+  registrar <Supplier> — filled <fields...>` (or "no registrar" if none
+  assigned, or "no new data from RDAP"/"no data (TLD/domain not covered)"
+  for those outcomes) — not just a bare "Processed RDAP enrichment for
+  domain #<id>".
+- [ ] Pass
+
+### 24.4 No new PHP warnings/notices from this phase
+- **Steps:** after exercising 24.1-24.3, check `/var/glpi/logs/php-errors.log`
+  and `domainmanager-errors.log` for any new entries.
+- **Expected:** no new warnings/notices; `php -l` and `phpcs` clean on
+  `src/Cron.php`.
+- [ ] Pass
+
+## Phase 25 (implemented 2026-07-28) — Last changed / last transfer RDAP dates (§9)
+
+### 25.1 New column populates and displays on migration/upgrade
+- **Steps:** run the plugin's migration (fresh install or upgrade past
+  this version), then check `glpi_plugin_domainmanager_states` schema.
+- **Expected:** `rdap_transfer_date` (datetime, nullable) exists; no error
+  on either a fresh install or an upgrade of an already-migrated instance.
+- [ ] Pass
+
+### 25.2 "Last changed" and "Last transfer" columns appear between "DNS sync" and "Last sync"
+- **Steps:** open the Domain form for any domain.
+- **Expected:** the main status table header row reads Registrar | DNS
+  Provider | Registrar sync | DNS sync | Last changed | Last transfer |
+  Last sync, in that order — no "(RDAP)" suffix in the visible header.
+- [ ] Pass
+
+### 25.3 Both columns show "—" before RDAP has ever reported a value
+- **Steps:** open the Domain form for a domain never RDAP-checked, and
+  for one RDAP-checked but never transferred.
+- **Expected:** "Last changed" and "Last transfer" both show
+  a muted "—" with an explanatory tooltip; not gated on `rstatus`/`dstatus`
+  (shown even if the registrar/DNS sync itself errored).
+- [ ] Pass
+
+### 25.4 RDAP enrichment populates `rdap_transfer_date` from the `transfer` eventAction
+- **Steps:** run RdapEnrichment against a domain whose RDAP record
+  includes a `transfer` event (a domain that has actually been
+  transferred between registrars).
+- **Expected:** `rdap_transfer_date` is set to that event's date; the
+  Domain form's "Last transfer" column shows it.
+- [ ] Pass
+
+### 25.5 No new PHP warnings/notices from this phase
+- **Steps:** after exercising 25.1-25.4, check `/var/glpi/logs/php-errors.log`
+  and `domainmanager-errors.log` for any new entries.
+- **Expected:** no new warnings/notices; `php -l` and `phpcs` clean on
+  every touched file (`src/Installer.php`, `src/Dto/RdapLookupResult.php`,
+  `src/Service/RdapClient.php`, `src/Service/RdapGapChecker.php`,
+  `src/Cron.php`).
+- [ ] Pass
+
+## Phase 26 (implemented 2026-07-28, storage approach superseded same day by Phase 27) — Transfer/Domain lock RDAP gap-fill, RDAP fields searchable (§9)
+
+Superseded: Phase 26 originally added parallel `rdap_transfer_lock`/`rdap_domain_lock` columns with a dual-source display. Phase 27 (below) replaced this with filling the existing `registrar_transfer_lock`/`registrar_domain_lock` columns directly. The regression cases below are folded into Phase 27's.
+
+### 26.5 No new PHP warnings/notices from this phase
+- **Steps:** after exercising the Phase 27 cases below, check
+  `/var/glpi/logs/php-errors.log` and `domainmanager-errors.log` for any
+  new entries.
+- **Expected:** no new warnings/notices; `php -l` and `phpcs` clean on
+  every touched file (`setup.php`, `src/Installer.php`,
+  `src/Service/RdapGapChecker.php`, `src/Cron.php`).
+- [ ] Pass
+
+### 26.6 "Update Now" (and the bulk "Review and sync" action) never call RDAP
+- **Steps:** click "Update Now" on a domain, and run the bulk "Review and
+  sync" massive action, then check `domainmanager.log` for any RDAP
+  activity lines during that request.
+- **Expected:** no RDAP lookup happens — only the registrar/DNS driver
+  sync runs (`SyncEngine::sync()`). `RdapClient` is only ever instantiated
+  from `Cron::cronRdapEnrichment()`'s own throttled tick; confirmed by
+  `grep -rl "new RdapClient" src/` matching only `src/Cron.php`. This is
+  deliberate, not an oversight — it protects `rdap.org`'s free-tier rate
+  limit from user-triggered bursts (§9 Phase 21-26, §6.3).
+- [ ] Pass
+
+## Phase 27 (implemented 2026-07-28) — Drop "rdap_" naming, fold lock fields into existing columns (§9)
+
+### 27.1 Transfer lock/Domain lock/DNSSEC show one plain value, no dual-source marker
+- **Steps:** compare a domain whose driver reports
+  `registrar_transfer_lock`/`registrar_domain_lock`/`registrar_dnssec_enabled`
+  against one where the driver doesn't (both RDAP-checked at least once).
+- **Expected:** both domains' cells show a plain Yes/No badge with no "via
+  RDAP" marker/icon — the driver-reporting domain shows its own value, the
+  other shows whatever RDAP filled in, visually identical either way.
+- [ ] Pass
+
+### 27.2 A field neither the driver nor RDAP has reported still shows the muted dash
+- **Steps:** open the Domain form for a domain with no driver value and no
+  RDAP check yet for Transfer lock/Domain lock/DNSSEC.
+- **Expected:** the cell shows a muted "—" with a "Not reported" tooltip.
+- [ ] Pass
+
+### 27.3 RDAP's fill survives a later ordinary registrar sync that doesn't report the field
+- **Steps:** let RDAP fill `registrar_dnssec_enabled` (or transfer/domain
+  lock) for a Dinahosting-registered domain (driver doesn't report
+  DNSSEC), then run/trigger a normal registrar sync (cron or "Update Now")
+  for that same domain.
+- **Expected:** the RDAP-filled value is still there after the sync — not
+  reset to "—". This is the regression the `SyncEngine` fix (§9 Phase 27)
+  exists to prevent; before that fix, every ordinary sync unconditionally
+  nulled any field its driver doesn't support.
+- [ ] Pass
+
+### 27.4 New/renamed search options list and filter correctly
+- **Steps:** Domain search, add each of the 4 renamed/new criteria (ids
+  9423, 9424, 9427, 9428: Last changed, Last transfer, Pending delete,
+  Pending transfer), and confirm the existing Transfer lock/Domain
+  lock/DNSSEC options (ids 9418/9420/9422) now also match RDAP-filled
+  values.
+- **Expected:** all filter/sort correctly; no "(RDAP)"-suffixed duplicate
+  options remain for Transfer lock/Domain lock/DNSSEC.
+- [ ] Pass
+
+### 27.5 Migration renames/drops columns correctly on every install path
+- **Steps:** run the plugin's migration (`plugin:install`) against: (a) a
+  genuine 1.0.0-vintage install that never had any RDAP columns, (b) a
+  beta install still on the old `rdap_*` names, (c) a fresh install.
+- **Expected:** all three end up with the same final schema
+  (`last_changed_date`, `transfer_date`, `pending_delete`,
+  `pending_transfer`, no `rdap_transfer_lock`/`rdap_domain_lock`/
+  `rdap_dnssec_signed`) — no "Duplicate column name" SQL error on any path
+  (confirmed live against `glpi_glpi_1`: the first migration attempt hit
+  exactly this error before the `$DB->fieldExists()`-gated fix).
+- [ ] Pass
+
+### 27.6 No new PHP warnings/notices from this phase
+- **Steps:** after exercising 27.1-27.5, check `/var/glpi/logs/php-errors.log`
+  and `domainmanager-errors.log` for any new entries.
+- **Expected:** no new warnings/notices; `php -l` and `phpcs` clean on
+  every touched file (`setup.php`, `src/Installer.php`,
+  `src/Service/RdapGapChecker.php`, `src/Cron.php`,
+  `src/Service/SyncEngine.php`, `templates/domain_panel.html.twig`).
+- [ ] Pass
+
+## Phase 28 (implemented 2026-07-28) — Fix false-positive RDAP cross-check mismatches; RDAP registrar of record on Supplier tab (§9)
+
+### 28.1 Registrar name with a legal suffix no longer flags a false mismatch
+- **Steps:** open the Domain form for a domain whose RDAP-reported
+  registrar name includes a legal suffix (e.g. "DINAHOSTING S.L.") and
+  whose Infocom Supplier is named just "dinahosting".
+- **Expected:** no "Registrar mismatch" badge — confirmed live 2026-07-28
+  on `moraima.gal` (id 27) before this fix showed exactly this
+  false-positive.
+- [ ] Pass
+
+### 28.2 A genuine registrar mismatch still shows the badge
+- **Steps:** open the Domain form for a domain whose RDAP-reported
+  registrar name shares no substring with the Supplier's name at all
+  (e.g. RDAP says "Example Registrar Inc." but the Supplier is "GoDaddy").
+- **Expected:** "Registrar mismatch" badge still appears — the fuzzy
+  match doesn't suppress genuinely different registrars.
+- [ ] Pass
+
+### 28.3 Reordered-but-identical nameserver lists no longer flag a false mismatch
+- **Steps:** open the Domain form for a domain where RDAP's nameserver
+  list and a live lookup return the same hosts in a different order
+  (confirmed live 2026-07-28 on `moraima.gal`: RDAP order
+  ns/ns4/ns2/ns3.gestiondecuenta.com vs. live order ns/ns4/ns3/ns2).
+- **Expected:** no "Nameserver mismatch" badge. The *displayed* lists in
+  the sub-panel (when some other mismatch is shown) still show each
+  source's own original order — only the comparison changed.
+- [ ] Pass
+
+### 28.4 A genuine nameserver mismatch still shows the badge
+- **Steps:** open the Domain form for a domain where RDAP's nameserver
+  list and a live lookup genuinely differ (a host present in one but not
+  the other).
+- **Expected:** "Nameserver mismatch" badge still appears.
+- [ ] Pass
+
+### 28.5 Supplier's Domain Manager tab shows the RDAP registrar of record
+- **Steps:** open the Domain Manager tab on a Supplier that has at least
+  one domain with a populated `rdap_registrar_name`.
+- **Expected:** a read-only "RDAP registrar of record" row appears near
+  the API driver selector, showing the name and, if present, "(IANA
+  #...)"; absent entirely for a Supplier with no RDAP-checked domains.
+- [ ] Pass
+
+### 28.6 No new PHP warnings/notices from this phase
+- **Steps:** after exercising 28.1-28.5, check `/var/glpi/logs/php-errors.log`
+  and `domainmanager-errors.log` for any new entries.
+- **Expected:** no new warnings/notices; `php -l` and `phpcs` clean on
+  every touched file (`src/DomainForm.php`, `src/DomainState.php`,
+  `src/SupplierTab.php`, `templates/domain_panel.html.twig`,
+  `templates/supplier_tab.html.twig`).
+- [ ] Pass

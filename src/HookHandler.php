@@ -116,7 +116,7 @@ class HookHandler
                 $dns_resolved  = in_array(
                     $state->fields['dns_status'],
                     [DomainState::STATUS_OK, DomainState::STATUS_ERROR],
-                    true
+                    true,
                 );
                 $update = [
                     'id'                     => $state->getID(),

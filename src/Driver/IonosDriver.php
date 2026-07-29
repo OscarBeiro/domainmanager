@@ -164,7 +164,7 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Con
         return [
             'registrar' => ConnectionTestResult::notImplemented(
                 'registrar',
-                __('Not yet implemented for this driver', 'domainmanager')
+                __('Not yet implemented for this driver', 'domainmanager'),
             ),
             'dns' => $dns,
         ];
@@ -220,7 +220,7 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Con
         $data = $this->requestDomainsApi(
             'GET',
             'domainitems/' . rawurlencode($domainId),
-            ['includeDomainStatus' => 'true']
+            ['includeDomainStatus' => 'true'],
         );
 
         // No registration/creation date field exists anywhere in the
@@ -306,7 +306,7 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Con
         }
 
         throw new DriverException(
-            sprintf(__('No IONOS domain item found for %s with this account', 'domainmanager'), $domain)
+            sprintf(__('No IONOS domain item found for %s with this account', 'domainmanager'), $domain),
         );
     }
 
@@ -416,7 +416,7 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Con
                     $name,
                     $content,
                     (int) ($row['ttl'] ?? 0),
-                    (string) ($row['id'] ?? '')
+                    (string) ($row['id'] ?? ''),
                 );
             } catch (InvalidArgumentException $e) {
                 PluginLogger::activity("IONOS record skipped for $domain: " . $e->getMessage());
@@ -475,7 +475,7 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Con
         }
 
         throw new DriverException(
-            sprintf(__('No IONOS DNS zone found for %s with this key', 'domainmanager'), $domain)
+            sprintf(__('No IONOS DNS zone found for %s with this key', 'domainmanager'), $domain),
         );
     }
 
@@ -506,7 +506,7 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Con
 
         if ($status >= 500) {
             throw new DriverException(
-                sprintf(__('IONOS API unavailable (HTTP %d)', 'domainmanager'), $status)
+                sprintf(__('IONOS API unavailable (HTTP %d)', 'domainmanager'), $status),
             );
         }
 
@@ -518,8 +518,8 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Con
             throw new DriverException(
                 sprintf(
                     __('IONOS API error: %s', 'domainmanager'),
-                    $summary !== '' ? $summary : sprintf('HTTP %d', $status)
-                )
+                    $summary !== '' ? $summary : sprintf('HTTP %d', $status),
+                ),
             );
         }
 
@@ -568,7 +568,7 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Con
 
         if ($status >= 500) {
             throw new DriverException(
-                sprintf(__('IONOS Domains API unavailable (HTTP %d)', 'domainmanager'), $status)
+                sprintf(__('IONOS Domains API unavailable (HTTP %d)', 'domainmanager'), $status),
             );
         }
 
@@ -580,8 +580,8 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Con
             throw new DriverException(
                 sprintf(
                     __('IONOS Domains API error: %s', 'domainmanager'),
-                    $summary !== '' ? $summary : sprintf('HTTP %d', $status)
-                )
+                    $summary !== '' ? $summary : sprintf('HTTP %d', $status),
+                ),
             );
         }
 

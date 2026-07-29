@@ -83,7 +83,7 @@ class ConnectionTestController extends AbstractController
 
         $config      = SupplierConfig::getForSupplier($suppliers_id);
         $submitted   = $request->request->all('_credentials');
-        $credentials = $this->mergeCredentials($driver, is_array($submitted) ? $submitted : [], $config);
+        $credentials = $this->mergeCredentials($driver, $submitted, $config);
 
         try {
             $driver_instance = DriverFactory::createDriver($driver, $credentials);
@@ -101,7 +101,7 @@ class ConnectionTestController extends AbstractController
         } catch (Throwable $e) {
             PluginLogger::error(
                 "Connection test crashed for supplier #$suppliers_id (driver $driver)",
-                $e::class . ': ' . $e->getMessage()
+                $e::class . ': ' . $e->getMessage(),
             );
 
             return new JsonResponse(['ok' => false, 'error' => __('Unexpected error while testing the connection, see the plugin error log', 'domainmanager')], 500);
@@ -116,13 +116,13 @@ class ConnectionTestController extends AbstractController
                 $driver,
                 $result->status->value,
                 $result->httpStatusCode ?? 'n/a',
-                $duration_ms
+                $duration_ms,
             ));
 
             if ($result->status->value !== 'success') {
                 PluginLogger::error(
                     sprintf('Connection test failed: supplier #%d capability=%s driver=%s', $suppliers_id, $capability, $driver),
-                    $result->rawDetail
+                    $result->rawDetail,
                 );
             }
         }
@@ -133,14 +133,14 @@ class ConnectionTestController extends AbstractController
             } catch (Throwable $e) {
                 PluginLogger::error(
                     "Failed to persist connection test results for supplier #$suppliers_id",
-                    $e::class . ': ' . $e->getMessage()
+                    $e::class . ': ' . $e->getMessage(),
                 );
             }
         }
 
         return new JsonResponse([
             'ok'      => true,
-            'results' => array_map(static fn ($result) => $result->toArray(), $results),
+            'results' => array_map(static fn($result) => $result->toArray(), $results),
         ]);
     }
 

@@ -29,4 +29,16 @@
             </div>
         {% endif %}
     </form>
+
+    {# §9 Phase 23: read-only status line for the RDAP enrichment cron
+       (Setup > Automatic actions has the frequency/parameter; this just
+       gives an at-a-glance sense of whether it's running/keeping up). #}
+    <div class="text-muted small mt-3">
+        <i class="ti ti-satellite me-1"></i>
+        {% if rdap_enrichment.last_processed %}
+            {{ __('%d domain(s) pending RDAP enrichment, last processed at %s', 'domainmanager')|format(rdap_enrichment.pending, rdap_enrichment.last_processed) }}
+        {% else %}
+            {{ __('%d domain(s) pending RDAP enrichment, none processed yet', 'domainmanager')|format(rdap_enrichment.pending) }}
+        {% endif %}
+    </div>
 </div>

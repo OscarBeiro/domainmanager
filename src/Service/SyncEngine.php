@@ -134,14 +134,14 @@ class SyncEngine
                         $result['dns_status']        = DomainState::STATUS_UNKNOWN;
                         $result['dns_message']       = sprintf(
                             __('DNS provider not recognized from nameservers: %s', 'domainmanager'),
-                            implode(', ', array_slice($ns_hosts, 0, 4))
+                            implode(', ', array_slice($ns_hosts, 0, 4)),
                         );
                     } elseif (!isset($provider['driver'])) {
                         $result['detected_provider'] = $provider['name'];
                         $result['dns_status']        = DomainState::STATUS_UNSUPPORTED;
                         $result['dns_message']       = sprintf(
                             __('API integration for %s is not currently supported', 'domainmanager'),
-                            $provider['name']
+                            $provider['name'],
                         );
                     } else {
                         $result['detected_provider'] = $provider['name'];
@@ -150,7 +150,7 @@ class SyncEngine
                             $result['dns_status']  = DomainState::STATUS_UNCONFIGURED;
                             $result['dns_message'] = sprintf(
                                 __('No supplier is configured with the %s driver', 'domainmanager'),
-                                $provider['name']
+                                $provider['name'],
                             );
                         }
                     }
@@ -189,14 +189,41 @@ class SyncEngine
             'dns_message'       => $result['dns_message'],
             'is_managed'        => (int) $is_managed,
             'last_sync_date'    => $now,
-            'registrar_auth_info'       => $result['registrar_auth_info'],
-            'registrar_privacy_enabled' => $result['registrar_privacy_enabled'],
-            'registrar_domain_lock'     => $result['registrar_domain_lock'],
-            'registrar_transfer_lock'   => $result['registrar_transfer_lock'],
-            'registrar_auto_renew'      => $result['registrar_auto_renew'],
-            'registrar_domain_type'     => $result['registrar_domain_type'],
-            'registrar_dnssec_enabled'  => $result['registrar_dnssec_enabled'],
         ];
+
+        // §9 Phase 27: only touch a registrar-metadata field when *this*
+        // sync's registrar leg actually reported a value for it — leave it
+        // untouched (not overwritten with null) otherwise. Previously these
+        // were always included, unconditionally nulling any field the
+        // current driver doesn't support on every single sync; harmless on
+        // its own, but it would silently erase whatever RDAP's gap-fill
+        // (`Cron::processRdapEnrichment()`) had just written into the same
+        // column, since those two write to the exact same
+        // registrar_transfer_lock/registrar_domain_lock/registrar_dnssec_enabled
+        // fields RDAP fills the gap on (§9 Phase 26/27 — no more separate
+        // rdap_* shadow columns for these three). Trade-off accepted: a
+        // value from a previous registrar (or a stale RDAP fill) can now
+        // persist display-wise until something actually overwrites it —
+        // no code path currently resets these to null on registrar
+        // reassignment/unlink either, so this was already the de facto
+        // behavior for every field that isn't part of the reassignment's
+        // own explicit reset logic.
+        foreach (
+            [
+                'registrar_auth_info',
+                'registrar_privacy_enabled',
+                'registrar_domain_lock',
+                'registrar_transfer_lock',
+                'registrar_auto_renew',
+                'registrar_domain_type',
+                'registrar_dnssec_enabled',
+            ] as $field
+        ) {
+            if ($result[$field] !== null) {
+                $state_input[$field] = $result[$field];
+            }
+        }
+
         if ($state !== null) {
             $state->update(['id' => $state->getID()] + $state_input);
         } else {
@@ -220,7 +247,7 @@ class SyncEngine
                 $result['registrar_message'] = __('Registrar supplier is inactive; synchronization skipped', 'domainmanager');
                 $this->logger->skip(
                     (int) $domain->getID(),
-                    'Registrar sync skipped: supplier #' . $registrar_id . ' is inactive'
+                    'Registrar sync skipped: supplier #' . $registrar_id . ' is inactive',
                 );
                 return;
             }
@@ -240,7 +267,7 @@ class SyncEngine
             $lifecycle = DriverFactory::forRegistrar($config)->fetchLifecycle((string) $domain->fields['name']);
             $this->logger->activity(
                 (int) $domain->getID(),
-                'Registrar fetch succeeded, lifecycle status: ' . $lifecycle->status->value
+                'Registrar fetch succeeded, lifecycle status: ' . $lifecycle->status->value,
             );
 
             $updates = ['is_active' => $lifecycle->status === LifecycleStatus::Ok ? 1 : 0];
@@ -257,7 +284,7 @@ class SyncEngine
             ImportLock::replaceLocks(
                 Domain::class,
                 (int) $domain->getID(),
-                ['name' => $domain->fields['name']] + $updates
+                ['name' => $domain->fields['name']] + $updates,
             );
 
             // §9 Phase 7: plugin-owned state columns, not native Domain
@@ -281,7 +308,7 @@ class SyncEngine
             $result['registrar_status']  = DomainState::STATUS_OK;
             $result['registrar_message'] = sprintf(
                 __('Lifecycle synchronized (status: %s)', 'domainmanager'),
-                $lifecycle->status->value
+                $lifecycle->status->value,
             );
             $this->logger->milestone((int) $domain->getID(), 'Registrar sync OK');
         } catch (DriverException $e) {
@@ -293,7 +320,7 @@ class SyncEngine
             $result['registrar_message'] = __('Unexpected registrar synchronization error', 'domainmanager');
             $this->logger->detail(
                 'Registrar leg exception for domain #' . $domain->getID() . ': '
-                . $e::class . ': ' . $e->getMessage()
+                . $e::class . ': ' . $e->getMessage(),
             );
         }
     }
@@ -313,7 +340,7 @@ class SyncEngine
                 $result['dns_message'] = __('DNS supplier is inactive; synchronization skipped', 'domainmanager');
                 $this->logger->skip(
                     (int) $domain->getID(),
-                    'DNS sync skipped: supplier #' . $dns_suppliers_id . ' is inactive'
+                    'DNS sync skipped: supplier #' . $dns_suppliers_id . ' is inactive',
                 );
                 return;
             }
@@ -325,7 +352,7 @@ class SyncEngine
                 $result['dns_status']  = DomainState::STATUS_ERROR;
                 $result['dns_message'] = sprintf(
                     __('Your profile cannot manage these record types: %s. Set "Manageable domain record types" accordingly.', 'domainmanager'),
-                    implode(', ', $unmanageable)
+                    implode(', ', $unmanageable),
                 );
                 return;
             }
@@ -333,7 +360,7 @@ class SyncEngine
             $records = DriverFactory::forDns($config)->fetchZoneRecords((string) $domain->fields['name']);
             $this->logger->activity(
                 (int) $domain->getID(),
-                'DNS fetch succeeded, returned ' . count($records) . ' record(s) from the provider'
+                'DNS fetch succeeded, returned ' . count($records) . ' record(s) from the provider',
             );
             $stats = $this->reconciler->reconcile($domain, $records);
 
@@ -344,7 +371,7 @@ class SyncEngine
                 $stats['updated'],
                 $stats['restored'],
                 $stats['trashed'],
-                $stats['unchanged']
+                $stats['unchanged'],
             );
             $this->logger->milestone((int) $domain->getID(), 'DNS sync OK: ' . $result['dns_message']);
         } catch (DriverException $e) {
@@ -356,7 +383,7 @@ class SyncEngine
             $result['dns_message'] = __('Unexpected DNS synchronization error', 'domainmanager');
             $this->logger->detail(
                 'DNS leg exception for domain #' . $domain->getID() . ': '
-                . $e::class . ': ' . $e->getMessage()
+                . $e::class . ': ' . $e->getMessage(),
             );
         }
     }

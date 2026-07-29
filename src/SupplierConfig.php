@@ -233,7 +233,7 @@ class SupplierConfig extends CommonDBTM
             Session::addMessageAfterRedirect(
                 __s('A supplier is mandatory', 'domainmanager'),
                 false,
-                ERROR
+                ERROR,
             );
             return false;
         }
@@ -243,7 +243,7 @@ class SupplierConfig extends CommonDBTM
             [],
             DriverRegistry::DRIVER_NONE,
             [],
-            (int) $input['suppliers_id']
+            (int) $input['suppliers_id'],
         );
     }
 
@@ -305,7 +305,7 @@ class SupplierConfig extends CommonDBTM
             Session::addMessageAfterRedirect(
                 __s('Invalid API driver', 'domainmanager'),
                 false,
-                ERROR
+                ERROR,
             );
             return false;
         }
@@ -318,10 +318,10 @@ class SupplierConfig extends CommonDBTM
             Session::addMessageAfterRedirect(
                 sprintf(
                     __s('%s is already assigned to another supplier', 'domainmanager'),
-                    DriverRegistry::getDriverLabels()[$driver] ?? $driver
+                    DriverRegistry::getDriverLabels()[$driver] ?? $driver,
                 ),
                 false,
-                ERROR
+                ERROR,
             );
             return false;
         }
@@ -374,7 +374,7 @@ class SupplierConfig extends CommonDBTM
                 $lines[] = sprintf(
                     __('API driver changed from %1$s to %2$s', 'domainmanager'),
                     $labels[$old_driver] ?? $old_driver,
-                    $labels[$new_driver] ?? $new_driver
+                    $labels[$new_driver] ?? $new_driver,
                 );
             }
             foreach (DriverRegistry::getCredentialFields($new_driver) as $name => $meta) {
@@ -434,6 +434,7 @@ class SupplierConfig extends CommonDBTM
     /**
      * {@inheritDoc}
      */
+    // phpcs:ignore PSR1.Methods.CamelCapsMethodName.NotCamelCaps -- overrides CommonDBTM's own snake_case hook name
     public function post_addItem()
     {
         parent::post_addItem();
@@ -443,6 +444,7 @@ class SupplierConfig extends CommonDBTM
     /**
      * {@inheritDoc}
      */
+    // phpcs:ignore PSR1.Methods.CamelCapsMethodName.NotCamelCaps -- overrides CommonDBTM's own snake_case hook name
     public function post_updateItem($history = true)
     {
         parent::post_updateItem($history);
@@ -452,6 +454,7 @@ class SupplierConfig extends CommonDBTM
     /**
      * {@inheritDoc}
      */
+    // phpcs:ignore PSR1.Methods.CamelCapsMethodName.NotCamelCaps -- overrides CommonDBTM's own snake_case hook name
     public function post_purgeItem()
     {
         $driver       = (string) ($this->fields['api_driver'] ?? DriverRegistry::DRIVER_NONE);
@@ -465,7 +468,7 @@ class SupplierConfig extends CommonDBTM
                     '',
                     '[' . __('Domain Manager', 'domainmanager') . '] '
                         . sprintf(__('API configuration removed (was %s)', 'domainmanager'), DriverRegistry::getDriverLabels()[$driver] ?? $driver),
-                ]
+                ],
             );
         }
         parent::post_purgeItem();

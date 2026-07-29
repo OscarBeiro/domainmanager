@@ -73,7 +73,7 @@ final class ConnectionTestResult
                 $httpStatusCode,
                 __('Connection successful.', 'domainmanager'),
                 $rawDetail,
-                new DateTimeImmutable()
+                new DateTimeImmutable(),
             );
         }
 
@@ -132,7 +132,7 @@ final class ConnectionTestResult
                 null,
                 __('Could not reach the provider API — check network/firewall egress and the API base URL.', 'domainmanager'),
                 $detail,
-                new DateTimeImmutable()
+                new DateTimeImmutable(),
             );
         }
 
@@ -146,7 +146,7 @@ final class ConnectionTestResult
                 null,
                 __('The connection to the provider API timed out.', 'domainmanager'),
                 $detail,
-                new DateTimeImmutable()
+                new DateTimeImmutable(),
             );
         }
 
@@ -156,7 +156,7 @@ final class ConnectionTestResult
             null,
             __('Unexpected error while testing the connection — see the plugin error log.', 'domainmanager'),
             $detail,
-            new DateTimeImmutable()
+            new DateTimeImmutable(),
         );
     }
 
@@ -175,7 +175,7 @@ final class ConnectionTestResult
             null,
             $message,
             $message,
-            new DateTimeImmutable()
+            new DateTimeImmutable(),
         );
     }
 
@@ -198,7 +198,7 @@ final class ConnectionTestResult
             null,
             $message,
             $message,
-            new DateTimeImmutable()
+            new DateTimeImmutable(),
         );
     }
 

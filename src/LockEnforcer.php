@@ -93,10 +93,10 @@ class LockEnforcer
             Session::addMessageAfterRedirect(
                 sprintf(
                     __s('These fields are locked by Domain Manager synchronization and were not changed: %s', 'domainmanager'),
-                    implode(', ', $stripped)
+                    implode(', ', $stripped),
                 ),
                 false,
-                WARNING
+                WARNING,
             );
         }
     }
@@ -124,7 +124,7 @@ class LockEnforcer
         // RecordReconciler), plus the always-locked structural field above.
         $protected = array_merge(
             [self::STRUCTURAL_RECORD_FIELD],
-            ImportLock::getLockedFieldNames(DomainRecord::class, (int) $item->getID())
+            ImportLock::getLockedFieldNames(DomainRecord::class, (int) $item->getID()),
         );
 
         $stripped = [];
@@ -143,7 +143,7 @@ class LockEnforcer
             Session::addMessageAfterRedirect(
                 __s('This record is imported by Domain Manager synchronization and cannot be modified', 'domainmanager'),
                 false,
-                WARNING
+                WARNING,
             );
         }
     }
@@ -190,7 +190,7 @@ class LockEnforcer
         Session::addMessageAfterRedirect(
             __s('The registrar is locked by Domain Manager synchronization and was not changed', 'domainmanager'),
             false,
-            WARNING
+            WARNING,
         );
     }
 
@@ -236,7 +236,7 @@ class LockEnforcer
         Session::addMessageAfterRedirect(
             __s('This record is imported by Domain Manager synchronization and cannot be removed', 'domainmanager'),
             false,
-            ERROR
+            ERROR,
         );
     }
 

@@ -96,7 +96,7 @@ class PluginLogger
         $text = preg_replace(
             '/((?:token|secret|password|pwd|api[_-]?key)\s*[=:]\s*)\S+/i',
             '$1[REDACTED]',
-            $text
+            $text,
         ) ?? $text;
 
         return $text;

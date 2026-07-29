@@ -67,6 +67,7 @@ class Installer
         self::addRecordProxiedColumn($migration);
         self::addDomainManagedColumn($migration);
         self::addNameAsciiColumn($migration);
+        self::addRdapColumns($migration);
         self::clearDuplicateNameAscii();
         self::pruneStaleSearchOptionCriteria();
         self::seedDomainType();
@@ -104,7 +105,7 @@ class Installer
         // Defensive: no plugin itemtype registers display preferences by default
         $DB->delete(
             'glpi_displaypreferences',
-            ['itemtype' => ['LIKE', 'GlpiPlugin\\\\Domainmanager\\\\%']]
+            ['itemtype' => ['LIKE', 'GlpiPlugin\\\\Domainmanager\\\\%']],
         );
 
         $migration->executeMigration();
@@ -160,6 +161,14 @@ class Installer
                     `dns_message` text,
                     `is_managed` tinyint NOT NULL DEFAULT '0',
                     `name_ascii` varchar(255) NOT NULL DEFAULT '',
+                    `last_rdap_check_date` datetime NULL DEFAULT NULL,
+                    `last_changed_date` datetime NULL DEFAULT NULL,
+                    `transfer_date` datetime NULL DEFAULT NULL,
+                    `pending_delete` tinyint NULL DEFAULT NULL,
+                    `pending_transfer` tinyint NULL DEFAULT NULL,
+                    `rdap_registrar_name` varchar(255) NULL DEFAULT NULL,
+                    `rdap_registrar_iana_id` varchar(32) NULL DEFAULT NULL,
+                    `rdap_nameservers` text,
                     `date_mod` timestamp NULL DEFAULT NULL,
                     `date_creation` timestamp NULL DEFAULT NULL,
                     PRIMARY KEY (`id`),
@@ -169,6 +178,7 @@ class Installer
                     KEY `last_sync_date` (`last_sync_date`),
                     KEY `is_managed` (`is_managed`),
                     KEY `name_ascii` (`name_ascii`),
+                    KEY `last_rdap_check_date` (`last_rdap_check_date`),
                     KEY `date_mod` (`date_mod`),
                     KEY `date_creation` (`date_creation`)
                 ) ENGINE=InnoDB DEFAULT CHARSET={$charset} COLLATE={$collation} ROW_FORMAT=DYNAMIC
@@ -296,9 +306,9 @@ class Installer
             ['name_ascii' => ''],
             [
                 'name_ascii' => new \QueryExpression(
-                    '(SELECT `name` FROM `glpi_domains` WHERE `glpi_domains`.`id` = `' . $table . '`.`domains_id`)'
+                    '(SELECT `name` FROM `glpi_domains` WHERE `glpi_domains`.`id` = `' . $table . '`.`domains_id`)',
                 ),
-            ]
+            ],
         );
     }
 
@@ -490,6 +500,96 @@ class Installer
     }
 
     /**
+     * Add the RDAP-enrichment columns to the states table (§9 Phases 21-27,
+     * `PHASE21_PLAN.md`). Same table `is_managed`/`name_ascii`/the registrar
+     * metadata columns already live on — a plugin-only concept with no
+     * native `glpi_domains` equivalent, so it belongs on this read-only
+     * state table rather than a new one.
+     *
+     * §9 Phase 27 revised the naming/storage strategy after review: no
+     * "rdap_" prefix on fields with no ambiguity risk (`last_changed_date`/
+     * `transfer_date`/`pending_delete`/`pending_transfer` — RDAP is simply
+     * this data's *source*, not part of its name, same as e.g.
+     * `registrar_dnssec_enabled` doesn't say which driver reported it), and
+     * Transfer lock/Domain lock/DNSSEC no longer get a parallel `rdap_*`
+     * shadow column at all — RDAP fills the *existing*
+     * `registrar_transfer_lock`/`registrar_domain_lock`/`registrar_dnssec_enabled`
+     * columns directly, only when the driver hasn't already reported a
+     * value (see `RdapGapChecker`/`Cron::processRdapEnrichment()` and
+     * `SyncEngine`'s matching "only touch fields actually reported" fix
+     * below). `rdap_registrar_name`/`rdap_registrar_iana_id`/`rdap_nameservers`
+     * keep the prefix: unlike the fields above, these represent a genuinely
+     * different concept from anything already named "registrar" on this
+     * table (Infocom's Supplier mirror) and dropping the prefix would read
+     * as if they were that same authoritative value (§9 Phase 21
+     * "Registrar-of-record note").
+     *
+     * All nullable, all additive, no changes to existing columns: `null`
+     * means "not yet checked via RDAP" (for the tri-state flags/text
+     * fields) or "never checked" (for `last_rdap_check_date`), the same
+     * real, meaningful third state already established for
+     * `registrar_dnssec_enabled` et al. above.
+     *
+     * @param  Migration $migration
+     * @return void
+     */
+    private static function addRdapColumns(Migration $migration): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $table = 'glpi_plugin_domainmanager_states';
+
+        $migration->addField($table, 'last_rdap_check_date', 'datetime', ['value' => null]);
+
+        // §9 Phase 27: renamed away from the "rdap_"-prefixed/shadow-column
+        // naming this feature briefly had (never in a real release, only on
+        // two dev containers). `changeField()`/`addField()` both queue
+        // their ALTER clause purely from the *current* live schema at call
+        // time, with no awareness of each other's pending clauses in the
+        // same run — calling both for the same target column name in one
+        // migration (rename old->new AND add new "if missing") produces a
+        // single ALTER TABLE with two clauses creating the same column,
+        // which MySQL rejects outright. So each of these is an *either/or*,
+        // decided per-instance by checking which name (if either) already
+        // exists: a genuine 1.0.0-vintage install upgrading directly gets
+        // `addField()` (never had either name); a beta install that still
+        // has the old name gets `changeField()` (rename, no data loss); an
+        // install already on the final name (fresh installs via the
+        // CREATE TABLE path above, or an already-upgraded beta) gets
+        // neither — both calls are no-ops once their target/source column
+        // already matches.
+        foreach (
+            [
+                ['rdap_last_changed_date', 'last_changed_date', 'datetime', ['value' => null]],
+                ['rdap_transfer_date', 'transfer_date', 'datetime', ['value' => null]],
+                ['rdap_pending_delete', 'pending_delete', 'tinyint NULL DEFAULT NULL', []],
+                ['rdap_pending_transfer', 'pending_transfer', 'tinyint NULL DEFAULT NULL', []],
+            ] as [$oldfield, $newfield, $type, $options]
+        ) {
+            if ($DB->fieldExists($table, $oldfield, false)) {
+                $migration->changeField($table, $oldfield, $newfield, $type, $options);
+            } else {
+                $migration->addField($table, $newfield, $type, $options);
+            }
+        }
+
+        $migration->addField($table, 'rdap_registrar_name', 'varchar(255) NULL DEFAULT NULL');
+        $migration->addField($table, 'rdap_registrar_iana_id', 'varchar(32) NULL DEFAULT NULL');
+        $migration->addField($table, 'rdap_nameservers', 'text', ['value' => null]);
+        $migration->addKey($table, 'last_rdap_check_date');
+
+        // Transfer lock/Domain lock/DNSSEC folded into the existing
+        // registrar_transfer_lock/registrar_domain_lock/registrar_dnssec_enabled
+        // columns instead of a parallel rdap_* one (§9 Phase 27) — nothing
+        // to migrate the *values* into (these beta-only columns never held
+        // anything a real user would miss), just drop them if present.
+        $migration->dropField($table, 'rdap_transfer_lock');
+        $migration->dropField($table, 'rdap_domain_lock');
+        $migration->dropField($table, 'rdap_dnssec_signed');
+    }
+
+    /**
      * Rewrite any pre-existing saved search / bookmark still referencing one
      * of the three dummy/duplicate search-option IDs dropped in §9 Phase 14
      * addendum "Search UI cleanup" (`search-options-registry.json`'s
@@ -549,7 +649,7 @@ class Installer
                 $DB->update(
                     'glpi_savedsearches',
                     ['query' => http_build_query($params)],
-                    ['id' => (int) $row['id']]
+                    ['id' => (int) $row['id']],
                 );
             }
         }
@@ -642,7 +742,22 @@ class Installer
                 'param'         => 20,
                 'logs_lifetime' => 30,
                 'comment'       => __('Synchronize domain lifecycle and DNS zone records from provider APIs', 'domainmanager'),
-            ]
+            ],
+        );
+
+        // §9 Phase 22: its own automatic action, independently configurable
+        // from the daily sync task above — default every 10 minutes, one
+        // domain per tick (the cron cadence itself is the rate-limit
+        // defense against rdap.org, §9 Phase 21 "Rate-limit rationale").
+        CronTask::register(
+            Cron::class,
+            'RdapEnrichment',
+            10 * MINUTE_TIMESTAMP,
+            [
+                'state'         => CronTask::STATE_WAITING,
+                'logs_lifetime' => 30,
+                'comment'       => __('Fill registrar-reported gaps (dates, lock/DNSSEC status, pending flags) from RDAP', 'domainmanager'),
+            ],
         );
     }
 }

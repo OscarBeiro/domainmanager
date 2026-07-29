@@ -121,10 +121,10 @@ class DomainState extends CommonDBTM
                     ? \htmlescape(__('Never synchronized', 'domainmanager'))
                     : \htmlescape($value);
 
-            // Never render the actual credential in a search results
-            // column, same "On file"/"Not on file" masking as the domain
-            // panel's own badge (domain_panel.html.twig) — only whether a
-            // code is on file is ever shown here.
+                // Never render the actual credential in a search results
+                // column, same "On file"/"Not on file" masking as the domain
+                // panel's own badge (domain_panel.html.twig) — only whether a
+                // code is on file is ever shown here.
             case 'registrar_auth_info':
                 $value = (string) ($values[$field] ?? '');
                 return $value === ''
@@ -279,7 +279,7 @@ class DomainState extends CommonDBTM
                         self::getTable() . '.dns_suppliers_id' => $suppliers_id,
                     ],
                 ],
-                getEntitiesRestrictCriteria('glpi_domains', '', '', true)
+                getEntitiesRestrictCriteria('glpi_domains', '', '', true),
             ),
             'ORDER'     => 'glpi_domains.name ASC',
         ]);
@@ -332,6 +332,117 @@ class DomainState extends CommonDBTM
     }
 
     /**
+     * RDAP enrichment cron status for the config page (§9 Phase 23): how many
+     * non-deleted, non-template domains are still eligible for a check today
+     * ({@see Cron::cronRdapEnrichment}'s own date-based eligibility, without
+     * the additional per-domain {@see \GlpiPlugin\Domainmanager\Service\RdapGapChecker}
+     * filter — cheap to compute here, and "still due for a look" is the
+     * honest reading of this line for an admin), plus the most recent
+     * `last_rdap_check_date` across all domains.
+     *
+     * @return array{pending:int, last_processed:?string}
+     */
+    public static function getRdapEnrichmentStatus(): array
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $today = date('Y-m-d');
+        $table = self::getTable();
+
+        $pending = 0;
+        foreach (
+            $DB->request([
+                'SELECT'    => ['glpi_domains.id'],
+                'FROM'      => 'glpi_domains',
+                'LEFT JOIN' => [
+                    $table => [
+                        'ON' => [
+                            $table         => 'domains_id',
+                            'glpi_domains' => 'id',
+                        ],
+                    ],
+                ],
+                'WHERE'     => [
+                    'glpi_domains.is_deleted'  => 0,
+                    'glpi_domains.is_template' => 0,
+                    'OR'                       => [
+                        [$table . '.last_rdap_check_date' => null],
+                        [$table . '.last_rdap_check_date' => ['<', $today . ' 00:00:00']],
+                    ],
+                ],
+            ]) as $row
+        ) {
+            $pending++;
+        }
+
+        $last_processed = null;
+        foreach ($DB->request(['SELECT' => 'last_rdap_check_date', 'FROM' => $table]) as $row) {
+            $value = $row['last_rdap_check_date'] ?? null;
+            if ($value !== null && ($last_processed === null || $value > $last_processed)) {
+                $last_processed = $value;
+            }
+        }
+
+        return [
+            'pending'        => $pending,
+            'last_processed' => $last_processed,
+        ];
+    }
+
+    /**
+     * §9 Phase 28: the most recently RDAP-checked, still-populated
+     * registrar-of-record (name + IANA id) among this Supplier's own
+     * registrar-linked domains — surfaced read-only on the Supplier's
+     * Domain Manager tab so an admin can confirm/record it once per
+     * Supplier, rather than only ever seeing it on an individual Domain
+     * form's cross-check panel (§6.2). Purely informational, same
+     * "never a source of truth" rule as that panel (§9 Phase 21
+     * "Registrar-of-record note") — this is a read, never a write path.
+     *
+     * @param  int $suppliers_id
+     * @return array{name: string, iana_id: ?string}|null
+     */
+    public static function getRdapRegistrarInfo(int $suppliers_id): ?array
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        if ($suppliers_id <= 0) {
+            return null;
+        }
+
+        $row = $DB->request([
+            'SELECT'    => [self::getTable() . '.rdap_registrar_name', self::getTable() . '.rdap_registrar_iana_id'],
+            'FROM'      => self::getTable(),
+            'LEFT JOIN' => [
+                'glpi_infocoms' => [
+                    'ON' => [
+                        'glpi_infocoms'  => 'items_id',
+                        self::getTable() => 'domains_id',
+                        ['AND' => ['glpi_infocoms.itemtype' => 'Domain']],
+                    ],
+                ],
+            ],
+            'WHERE'     => [
+                'glpi_infocoms.suppliers_id'            => $suppliers_id,
+                self::getTable() . '.rdap_registrar_name' => ['<>', ''],
+            ],
+            'ORDER'     => self::getTable() . '.last_rdap_check_date DESC',
+            'LIMIT'     => 1,
+        ])->current();
+
+        if ($row === null || empty($row['rdap_registrar_name'])) {
+            return null;
+        }
+
+        return [
+            'name'    => (string) $row['rdap_registrar_name'],
+            'iana_id' => $row['rdap_registrar_iana_id'] !== null ? (string) $row['rdap_registrar_iana_id'] : null,
+        ];
+    }
+
+    /**
      * Detach a purged supplier from every state row referencing it
      *
      * @param  int $suppliers_id
@@ -350,7 +461,7 @@ class DomainState extends CommonDBTM
             $DB->update(
                 self::getTable(),
                 [$field => 0],
-                [$field => $suppliers_id]
+                [$field => $suppliers_id],
             );
         }
     }

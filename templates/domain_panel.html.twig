@@ -87,6 +87,13 @@
                         <th>{{ __('DNS Provider', 'domainmanager') }}</th>
                         <th>{{ __('Registrar sync', 'domainmanager') }}</th>
                         <th>{{ __('DNS sync', 'domainmanager') }}</th>
+                        {# §9 Phase 25: RDAP-sourced, independent of driver sync outcome —
+                           shown whenever RDAP has reported a value, regardless of rstatus/dstatus.
+                           No "(RDAP)" in the visible header — the source doesn't matter to the
+                           viewer, only the data does (per explicit request); kept in the tooltip
+                           and in ARCHITECTURE.md/CHANGELOG.md instead. #}
+                        <th>{{ __('Last changed', 'domainmanager') }}</th>
+                        <th>{{ __('Last transfer', 'domainmanager') }}</th>
                         <th>{{ __('Last sync', 'domainmanager') }}</th>
                     </tr>
                 </thead>
@@ -121,6 +128,20 @@
                                   title="{{ state ? state.dns_message : '' }}">
                                 {{ status_labels[dstatus]|default(dstatus) }}
                             </span>
+                        </td>
+                        <td>
+                            {% if state and state.last_changed_date %}
+                                {{ state.last_changed_date }}
+                            {% else %}
+                                <span class="text-muted" title="{{ __('Not yet checked', 'domainmanager') }}">&mdash;</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if state and state.transfer_date %}
+                                {{ state.transfer_date }}
+                            {% else %}
+                                <span class="text-muted" title="{{ __('Not yet checked, or never transferred', 'domainmanager') }}">&mdash;</span>
+                            {% endif %}
                         </td>
                         <td id="domainmanager-lastsync">
                             {{ state and state.last_sync_date ? state.last_sync_date : __('Never', 'domainmanager') }}
@@ -176,6 +197,9 @@
                             <th>{{ __('Domain lock', 'domainmanager') }}</th>
                             <th>{{ __('Auto-renew', 'domainmanager') }}</th>
                             <th>{{ __('DNSSEC', 'domainmanager') }}</th>
+                            {# §9 Phase 23: RDAP-only fields, no driver ever reports these #}
+                            <th>{{ __('Pending delete', 'domainmanager') }}</th>
+                            <th>{{ __('Pending transfer', 'domainmanager') }}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -189,32 +213,46 @@
                                     <span class="badge text-bg-secondary">{{ __('No', 'domainmanager') }}</span>
                                 {% endif %}
                             </td>
-                            <td>
-                                {% if state.registrar_transfer_lock is null %}
-                                    <span class="text-muted" title="{{ __('Not reported by this driver', 'domainmanager') }}">&mdash;</span>
-                                {% elseif state.registrar_transfer_lock %}
-                                    <span class="badge text-bg-success">{{ __('Yes', 'domainmanager') }}</span>
-                                {% else %}
-                                    <span class="badge text-bg-secondary">{{ __('No', 'domainmanager') }}</span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if state.registrar_auth_info %}
-                                    <span class="badge text-bg-secondary"><i class="ti ti-lock me-1"></i>{{ __('On file', 'domainmanager') }}</span>
-                                {% else %}
-                                    <span class="text-muted" title="{{ __('Not on file', 'domainmanager') }}">&mdash;</span>
-                                {% endif %}
-                            </td>
+                            {# §9 Phase 27: Transfer lock/Domain lock/DNSSEC no longer
+                               distinguish "reported by driver" vs. "filled by RDAP" on
+                               screen — RDAP fills the same column the driver itself
+                               writes to (Cron::processRdapEnrichment(), SyncEngine's
+                               "only touch fields actually reported" fix), so a single
+                               plain Yes/No/— reading is always accurate here. #}
                             {% for field in [
+                                'registrar_transfer_lock',
                                 'registrar_domain_lock',
                                 'registrar_auto_renew',
                                 'registrar_dnssec_enabled',
                             ] %}
                                 <td>
                                     {% if state[field] is null %}
-                                        <span class="text-muted" title="{{ __('Not reported by this driver', 'domainmanager') }}">&mdash;</span>
+                                        <span class="text-muted" title="{{ __('Not reported', 'domainmanager') }}">&mdash;</span>
                                     {% elseif state[field] %}
                                         <span class="badge text-bg-success">{{ __('Yes', 'domainmanager') }}</span>
+                                    {% else %}
+                                        <span class="badge text-bg-secondary">{{ __('No', 'domainmanager') }}</span>
+                                    {% endif %}
+                                </td>
+                                {% if field == 'registrar_transfer_lock' %}
+                                    <td>
+                                        {% if state.registrar_auth_info %}
+                                            <span class="badge text-bg-secondary"><i class="ti ti-lock me-1"></i>{{ __('On file', 'domainmanager') }}</span>
+                                        {% else %}
+                                            <span class="text-muted" title="{{ __('Not on file', 'domainmanager') }}">&mdash;</span>
+                                        {% endif %}
+                                    </td>
+                                {% endif %}
+                            {% endfor %}
+                            {# §9 Phase 23/27: no driver ever reports these, so they're
+                               always RDAP-only, but no longer named with an "rdap_"
+                               prefix (source doesn't belong in the field name). #}
+                            {% for field in ['pending_delete', 'pending_transfer'] %}
+                                <td>
+                                    {% if state[field] is null %}
+                                        <span class="text-muted" title="{{ __('Not yet checked', 'domainmanager') }}">&mdash;</span>
+                                    {% elseif state[field] %}
+                                        <span class="badge text-bg-danger">{{ __('Yes', 'domainmanager') }}</span>
                                     {% else %}
                                         <span class="badge text-bg-secondary">{{ __('No', 'domainmanager') }}</span>
                                     {% endif %}
@@ -223,6 +261,43 @@
                         </tr>
                     </tbody>
                 </table>
+            {% endif %}
+
+            {# §9 Phase 23/28: registrar-of-record / nameserver cross-check —
+               diagnostic only (never wired into any lock/sync/reassignment
+               path, §9 Phase 21/22 note), shown only when RDAP's view
+               actually disagrees with what's currently on record, to avoid
+               noise on the (expected) common case where they agree.
+               `registrar_mismatch`/`ns_mismatch` are computed in
+               DomainForm::inject() (normalized comparisons — legal-suffix-
+               tolerant name matching, order/case-insensitive nameserver
+               sets), not here — a naive exact-match here previously flagged
+               harmless differences (RDAP's legal-form registrar name,
+               reordered nameserver lists) as false-positive mismatches. #}
+            {% if registrar_mismatch or ns_mismatch %}
+                <hr class="m-0">
+                <div class="p-3">
+                    <div class="text-muted small lh-sm mb-2">
+                        <i class="ti ti-info-circle me-1"></i>{{ __('RDAP cross-check', 'domainmanager') }}
+                    </div>
+                    {% if registrar_mismatch %}
+                        <div class="small mb-1">
+                            <span class="badge text-bg-warning me-1">{{ __('Registrar mismatch', 'domainmanager') }}</span>
+                            {{ __('RDAP reports', 'domainmanager') }}
+                            <strong>{{ state.rdap_registrar_name }}{{ state.rdap_registrar_iana_id ? ' (IANA #' ~ state.rdap_registrar_iana_id ~ ')' : '' }}</strong>
+                            &middot;
+                            {{ __('Supplier on file', 'domainmanager') }}: <strong>{{ registrar_supplier.getName() }}</strong>
+                        </div>
+                    {% endif %}
+                    {% if ns_mismatch %}
+                        <div class="small">
+                            <span class="badge text-bg-warning me-1">{{ __('Nameserver mismatch', 'domainmanager') }}</span>
+                            {{ __('RDAP', 'domainmanager') }}: <strong>{{ rdap_nameservers|join(', ') }}</strong>
+                            &middot;
+                            {{ __('Live', 'domainmanager') }}: <strong>{{ live_nameservers|join(', ') }}</strong>
+                        </div>
+                    {% endif %}
+                </div>
             {% endif %}
         </div>
     {% else %}
