@@ -441,6 +441,9 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
         $data   = json_decode($body, true);
 
         if (in_array($status, [401, 403], true)) {
+            PluginLogger::error(
+                "Cloudflare authentication failed on $path (HTTP $status): " . self::sanitizeMessage($body),
+            );
             throw new DriverException(__('Cloudflare authentication failed, check the API token', 'domainmanager'));
         }
 
