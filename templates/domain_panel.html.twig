@@ -80,6 +80,24 @@
                     {% endif %}
                 </div>
             </div>
+            {% if not is_managed %}
+                {# §9 Phase 49 addendum, per user request: a domain with no
+                   API-backed registrar/DNS supplier configured at all has
+                   nothing genuine to show in the table/badges/messaging
+                   below — every column would just read "Not configured" /
+                   "Never synchronized", which reads as broken rather than
+                   simply "nothing set up yet". Collapsed to a single
+                   actionable line instead; the moment either supplier
+                   resolves to an active driver (`is_managed` flips true),
+                   this domain gets the full detail view below like any
+                   other managed domain. #}
+                <div class="p-3 text-muted small">
+                    {{ __('Not managed by Domain Manager: no registrar or DNS supplier with API access is configured for this domain.', 'domainmanager') }}
+                    {% if not registrar_supplier %}
+                        <a href="{{ infocom_tab_url }}">{{ __('Set the Registrar via the Financial and administrative information tab', 'domainmanager') }}</a>
+                    {% endif %}
+                </div>
+            {% else %}
             <table class="table table-sm mb-0">
                 <thead>
                     <tr>
@@ -299,6 +317,7 @@
                     {% endif %}
                 </div>
             {% endif %}
+            {% endif %}
         </div>
     {% else %}
         <div class="card-body">
@@ -309,7 +328,7 @@
     {% endif %}
 </div>
 
-{% if not is_new and can_update %}
+{% if not is_new and can_update and is_managed %}
     {# Rendered here (hidden) and relocated by JS into the form's own
        Save / Put in trashbin button row (`.form-button-separator`,
        core's `templates/components/form/buttons.html.twig`) once that

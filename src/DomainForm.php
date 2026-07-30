@@ -167,9 +167,12 @@ class DomainForm
             && $registrar_supplier !== null
             && !self::registrarNamesLikelyMatch((string) $state->fields['rdap_registrar_name'], $registrar_supplier->getName());
 
+        $is_managed = $state !== null && (bool) $state->fields['is_managed'];
+
         TemplateRenderer::getInstance()->display('@domainmanager/domain_panel.html.twig', [
             'is_new'             => $is_new,
             'can_update'         => $can_update,
+            'is_managed'         => $is_managed,
             'state'              => $state?->fields,
             'registrar_supplier' => $registrar_supplier,
             'dns_supplier'       => $dns_supplier,
@@ -188,7 +191,7 @@ class DomainForm
             'registrar_mismatch' => $registrar_mismatch,
         ]);
 
-        self::renderManagedIndicator($state !== null && (bool) $state->fields['is_managed']);
+        self::renderManagedIndicator($is_managed);
     }
 
     /**
