@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-Working version: `1.3.0-beta1` (see `setup.php`'s `PLUGIN_DOMAINMANAGER_VERSION`). Per-pre-release
+Working version: `1.3.0-beta2` (see `setup.php`'s `PLUGIN_DOMAINMANAGER_VERSION`). Per-pre-release
 headers are no longer added here for every alpha/beta bump — entries accumulate under this section
 and get one real version header only at final release.
 
@@ -22,6 +22,9 @@ and get one real version header only at final release.
 
 ### Documented
 - **Phase 46 (manual/import reconciliation for domains with no supplier link) closed as already solved.** Re-investigated before implementing and found the exact case — a name-matched domain with no Infocom supplier, or linked to a different one — already handled by the older Phase 8 "Import Domains" discovery modal (`DomainDiscoveryController`/`DomainDiscoveryMatcher::match()`) and its one-click "Set/Reassign registrar" action (`DomainRegistrarReassignController`). No code change. One residual gap intentionally left open: this only runs for suppliers whose driver implements domain discovery.
+
+### Changed
+- **Raised the minimum supported PHP version to 8.3** (`composer.json`'s `require.php` and `config.platform.php`, previously `8.1`). PHP 8.1 is end-of-life/deprecated; the plugin's own real floor is whatever GLPI 11 itself requires, and 8.1 no longer needs supporting there.
 
 ## [1.3.0-alpha8] - 2026-07-30
 ### Fixed
