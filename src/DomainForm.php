@@ -320,9 +320,52 @@ class DomainForm
         self::renderManagedIndicator($is_managed);
 
         $tab_itemtype = $params['options']['itemtype'] ?? '';
-        if ($state !== null && $is_managed && $tab_itemtype === DomainRecord::class) {
-            self::renderRecordWritePanel($domains_id, $state);
+        if ($tab_itemtype === DomainRecord::class) {
+            if ($state !== null && $is_managed) {
+                self::renderRecordWritePanel($domains_id, $state);
+            }
+            self::renderProxyIndicators($domains_id);
         }
+    }
+
+    /**
+     * Records tab: `DomainRecord::showForDomain()` is core's own hardcoded
+     * table (`components/datatable.html.twig` with a fixed Type/Name/TTL/Target
+     * column set) — there's no hook to add a column to it, so proxy status
+     * (`is_proxied` on `ImportedRecord`, keyed by `domains_id` directly on
+     * that table) is instead overlaid client-side: a cloud icon is appended
+     * next to any proxied record's Name link, matched by the record id
+     * already present in that link's native `getFormURLWithID()` href.
+     *
+     * @param  int $domains_id
+     * @return void
+     */
+    private static function renderProxyIndicators(int $domains_id): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $iterator = $DB->request([
+            'SELECT' => 'domainrecords_id',
+            'FROM'   => 'glpi_plugin_domainmanager_records',
+            'WHERE'  => [
+                'domains_id'  => $domains_id,
+                'is_proxied'  => 1,
+            ],
+        ]);
+
+        $proxied_ids = [];
+        foreach ($iterator as $row) {
+            $proxied_ids[] = (int) $row['domainrecords_id'];
+        }
+
+        if ($proxied_ids === []) {
+            return;
+        }
+
+        TemplateRenderer::getInstance()->display('@domainmanager/domainrecord_proxy_indicators.html.twig', [
+            'proxied_ids' => $proxied_ids,
+        ]);
     }
 
     /**

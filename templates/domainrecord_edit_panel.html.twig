@@ -43,9 +43,9 @@
     </div>
 {% endif %}
 {% if can_update %}
-    <div class="card m-n2 border-0 shadow-none mb-3">
+    <div class="card m-n2 border-0 shadow-none mb-3" id="domainmanager-managed-banner" style="display:none">
         <div class="card-header">
-            <div class="ribbon ribbon-bookmark ribbon-top ribbon-start bg-orange s-1">
+            <div class="ribbon ribbon-bookmark ribbon-top ribbon-start bg-blue s-1">
                 <i class="ti ti-world-cog fa-2x"></i>
             </div>
             <h4 class="card-title ps-5">{{ __('Managed by Domain Manager', 'domainmanager') }}</h4>
@@ -79,8 +79,8 @@
             {{ current_proxied ? 'checked' : '' }}
         >
         <label class="form-check-label" for="domainmanager-proxy-toggle">
-            <i class="ti ti-cloud"></i>
-            {{ __('Proxied through Cloudflare (orange cloud)', 'domainmanager') }}
+            <i class="ti ti-cloud-filled"></i>
+            {{ __('Proxied', 'domainmanager') }}
         </label>
     </div>
 {% endif %}
@@ -111,20 +111,46 @@
             }
         }
 
+        {% if can_update %}
+        // The "Managed by Domain Manager" banner is rendered by GLPI's
+        // POST_ITEM_FORM hook at the very end of the form body (right
+        // before the submit buttons) — there is no server-side way to
+        // place plugin-injected content earlier in a native form, so it's
+        // moved to the top here, before the first native field, and only
+        // then revealed (never left in its original spot even briefly).
+        var banner = document.getElementById('domainmanager-managed-banner');
+        if (banner && form) {
+            var firstField = form.querySelector('.card-body, .row, .form-field') || form.firstElementChild;
+            if (firstField && firstField.parentNode && firstField !== banner) {
+                firstField.parentNode.insertBefore(banner, firstField);
+            } else {
+                form.insertBefore(banner, form.firstChild);
+            }
+            banner.style.display = '';
+        }
+        {% endif %}
+
         {% if can_toggle_proxy %}
         // `is_proxied` lives on ImportedRecord, not DomainRecord (§9 Phase
         // 49) — there is no real form field for it to occupy, so the
         // checkbox rendered above (hidden, outside the <form>) is moved
-        // into the native form here, right after the TTL input, and only
-        // then revealed — never left detached-but-visible even briefly.
+        // into the native form here, as its own row directly below the
+        // Creation date row (and above TTL), and only then revealed — never
+        // left detached-but-visible even briefly.
         var proxyContainer = document.getElementById('domainmanager-proxy-toggle-container');
         if (proxyContainer && form) {
-            var ttlInput = form.querySelector('[name="ttl"]');
-            var anchor = ttlInput ? ttlInput.closest('.form-field, .col, .row') || ttlInput : null;
-            if (anchor && anchor.parentNode) {
-                anchor.parentNode.insertBefore(proxyContainer, anchor.nextSibling);
+            var dateInput = form.querySelector('[name="date_creation"]');
+            var dateRow = dateInput ? dateInput.closest('.row') : null;
+            if (dateRow && dateRow.parentNode) {
+                dateRow.parentNode.insertBefore(proxyContainer, dateRow.nextSibling);
             } else {
-                form.appendChild(proxyContainer);
+                var ttlInput = form.querySelector('[name="ttl"]');
+                var ttlCol = ttlInput ? ttlInput.closest('.form-field, .col') : null;
+                if (ttlCol && ttlCol.parentNode) {
+                    ttlCol.parentNode.insertBefore(proxyContainer, ttlCol.closest('.row') || ttlCol);
+                } else {
+                    form.appendChild(proxyContainer);
+                }
             }
             proxyContainer.style.display = '';
         }
