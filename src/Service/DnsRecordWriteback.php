@@ -51,7 +51,9 @@ use Supplier;
 use Throwable;
 
 /**
- * Native-tab write-back to IONOS (ARCHITECTURE.md §11.7, §11.10, Phase 34b),
+ * Native-tab write-back to whichever driver a domain's DNS is configured
+ * under (ARCHITECTURE.md §11.7, §11.10, Phase 34b — IONOS was the only
+ * implementation at the time this was written, generalized in Phase 41),
  * superseding the removed `DnsRecordWriteController` + confirmation-modal
  * design. Called from `hook.php`'s `pre_item_add`/`item_add`/
  * `pre_item_update`/`pre_item_delete` entries on `DomainRecord` — all logic
@@ -80,7 +82,7 @@ class DnsRecordWriteback
     private static array $pendingCreated = [];
 
     /**
-     * pre_item_add on DomainRecord: push createRecord() to IONOS before the
+     * pre_item_add on DomainRecord: push createRecord() to the provider before the
      * local row exists, aborting the local add on failure so there is never
      * a local row with no corresponding provider record.
      *
@@ -122,7 +124,7 @@ class DnsRecordWriteback
             return;
         }
 
-        $nsError = self::recheckNameservers($domain);
+        $nsError = self::recheckNameservers($domain, $state);
         if ($nsError !== null) {
             self::abort($item, $nsError);
             return;
@@ -154,7 +156,7 @@ class DnsRecordWriteback
         } catch (Throwable $e) {
             $message = $e instanceof DriverException ? $e->getMessage() : __('An error occurred while creating the record at the provider', 'domainmanager');
             PluginLogger::error("Failed to push new DNS record for domain #$domains_id", $e::class . ': ' . $e->getMessage());
-            self::abort($item, sprintf(__('Could not create this record at IONOS: %s', 'domainmanager'), $message));
+            self::abort($item, sprintf(__('Could not create this record at %s: %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state)), $message));
         }
     }
 
@@ -261,7 +263,7 @@ class DnsRecordWriteback
             return true;
         }
 
-        $nsError = self::recheckNameservers($domain);
+        $nsError = self::recheckNameservers($domain, $state);
         if ($nsError !== null) {
             self::abort($item, $nsError);
             return true;
@@ -278,7 +280,7 @@ class DnsRecordWriteback
 
         $imported = ImportedRecord::getForDomainRecord((int) $item->getID());
         if ($imported === null || $imported->fields['remote_id'] === '') {
-            self::abort($item, __('Record has no remote ID; cannot push to IONOS', 'domainmanager'));
+            self::abort($item, sprintf(__('Record has no remote ID; cannot push to %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state))));
             return true;
         }
 
@@ -290,12 +292,12 @@ class DnsRecordWriteback
             try {
                 $live = $driver->fetchRecord($domain->fields['name'], $imported->fields['remote_id']);
                 if ($live->data !== $item->fields['data'] || $live->ttl !== (int) $item->fields['ttl']) {
-                    self::abort($item, __('The record at IONOS has changed since the last sync; refusing to overwrite with stale data. Re-sync and try again.', 'domainmanager'));
+                    self::abort($item, sprintf(__('The record at %s has changed since the last sync; refusing to overwrite with stale data. Re-sync and try again.', 'domainmanager'), self::driverLabel(self::configuredDriverName($state))));
                     return true;
                 }
             } catch (Throwable) {
                 Session::addMessageAfterRedirect(
-                    '[Domain Manager] ' . __('Could not verify the current value at IONOS before this update; proceeding with local values.', 'domainmanager'),
+                    '[Domain Manager] ' . sprintf(__('Could not verify the current value at %s before this update; proceeding with local values.', 'domainmanager'), self::driverLabel(self::configuredDriverName($state))),
                     false,
                     WARNING,
                 );
@@ -323,7 +325,7 @@ class DnsRecordWriteback
         } catch (Throwable $e) {
             $message = $e instanceof DriverException ? $e->getMessage() : __('An error occurred while updating the record at the provider', 'domainmanager');
             PluginLogger::error("Failed to push updated DNS record #{$item->getID()} for domain #$domains_id", $e::class . ': ' . $e->getMessage());
-            self::abort($item, sprintf(__('Could not update this record at IONOS: %s', 'domainmanager'), $message));
+            self::abort($item, sprintf(__('Could not update this record at %s: %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state)), $message));
             return true;
         }
     }
@@ -358,7 +360,7 @@ class DnsRecordWriteback
             return false;
         }
 
-        $nsError = self::recheckNameservers($domain);
+        $nsError = self::recheckNameservers($domain, $state);
         if ($nsError !== null) {
             self::abort($item, $nsError);
             return true;
@@ -386,7 +388,7 @@ class DnsRecordWriteback
         } catch (Throwable $e) {
             $message = $e instanceof DriverException ? $e->getMessage() : __('An error occurred while deleting the record at the provider', 'domainmanager');
             PluginLogger::error("Failed to push deletion of DNS record #{$item->getID()} for domain #$domains_id", $e::class . ': ' . $e->getMessage());
-            self::abort($item, sprintf(__('Could not delete this record at IONOS: %s', 'domainmanager'), $message));
+            self::abort($item, sprintf(__('Could not delete this record at %s: %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state)), $message));
             return true;
         }
     }
@@ -424,7 +426,7 @@ class DnsRecordWriteback
      * per-type DNS write-back right (§11.6/§11.7) — used by
      * `DomainForm::onShowTab()` to decide whether the native "Link a
      * record"/"New Domain record for this item" controls are worth
-     * showing on an IONOS-managed domain's Records tab: a user who can't
+     * showing on a write-back-managed domain's Records tab: a user who can't
      * create any type via write-back would only get a confusing local-only
      * add that `DnsRecordWriteback::onPreAdd()` may reject outright.
      *
@@ -444,7 +446,7 @@ class DnsRecordWriteback
     /**
      * Public wrapper around `isDnsEditable()` for callers outside this
      * class (§11.6 addendum) — e.g. `DomainForm::onShowTab()`, deciding
-     * whether the domain's DNS is under IONOS write-back at all before
+     * whether the domain's DNS is under write-back at all before
      * even considering hiding the native add controls.
      *
      * @param  DomainState $state
@@ -485,7 +487,7 @@ class DnsRecordWriteback
     /**
      * Record types the current user may create via write-back on this
      * domain (§9 Phase 37) — empty whenever the domain's DNS isn't under
-     * IONOS write-back at all, or the user holds none of the four per-type
+     * write-back at all, or the user holds none of the four per-type
      * CREATE rights. Backs the custom add panel's type dropdown
      * (`DomainForm::renderRecordWritePanel()`): only ever offering types
      * that will actually succeed, instead of the native form's full
@@ -623,24 +625,73 @@ class DnsRecordWriteback
     }
 
     /**
-     * Ported from the removed controller's recheckNameservers().
+     * Ported from the removed controller's recheckNameservers(). Compares
+     * against the domain's own currently-configured DNS driver (via $state),
+     * not a hardcoded provider — a re-resolved NS match against any *other*
+     * driver than the one actually configured for this domain still means
+     * "no longer authoritative" for write-back purposes, whichever driver
+     * that configured one happens to be (found live, Phase 41: this
+     * previously hardcoded DRIVER_IONOS, which would have wrongly rejected
+     * every Cloudflare-managed write).
      *
-     * @param  Domain $domain
+     * @param  Domain      $domain
+     * @param  DomainState $state
      * @return string|null
      */
-    private static function recheckNameservers(Domain $domain): ?string
+    private static function recheckNameservers(Domain $domain, DomainState $state): ?string
     {
+        $configuredDriver = self::configuredDriverName($state);
         try {
             $resolver = new NsResolver();
             $hosts = $resolver->getNameservers($domain->fields['name']);
             $provider = NsProviderRegistry::match($hosts);
-            if ($provider === null || ($provider['driver'] ?? null) !== DriverRegistry::DRIVER_IONOS) {
-                return __('Domain nameservers have changed since last sync; cannot verify IONOS is still authoritative', 'domainmanager');
+            if ($provider === null || ($provider['driver'] ?? null) !== $configuredDriver) {
+                return sprintf(
+                    __('Domain nameservers have changed since last sync; cannot verify %s is still authoritative', 'domainmanager'),
+                    self::driverLabel($configuredDriver),
+                );
             }
         } catch (Throwable) {
             return __('Unable to re-check domain nameservers', 'domainmanager');
         }
         return null;
+    }
+
+    /**
+     * Driver key currently configured for this domain's DNS supplier, or
+     * null if it can't be resolved (§0.4-adjacent — mirrors isDnsEditable()'s
+     * own supplier lookup so the two never disagree).
+     *
+     * @param  DomainState $state
+     * @return string|null
+     */
+    private static function configuredDriverName(DomainState $state): ?string
+    {
+        $supplier_id = $state->fields['dns_suppliers_id'] ?? 0;
+        if ($supplier_id <= 0) {
+            return null;
+        }
+        try {
+            $config = SupplierConfig::getForSupplier($supplier_id);
+            return $config->fields['api_driver'] ?? null;
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Human-readable driver label for user-facing messages (§9 Phase 41) —
+     * replaces every message that previously hardcoded "IONOS" literally.
+     *
+     * @param  string|null $driver
+     * @return string
+     */
+    private static function driverLabel(?string $driver): string
+    {
+        if ($driver === null) {
+            return __('the configured provider', 'domainmanager');
+        }
+        return DriverRegistry::getDriverLabels()[$driver] ?? $driver;
     }
 
     /**
