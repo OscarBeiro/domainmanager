@@ -447,6 +447,98 @@ class DnsRecordWriteback
     }
 
     /**
+     * pre_item_restore on DomainRecord (§14.3/Phase 48 bug fix): the paired
+     * counterpart to onPreDelete() above — trashing a write-back-managed
+     * record pushes a real deleteRecord() upstream, so simply flipping
+     * is_deleted back to 0 locally (GLPI's native restore) leaves the
+     * provider still missing the record; the next sync then reads that as
+     * "vanished upstream" and re-trashes it, which is what made restore look
+     * like a no-op. Recreates the record upstream and refreshes the
+     * ownership row's remote_id/hash (the old remote_id is gone once
+     * deleted, so it cannot simply be reused). Same return-value convention
+     * as onPreUpdate()/onPreDelete(): true = handled here (whether it let
+     * the restore proceed or aborted it), false = not eligible, caller falls
+     * through to native restore unmodified.
+     *
+     * @param  DomainRecord $item
+     * @return bool
+     */
+    public static function onPreRestore(DomainRecord $item): bool
+    {
+        $type = self::typeName((int) $item->fields['domainrecordtypes_id']);
+        if ($type === null || !in_array($type, self::WRITABLE_TYPES, true)) {
+            return false;
+        }
+
+        $domains_id = (int) $item->fields['domains_id'];
+        $state = DomainState::getForDomain($domains_id);
+        if ($state === null || !self::isDnsEditable($state)) {
+            return false;
+        }
+
+        if (!self::hasRight($type, CREATE) || Session::isCron()) {
+            return false;
+        }
+
+        $imported = ImportedRecord::getForDomainRecord((int) $item->getID());
+        if ($imported === null) {
+            // Never plugin-owned — let the native restore proceed unmodified.
+            return false;
+        }
+
+        $domain = new Domain();
+        if (!$domain->getFromDB($domains_id)) {
+            return false;
+        }
+
+        $nsError = self::recheckNameservers($domain, $state);
+        if ($nsError !== null) {
+            self::abort($item, $nsError);
+            return true;
+        }
+
+        $name = (string) $item->fields['name'];
+        $data = (string) $item->fields['data'];
+        $ttl  = (int) $item->fields['ttl'];
+        self::sanitizeInputs($name, $data, $ttl);
+
+        try {
+            $driver = self::getWritableDriver($state);
+            $zoneName = $domain->fields['name'];
+            $absoluteName = ($name !== '' && $name !== '@') ? $name . '.' . $zoneName : $zoneName;
+            $created = $driver->createRecord($zoneName, $type, $absoluteName, $data, $ttl);
+            DomainState::recordWriteOutcome($domains_id, true);
+
+            $imported->update([
+                'id'          => $imported->getID(),
+                'remote_id'   => $created->remoteId,
+                'record_hash' => $created->getHash(),
+                'last_seen'   => date('Y-m-d H:i:s'),
+            ]);
+
+            Log::history($domains_id, Domain::class, [0, '', '[Domain Manager] ' . sprintf(
+                __('Record restored from GLPI trash and recreated at %s: %s %s → %s (TTL %d)', 'domainmanager'),
+                self::driverLabel(self::configuredDriverName($state)),
+                $type,
+                $name ?: '@',
+                $data,
+                $ttl,
+            ),
+            ]);
+
+            return true;
+        } catch (Throwable $e) {
+            $message = $e instanceof DriverException ? $e->getMessage() : __('An error occurred while recreating the record at the provider', 'domainmanager');
+            if ($e instanceof DriverException && $e->isPermissionDenied) {
+                DomainState::recordWriteOutcome($domains_id, false, $message);
+            }
+            PluginLogger::error("Failed to recreate restored DNS record #{$item->getID()} for domain #$domains_id", $e::class . ': ' . $e->getMessage());
+            self::abort($item, sprintf(__('Could not recreate this record at %s: %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state)), $message));
+            return true;
+        }
+    }
+
+    /**
      * Cancel the in-progress native operation, mirroring
      * `LockEnforcer::blockRecordRemoval()`'s own convention.
      *

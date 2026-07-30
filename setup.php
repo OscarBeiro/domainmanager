@@ -40,7 +40,7 @@ use GlpiPlugin\Domainmanager\Profile as DomainmanagerProfile;
 use GlpiPlugin\Domainmanager\Service\DnsRecordWriteback;
 use GlpiPlugin\Domainmanager\SupplierTab;
 
-define('PLUGIN_DOMAINMANAGER_VERSION', '1.3.0-alpha8');
+define('PLUGIN_DOMAINMANAGER_VERSION', '1.3.0-alpha9');
 define('PLUGIN_DOMAINMANAGER_MIN_GLPI', '11.0.0');
 define('PLUGIN_DOMAINMANAGER_MAX_GLPI', '11.0.99');
 define('PLUGIN_DOMAINMANAGER_REPOSITORY_URL', 'https://github.com/TICGAL-GLPI-Plugins/domainmanager');
@@ -536,7 +536,7 @@ function plugin_domainmanager_getAddSearchOptionsNew($itemtype): array
             'table'         => ImportedRecord::getTable(),
             'field'         => 'is_glpi_created',
             'linkfield'     => 'domainrecords_id',
-            'name'          => __('Created from GLPI', 'domainmanager'),
+            'name'          => __('Native', 'domainmanager'),
             'datatype'      => 'bool',
             'massiveaction' => false,
             'joinparams'    => [
@@ -801,6 +801,16 @@ function plugin_init_domainmanager(): void
         ];
         $PLUGIN_HOOKS[Hooks::PRE_ITEM_PURGE]['domainmanager'] = [
             DomainRecord::class => [LockEnforcer::class, 'domainRecordPrePurge'],
+        ];
+
+        // ARCHITECTURE.md §14.3 (Phase 48 bug fix): paired counterpart to the
+        // PRE_ITEM_DELETE entry above — recreates the record upstream when a
+        // write-back-managed trashed record is restored, since the trash
+        // itself already pushed a real deletion (DnsRecordWriteback::
+        // onPreRestore()); without this, restoring only flipped is_deleted
+        // locally and the next sync re-trashed it, looking like a no-op.
+        $PLUGIN_HOOKS[Hooks::PRE_ITEM_RESTORE]['domainmanager'] = [
+            DomainRecord::class => [DnsRecordWriteback::class, 'onPreRestore'],
         ];
 
         // Resolves to /plugins/domainmanager/Config, which redirects to the

@@ -2142,6 +2142,62 @@ cleanup there — no DB-level cascade, matching this table's own house style (§
 unresolved conflict also appears on the record's own edit page (`domainrecord_edit_panel.html.twig`),
 not just in the detection-time flash message.
 
+## §14 Phases 46–48 — manual/import reconciliation, managed-flag import gate, trash/restore duplicate bug (design, 2026-07-30)
+
+Three issues raised together on 2026-07-30, from a real-world observation: most GLPI instances
+already have Domains entered manually, long before this plugin's supplier import exists, and the
+current import path has no notion of "this Domain already exists and is intentionally unmanaged."
+
+### 14.1 Phase 46 — surface unlinked/manual-domain matches during import instead of skipping them
+
+Today `DomainDiscoveryMatcher` matches purely by normalized name (Punycode/lowercased,
+`normalize()`) and `DomainImportController` either creates a new Domain or restores one from
+trash — there is no third outcome for "a Domain with this name already exists, has no Infocom
+supplier link, and `is_managed=0`" (i.e. plausibly hand-entered, never touched by this plugin).
+Today that case is invisible: the importer can't tell "genuinely new" apart from "exists but
+manual" from name matching alone, so it either silently creates a duplicate-by-name Domain or
+silently claims the existing one, depending on match logic elsewhere.
+
+**Design:** add a third bucket to the import preview UI — "Matched, unmanaged" — for exactly this
+case (name matches, no `suppliers_id` on Infocom, `is_managed=0`). Importing one of these prompts
+for explicit confirmation before attaching the incoming supplier/Infocom data to the existing
+Domain, rather than either skipping it or overwriting it unasked. No schema change — this is
+matcher output classification (`DomainDiscoveryMatcher`) plus an import-controller branch
+(`DomainImportController`) plus a UI state, reusing the existing `is_managed`/Infocom-supplier
+read already available in `loadExistingDomains()`.
+
+### 14.2 Phase 47 — enforce `is_managed` as an import gate, not just a search filter
+
+Confirmed 2026-07-30: boolean is the right shape — `is_managed` already exists at both Domain
+(`glpi_plugin_domainmanager_states.is_managed`) and DomainRecord
+(`glpi_plugin_domainmanager_records.is_managed`) level, already indexed and exposed as real search
+options (`PLUGIN_DOMAINMANAGER_SO_DOMAIN_MANAGED` / `_DOMAINRECORD_MANAGED`). What's missing is
+using it as a write gate: nothing today stops an import/sync from overwriting a Domain or
+DomainRecord that a *different* driver/source already marked `is_managed=1`. Design: before an
+import or sync write touches a matched Domain/DomainRecord, check `is_managed` plus the recorded
+source (registrar/DNS driver already resolved via `DomainState`); if it's `1` under a different
+source than the one currently writing, block the write and raise the same conflict-flagging path
+Phase 44's `RecordConflict` (§13) already established, rather than adding a second conflict
+mechanism.
+
+### 14.3 Phase 48 — bug: trashing then restoring a synced DNS record produces a duplicate, not a restore
+
+Root cause (verified against `RecordReconciler::doReconcile()`, ~line 170–177): GLPI's default
+`getFromDB()` excludes trashed (`is_deleted=1`) rows. When a synced `DomainRecord` is manually
+trashed, the next reconciliation pass reads that as "the owned record vanished," deletes its
+`ImportedRecord` ownership row, and creates a **new** `DomainRecord` with identical content
+(`createRecord()`). Restoring the original trashed row afterward (via GLPI's native trash UI)
+succeeds at the GLPI level, but it's now an orphaned duplicate sitting next to the reconciler's
+new record — appearing to the user as "restore did nothing," when actually a duplicate was
+silently created before the restore ever happened.
+
+**Fix (preferred):** in `RecordReconciler::doReconcile()`, look up a trashed match by ownership
+row *before* concluding a record vanished, and restore-and-reuse it (mirroring the pattern
+`DomainImportController` already uses for trashed Domains) instead of deleting ownership and
+recreating. **Safety net:** register an `item_restore` hook (none exists today — `setup.php`
+741–804 only has `PRE_ITEM_DELETE`/`ITEM_PURGE`/`PRE_ITEM_PURGE`) to detect and clean up any
+duplicate created by this race for records already affected before the fix ships.
+
 ---
 
-*Open items awaiting your approval: the four deviations in §0.1–§0.4 (Registrar as plugin field, `date_domaincreation` mapping, plugin-owned lock layer replacing native `Lockedfield`, documented `managed_domainrecordtypes` gate on web-triggered record writes), the CREATE TABLE exception in §0.6, and §11 (Phases 31–35 — Manual DNS record write-back to IONOS). The two items that were blocking Phase 32 — the rights-matrix rendering mechanism (§11.6/§11.16) and the §10 changelog-policy amendment for pre-release versions (§11.14) — are both resolved as of 2026-07-29; Phase 32 is unblocked. **§12 (Phase 41 — Cloudflare write support) is a design-only addition pending your approval; §12.8 lists five implementation-time API verifications that are not blocking approval of the design itself. §13 (Phase 44 — update-conflict reconciliation) is implemented as of 2026-07-30 (§13.8), scoped to Update only per the 2026-07-30 confirmation above.***
+*Open items awaiting your approval: the four deviations in §0.1–§0.4 (Registrar as plugin field, `date_domaincreation` mapping, plugin-owned lock layer replacing native `Lockedfield`, documented `managed_domainrecordtypes` gate on web-triggered record writes), the CREATE TABLE exception in §0.6, and §11 (Phases 31–35 — Manual DNS record write-back to IONOS). The two items that were blocking Phase 32 — the rights-matrix rendering mechanism (§11.6/§11.16) and the §10 changelog-policy amendment for pre-release versions (§11.14) — are both resolved as of 2026-07-29; Phase 32 is unblocked. **§12 (Phase 41 — Cloudflare write support) is a design-only addition pending your approval; §12.8 lists five implementation-time API verifications that are not blocking approval of the design itself. §13 (Phase 44 — update-conflict reconciliation) is implemented as of 2026-07-30 (§13.8), scoped to Update only per the 2026-07-30 confirmation above. §14 (Phases 46–48 — manual/import reconciliation, managed-flag import gate, trash/restore duplicate bug) is design-only, pending your approval, as of 2026-07-30.***

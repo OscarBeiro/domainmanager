@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0-alpha9] - 2026-07-30
+### Fixed
+- **Restoring a trashed, write-back-managed DNS record from GLPI's native trash bin didn't actually bring it back at the provider.** Trashing a record already pushed a real `deleteRecord()` upstream (`DnsRecordWriteback::onPreDelete()`), but nothing pushed a matching re-create on restore — restore only flipped the local `is_deleted` flag, so the provider stayed missing the record, and the very next sync read that as "vanished upstream" and re-trashed it, making the restore look like a no-op. Added `DnsRecordWriteback::onPreRestore()`, hooked on GLPI's `PRE_ITEM_RESTORE` for `DomainRecord` (a hook this plugin didn't register before), which recreates the record at the provider and refreshes the ownership row's `remote_id`/`record_hash` before the native restore completes.
+
+### Changed
+- Renamed the "Created from GLPI" DomainRecord search option to **"Native"** for a shorter column label; same `is_glpi_created` field, no behavior change.
+
 ## [1.3.0-alpha8] - 2026-07-30
 ### Fixed
 - **Cloudflare permission docs only listed the two read-side scopes (`Zone:Zone:Read`, `Zone:DNS:Read`), never mentioning `Zone:DNS:Edit`**, so a token set up purely by following the plugin's own help text/TESTING.md would pass Check Connection and import DNS records fine but permission-deny on every write-back attempt with no prior warning it needed a third scope. Found live: a real supplier's DNS import was failing with a zone/permission error not covered by the documented scope list. The Supplier tab's Cloudflare help text (`supplier_tab.html.twig`), README's Configuration section, and TESTING.md §3.11 now all name `Zone:DNS:Edit` as required for write-back (optional if the domain will stay read-only) and explicitly call out that `Zone:Zone:Edit` is never required, since the plugin only ever writes DNS records, not zone settings.
