@@ -62,6 +62,17 @@ class SyncEngine
      * Run both pipelines for a domain and persist the outcome in its state row
      *
      * @param  Domain $domain
+     * @param  bool   $isImport ARCHITECTURE.md §14.2 (Phase 47): true only
+     *                          when this call's state row (if newly created
+     *                          here) should be marked `is_glpi_created = 0`
+     *                          — set by `DomainImportController` for its
+     *                          bulk-import path; every other caller (manual
+     *                          Domain creation's first sync, cron,
+     *                          MassiveActionHandler, SyncController) leaves
+     *                          this false, so a newly-created state row
+     *                          defaults to "Native". Ignored entirely when
+     *                          the domain already has a state row — this
+     *                          field is set once, at creation, never again.
      * @return array{registrar_status: string, dns_status: string,
      *               registrar_message: string, dns_message: string,
      *               detected_provider: string, last_sync_date: string,
@@ -70,7 +81,7 @@ class SyncEngine
      *               registrar_auto_renew: ?int, registrar_domain_type: ?string,
      *               registrar_dnssec_enabled: ?int}
      */
-    public function sync(Domain $domain): array
+    public function sync(Domain $domain, bool $isImport = false): array
     {
         $state = DomainState::getForDomain((int) $domain->getID());
         $fqdn  = (string) $domain->fields['name'];
@@ -263,6 +274,10 @@ class SyncEngine
         if ($state !== null) {
             $state->update(['id' => $state->getID()] + $state_input);
         } else {
+            // §14.2 (Phase 47): set once, only on the row's first creation —
+            // an update never carries this key, so an already-existing
+            // state row's value is never touched by a later sync.
+            $state_input['is_glpi_created'] = $isImport ? 0 : 1;
             (new DomainState())->add(['domains_id' => $domain->getID()] + $state_input);
         }
 

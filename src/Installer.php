@@ -68,6 +68,7 @@ class Installer
         self::addRecordProxiedColumn($migration);
         self::addRecordGlpiCreatedColumn($migration);
         self::addDomainManagedColumn($migration);
+        self::addDomainGlpiCreatedColumn($migration);
         self::addNameAsciiColumn($migration);
         self::addRdapColumns($migration);
         self::addDnsWriteStatusColumns($migration);
@@ -163,6 +164,7 @@ class Installer
                     `dns_status` varchar(50) NOT NULL DEFAULT 'never',
                     `dns_message` text,
                     `is_managed` tinyint NOT NULL DEFAULT '0',
+                    `is_glpi_created` tinyint NOT NULL DEFAULT '1',
                     `name_ascii` varchar(255) NOT NULL DEFAULT '',
                     `last_rdap_check_date` datetime NULL DEFAULT NULL,
                     `last_changed_date` datetime NULL DEFAULT NULL,
@@ -182,6 +184,7 @@ class Installer
                     KEY `dns_suppliers_id` (`dns_suppliers_id`),
                     KEY `last_sync_date` (`last_sync_date`),
                     KEY `is_managed` (`is_managed`),
+                    KEY `is_glpi_created` (`is_glpi_created`),
                     KEY `name_ascii` (`name_ascii`),
                     KEY `last_rdap_check_date` (`last_rdap_check_date`),
                     KEY `dns_write_status` (`dns_write_status`),
@@ -499,6 +502,38 @@ class Installer
                 }
             }
         }
+    }
+
+    /**
+     * Add `is_glpi_created` to the states table (ARCHITECTURE.md §14.2,
+     * Phase 47) — the Domain-level counterpart to
+     * `addRecordGlpiCreatedColumn()` above, backing the new "Native" search
+     * option. Idempotent via `Migration::addField()`/`addKey()` for
+     * upgrades; already present in `createTables()`'s raw CREATE TABLE for
+     * fresh installs.
+     *
+     * Unlike the records table's version (which defaults `0`, since every
+     * pre-existing row there was reconciler-created), this one defaults `1`:
+     * every Domain that already has a state row got there either by manual
+     * creation followed by a sync, or — before this phase existed — by
+     * `DomainImportController`'s bulk import, with no way to tell the two
+     * apart retroactively from the state row alone. Defaulting to "Native"
+     * matches the far more common real-world case this plugin is deployed
+     * into (§14, ARCHITECTURE.md: "most scenarios will be running GLPIs with
+     * manual domains") and errs toward under- rather than over-reporting
+     * imported domains as native. Set once at state-row creation only
+     * (`SyncEngine::sync()`, `$isImport` parameter), never changed
+     * afterward, same convention as the records table's version.
+     *
+     * @param  Migration $migration
+     * @return void
+     */
+    private static function addDomainGlpiCreatedColumn(Migration $migration): void
+    {
+        $table = 'glpi_plugin_domainmanager_states';
+
+        $migration->addField($table, 'is_glpi_created', 'bool', ['value' => 1]);
+        $migration->addKey($table, 'is_glpi_created');
     }
 
     /**

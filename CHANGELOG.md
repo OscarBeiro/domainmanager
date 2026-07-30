@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0-alpha10] - 2026-07-30
+### Added
+- **Domain-level "Native" field** (`is_glpi_created` on `glpi_plugin_domainmanager_states`), the counterpart to `DomainRecord`'s existing field of the same name — `1` for a domain created by hand, `0` for one discovered via supplier import (`DomainImportController`). Set once, at the domain's first sync, never touched afterward. Filterable via the new "Native" Domain search option (id `9431`). Pre-existing domains default to Native (`1`), since a state row alone can't retroactively distinguish the two.
+
+### Changed
+- Renamed the Domain "Transfer / EPP auth code" search option to **"Auth code"**; same `registrar_auth_info` field, no behavior change.
+
 ## [1.3.0-alpha9] - 2026-07-30
 ### Fixed
 - **Restoring a trashed, write-back-managed DNS record from GLPI's native trash bin didn't actually bring it back at the provider.** Trashing a record already pushed a real `deleteRecord()` upstream (`DnsRecordWriteback::onPreDelete()`), but nothing pushed a matching re-create on restore — restore only flipped the local `is_deleted` flag, so the provider stayed missing the record, and the very next sync read that as "vanished upstream" and re-trashed it, making the restore look like a no-op. Added `DnsRecordWriteback::onPreRestore()`, hooked on GLPI's `PRE_ITEM_RESTORE` for `DomainRecord` (a hook this plugin didn't register before), which recreates the record at the provider and refreshes the ownership row's `remote_id`/`record_hash` before the native restore completes.

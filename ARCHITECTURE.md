@@ -2180,6 +2180,20 @@ source than the one currently writing, block the write and raise the same confli
 Phase 44's `RecordConflict` (§13) already established, rather than adding a second conflict
 mechanism.
 
+**Implemented (2026-07-30), first slice:** a Domain-level "Native" field, the direct counterpart
+to `DomainRecord`'s existing `is_glpi_created` — `glpi_plugin_domainmanager_states.is_glpi_created`
+(new column, `Installer::addDomainGlpiCreatedColumn()`, defaults `1`/Native for every pre-existing
+row, since a state row alone can't retroactively tell manual creation apart from a pre-Phase-47
+import). `SyncEngine::sync()` gained an `$isImport` parameter, set only by
+`DomainImportController` (its bulk-import path is the one caller that actually knows a Domain was
+supplier-discovered, not hand-entered) and only consulted when the state row is created for the
+first time — every other caller (manual creation's first sync, cron, `SyncController`,
+`MassiveActionHandler`) leaves it `false`, so a newly-created state row defaults to Native.
+Exposed as `PLUGIN_DOMAINMANAGER_SO_DOMAIN_GLPI_CREATED` (id `9431`), same "Native" label and
+`bool` datatype as the DomainRecord option. The actual import-time write *gate* (blocking a
+conflicting write from a different source) is not yet implemented — this slice only makes the
+signal exist and be filterable/settable at creation time.
+
 ### 14.3 Phase 48 — bug: trashing then restoring a synced DNS record produces a duplicate, not a restore
 
 Root cause (verified against `RecordReconciler::doReconcile()`, ~line 170–177): GLPI's default

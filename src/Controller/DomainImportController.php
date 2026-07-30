@@ -177,7 +177,11 @@ class DomainImportController extends AbstractController
             }
 
             try {
-                $engine->sync($domain);
+                // §14.2 (Phase 47): every domain reaching this call was
+                // discovered via supplier import, not created by hand —
+                // marks its state row (if this is its first sync) as not
+                // "Native".
+                $engine->sync($domain, true);
             } catch (Throwable $e) {
                 $sync_failed++;
                 PluginLogger::error(
