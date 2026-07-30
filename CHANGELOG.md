@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-Working version: `1.3.0-beta2` (see `setup.php`'s `PLUGIN_DOMAINMANAGER_VERSION`). Per-pre-release
+Working version: `1.3.0-beta3` (see `setup.php`'s `PLUGIN_DOMAINMANAGER_VERSION`). Per-pre-release
 headers are no longer added here for every alpha/beta bump — entries accumulate under this section
 and get one real version header only at final release.
 
