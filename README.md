@@ -27,6 +27,7 @@ Requires **GLPI 11.0.x**.
 ## Configuration
 - Grant or revoke the *Unlock imported domain data* right and the per-type DNS record rights in the **Domain Manager** tab of each profile (granted by default to profiles with *config* UPDATE).
 - On each Supplier, use the **Domain Manager** tab to pick a driver (Cloudflare, IONOS or Dinahosting), enter its credentials, and run *Check Connection* before enabling sync.
+- Cloudflare requires an **Account API Token** (Manage Account → API Tokens, not a personal/My Profile token) plus its Account ID. Grant `Zone:Zone:Read` and `Zone:DNS:Read` — both are required just to import DNS records — and add `Zone:DNS:Edit` if you also want this domain's records editable from GLPI (write-back). `Zone:Zone:Edit` is never needed; the plugin only ever writes DNS records, not zone settings.
 - Tune the `DomainSync` automatic action's frequency from *Setup → Automatic actions* like any other GLPI cron task.
 
 ## Supported registrars and DNS providers

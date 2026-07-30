@@ -344,8 +344,9 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
 
 ### 3.11 Real Cloudflare sync (manual, needs a real **account-scoped** API token, updated §3.10)
 - **Steps:** save a real Cloudflare **Account ID** plus an **Account API Token**
-  (Manage Account → API Tokens — not a personal/My Profile token; Zone:DNS:Read +
-  Zone:Zone:Read, optionally Registrar read) on a supplier; run
+  (Manage Account → API Tokens — not a personal/My Profile token; Zone:Zone:Read +
+  Zone:DNS:Read are both required for import, add Zone:DNS:Edit if write-back
+  should be testable too; optionally Registrar read) on a supplier; run
   `SyncEngine::sync()` (or, from Phase 4, "Update Now") against a domain whose
   zone this account can read.
 - **Expected:** DNS leg imports only A/AAAA/CNAME/MX/NS/TXT records with correct

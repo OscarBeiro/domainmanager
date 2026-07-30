@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0-alpha8] - 2026-07-30
+### Fixed
+- **Cloudflare permission docs only listed the two read-side scopes (`Zone:Zone:Read`, `Zone:DNS:Read`), never mentioning `Zone:DNS:Edit`**, so a token set up purely by following the plugin's own help text/TESTING.md would pass Check Connection and import DNS records fine but permission-deny on every write-back attempt with no prior warning it needed a third scope. Found live: a real supplier's DNS import was failing with a zone/permission error not covered by the documented scope list. The Supplier tab's Cloudflare help text (`supplier_tab.html.twig`), README's Configuration section, and TESTING.md §3.11 now all name `Zone:DNS:Edit` as required for write-back (optional if the domain will stay read-only) and explicitly call out that `Zone:Zone:Edit` is never required, since the plugin only ever writes DNS records, not zone settings.
+
 ## [1.3.0-alpha7] - 2026-07-30
 ### Fixed
 - **Deleting a plugin-owned DomainRecord as a user holding the "unlock imported" right silently skipped the upstream provider delete**, leaving the record live at Cloudflare/IONOS while GLPI showed it gone: `LockEnforcer::canBypass()` (sync/cron/unlock-right) was used unconditionally at the two DomainRecord entry points (`domainRecordPreUpdate()`, `blockRecordRemoval()`), so holding the unlock right skipped `DnsRecordWriteback` entirely instead of going through it like every other user. That right predates write-back support, when it was the only way to force-edit a plugin-owned record locally; now that edits/deletes can be pushed to the provider, it no longer applies to DomainRecord — a new `canBypassSync()` (sync/cron only) is used at both sites instead, while `Domain`/`Infocom` locks (which have no write-back path) keep the original `canBypass()` unchanged.

@@ -111,7 +111,7 @@
                             {% endfor %}
                             {% if driver == 'cloudflare' %}
                                 <div class="form-text mb-3">
-                                    {{ __('Only Account API Tokens are supported — a personal/user token (My Profile → API Tokens) will fail authentication here even if otherwise valid. Create one under the Cloudflare dashboard\'s Manage Account → API Tokens (requires Super Administrator) with Zone:DNS:Read and Zone:Zone:Read permissions scoped to this account. The Account ID is shown on the account\'s Overview page (API section) or via "Copy account ID" from the account menu.', 'domainmanager') }}
+                                    {{ __('Only Account API Tokens are supported — a personal/user token (My Profile → API Tokens) will fail authentication here even if otherwise valid. Create one under the Cloudflare dashboard\'s Manage Account → API Tokens (requires Super Administrator) with Zone:Zone:Read and Zone:DNS:Read permissions scoped to this account — both are required just to import DNS records. Add Zone:DNS:Edit as well if you want this domain\'s records to be editable from GLPI (write-back); Zone:Zone:Edit is never required, since the plugin only ever writes DNS records, not zone settings. The Account ID is shown on the account\'s Overview page (API section) or via "Copy account ID" from the account menu.', 'domainmanager') }}
                                 </div>
                             {% endif %}
                         </div>
