@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0-beta1] - 2026-07-30
+### Documented
+- **Phase 46 (manual/import reconciliation for domains with no supplier link) closed as already solved.** Re-investigated before implementing and found the exact case — a name-matched domain with no Infocom supplier, or linked to a different one — already handled by the older Phase 8 "Import Domains" discovery modal (`DomainDiscoveryController`/`DomainDiscoveryMatcher::match()`) and its one-click "Set/Reassign registrar" action (`DomainRegistrarReassignController`). No code change. One residual gap intentionally left open: this only runs for suppliers whose driver implements domain discovery.
+
+This closes out the three-issue investigation started in `1.3.0-alpha8`/`alpha9`/`alpha10`/`alpha11` (trash/restore bug, Domain-level Native flag, DNS source-conflict write gate, this reconciliation review) — promoting to a beta.
+
 ## [1.3.0-alpha11] - 2026-07-30
 ### Added
 - **Write gate for DNS provider (source) conflicts.** `SyncEngine` now detects when a domain's DNS records are already managed (`is_managed`) under a *different*, previously-resolved supplier than the one this sync just detected, and skips the DNS leg entirely for that run — no upstream fetch, no trashing/recreating the previous supplier's records under the new one — instead of silently migrating ownership. Surfaced as a new `DomainState::STATUS_SOURCE_CONFLICT` ("DNS provider changed, records untouched pending confirmation"). The new supplier id is still recorded, so a deliberate second sync run confirms and applies the change, mirroring the existing "re-sync to confirm" pattern for a Registrar reassignment (`STATUS_REASSIGNED`).

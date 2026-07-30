@@ -2158,13 +2158,24 @@ Today that case is invisible: the importer can't tell "genuinely new" apart from
 manual" from name matching alone, so it either silently creates a duplicate-by-name Domain or
 silently claims the existing one, depending on match logic elsewhere.
 
-**Design:** add a third bucket to the import preview UI — "Matched, unmanaged" — for exactly this
-case (name matches, no `suppliers_id` on Infocom, `is_managed=0`). Importing one of these prompts
-for explicit confirmation before attaching the incoming supplier/Infocom data to the existing
-Domain, rather than either skipping it or overwriting it unasked. No schema change — this is
-matcher output classification (`DomainDiscoveryMatcher`) plus an import-controller branch
-(`DomainImportController`) plus a UI state, reusing the existing `is_managed`/Infocom-supplier
-read already available in `loadExistingDomains()`.
+**Closed as already solved (2026-07-30):** re-investigated before implementing and found this
+exact case already handled, by the older Phase 8 "Import Domains" discovery modal
+(`DomainDiscoveryController` + `domain_discovery_modal.html.twig`, `DomainDiscoveryMatcher::match()`)
+— not by `DomainImportController` alone, which is only the bulk-create half of that same flow.
+`DomainDiscoveryMatcher::match()` already matches every discovered registrar-account domain
+against every existing GLPI `Domain` by name, globally, independent of Infocom, and already
+distinguishes "exists, no supplier link" (`existing_suppliers_id === 0`, renders "Set registrar to
+X") from "exists, linked to a *different* supplier" ("Reassign registrar to X") — the exact two
+cases this phase set out to add. `DomainRegistrarReassignController`'s one-click action attaches/
+updates the Infocom supplier, and `HookHandler::infocomSaved()` (already wired) fixes the state
+row/`is_managed` from that alone. No code change made.
+
+The one real gap identified, deliberately left open rather than fixed here (confirmed
+out-of-scope with you 2026-07-30): this reconciliation only runs for suppliers whose driver
+implements discovery (`DriverFactory::forDiscovery()`) — a driver that can't list account domains
+gets no modal at all, so a manual domain under that supplier is never offered this treatment. A
+future phase could add a name-only fallback reconciliation path for that case if it turns out to
+matter in practice.
 
 ### 14.2 Phase 47 — enforce `is_managed` as an import gate, not just a search filter
 
@@ -2227,4 +2238,4 @@ duplicate created by this race for records already affected before the fix ships
 
 ---
 
-*Open items awaiting your approval: the four deviations in §0.1–§0.4 (Registrar as plugin field, `date_domaincreation` mapping, plugin-owned lock layer replacing native `Lockedfield`, documented `managed_domainrecordtypes` gate on web-triggered record writes), the CREATE TABLE exception in §0.6, and §11 (Phases 31–35 — Manual DNS record write-back to IONOS). The two items that were blocking Phase 32 — the rights-matrix rendering mechanism (§11.6/§11.16) and the §10 changelog-policy amendment for pre-release versions (§11.14) — are both resolved as of 2026-07-29; Phase 32 is unblocked. **§12 (Phase 41 — Cloudflare write support) is a design-only addition pending your approval; §12.8 lists five implementation-time API verifications that are not blocking approval of the design itself. §13 (Phase 44 — update-conflict reconciliation) is implemented as of 2026-07-30 (§13.8), scoped to Update only per the 2026-07-30 confirmation above. §14 (Phases 46–48 — manual/import reconciliation, managed-flag import gate, trash/restore duplicate bug) is design-only, pending your approval, as of 2026-07-30.***
+*Open items awaiting your approval: the four deviations in §0.1–§0.4 (Registrar as plugin field, `date_domaincreation` mapping, plugin-owned lock layer replacing native `Lockedfield`, documented `managed_domainrecordtypes` gate on web-triggered record writes), the CREATE TABLE exception in §0.6, and §11 (Phases 31–35 — Manual DNS record write-back to IONOS). The two items that were blocking Phase 32 — the rights-matrix rendering mechanism (§11.6/§11.16) and the §10 changelog-policy amendment for pre-release versions (§11.14) — are both resolved as of 2026-07-29; Phase 32 is unblocked. **§12 (Phase 41 — Cloudflare write support) is a design-only addition pending your approval; §12.8 lists five implementation-time API verifications that are not blocking approval of the design itself. §13 (Phase 44 — update-conflict reconciliation) is implemented as of 2026-07-30 (§13.8), scoped to Update only per the 2026-07-30 confirmation above. §14 (Phases 46–48) is fully resolved as of 2026-07-30: Phase 46 closed as already solved (§14.1, no code change), Phase 47's Domain-level "Native" field and DNS source-conflict write gate are implemented (§14.2), and Phase 48's trash/restore bug is fixed (§14.3). This closes out the 1.3.0 line at `1.3.0-beta1`.***
