@@ -6,30 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+Working version: `1.3.0-beta1` (see `setup.php`'s `PLUGIN_DOMAINMANAGER_VERSION`). Per-pre-release
+headers are no longer added here for every alpha/beta bump — entries accumulate under this section
+and get one real version header only at final release.
 
-## [1.3.0-beta1] - 2026-07-30
-### Documented
-- **Phase 46 (manual/import reconciliation for domains with no supplier link) closed as already solved.** Re-investigated before implementing and found the exact case — a name-matched domain with no Infocom supplier, or linked to a different one — already handled by the older Phase 8 "Import Domains" discovery modal (`DomainDiscoveryController`/`DomainDiscoveryMatcher::match()`) and its one-click "Set/Reassign registrar" action (`DomainRegistrarReassignController`). No code change. One residual gap intentionally left open: this only runs for suppliers whose driver implements domain discovery.
-
-This closes out the three-issue investigation started in `1.3.0-alpha8`/`alpha9`/`alpha10`/`alpha11` (trash/restore bug, Domain-level Native flag, DNS source-conflict write gate, this reconciliation review) — promoting to a beta.
-
-## [1.3.0-alpha11] - 2026-07-30
-### Added
-- **Write gate for DNS provider (source) conflicts.** `SyncEngine` now detects when a domain's DNS records are already managed (`is_managed`) under a *different*, previously-resolved supplier than the one this sync just detected, and skips the DNS leg entirely for that run — no upstream fetch, no trashing/recreating the previous supplier's records under the new one — instead of silently migrating ownership. Surfaced as a new `DomainState::STATUS_SOURCE_CONFLICT` ("DNS provider changed, records untouched pending confirmation"). The new supplier id is still recorded, so a deliberate second sync run confirms and applies the change, mirroring the existing "re-sync to confirm" pattern for a Registrar reassignment (`STATUS_REASSIGNED`).
-
-## [1.3.0-alpha10] - 2026-07-30
-### Added
-- **Domain-level "Native" field** (`is_glpi_created` on `glpi_plugin_domainmanager_states`), the counterpart to `DomainRecord`'s existing field of the same name — `1` for a domain created by hand, `0` for one discovered via supplier import (`DomainImportController`). Set once, at the domain's first sync, never touched afterward. Filterable via the new "Native" Domain search option (id `9431`). Pre-existing domains default to Native (`1`), since a state row alone can't retroactively distinguish the two.
-
-### Changed
-- Renamed the Domain "Transfer / EPP auth code" search option to **"Auth code"**; same `registrar_auth_info` field, no behavior change.
-
-## [1.3.0-alpha9] - 2026-07-30
 ### Fixed
 - **Restoring a trashed, write-back-managed DNS record from GLPI's native trash bin didn't actually bring it back at the provider.** Trashing a record already pushed a real `deleteRecord()` upstream (`DnsRecordWriteback::onPreDelete()`), but nothing pushed a matching re-create on restore — restore only flipped the local `is_deleted` flag, so the provider stayed missing the record, and the very next sync read that as "vanished upstream" and re-trashed it, making the restore look like a no-op. Added `DnsRecordWriteback::onPreRestore()`, hooked on GLPI's `PRE_ITEM_RESTORE` for `DomainRecord` (a hook this plugin didn't register before), which recreates the record at the provider and refreshes the ownership row's `remote_id`/`record_hash` before the native restore completes.
 
+### Added
+- **Domain-level "Native" field** (`is_glpi_created` on `glpi_plugin_domainmanager_states`), the counterpart to `DomainRecord`'s existing field of the same name — `1` for a domain created by hand, `0` for one discovered via supplier import (`DomainImportController`). Set once, at the domain's first sync, never touched afterward. Filterable via the new "Native" Domain search option (id `9431`). Pre-existing domains default to Native (`1`), since a state row alone can't retroactively distinguish the two.
+- **Write gate for DNS provider (source) conflicts.** `SyncEngine` now detects when a domain's DNS records are already managed (`is_managed`) under a *different*, previously-resolved supplier than the one this sync just detected, and skips the DNS leg entirely for that run — no upstream fetch, no trashing/recreating the previous supplier's records under the new one — instead of silently migrating ownership. Surfaced as a new `DomainState::STATUS_SOURCE_CONFLICT` ("DNS provider changed, records untouched pending confirmation"). The new supplier id is still recorded, so a deliberate second sync run confirms and applies the change, mirroring the existing "re-sync to confirm" pattern for a Registrar reassignment (`STATUS_REASSIGNED`).
+
 ### Changed
-- Renamed the "Created from GLPI" DomainRecord search option to **"Native"** for a shorter column label; same `is_glpi_created` field, no behavior change.
+- Renamed the "Created from GLPI" DomainRecord search option to **"Native"**, and the Domain "Transfer / EPP auth code" search option to **"Auth code"** — shorter column labels, same underlying fields (`is_glpi_created`/`registrar_auth_info`), no behavior change.
+
+### Documented
+- **Phase 46 (manual/import reconciliation for domains with no supplier link) closed as already solved.** Re-investigated before implementing and found the exact case — a name-matched domain with no Infocom supplier, or linked to a different one — already handled by the older Phase 8 "Import Domains" discovery modal (`DomainDiscoveryController`/`DomainDiscoveryMatcher::match()`) and its one-click "Set/Reassign registrar" action (`DomainRegistrarReassignController`). No code change. One residual gap intentionally left open: this only runs for suppliers whose driver implements domain discovery.
 
 ## [1.3.0-alpha8] - 2026-07-30
 ### Fixed
