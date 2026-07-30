@@ -803,6 +803,11 @@ class Installer
         foreach (Profile::getDnsRecordRights() as $field) {
             $migration->addRight($field, 0);
         }
+        // Purging is irreversible on the GLPI side (the provider was
+        // already synced at soft-delete time), so — like the per-type
+        // rights above — it is not auto-granted to any existing profile;
+        // an admin must opt a profile in explicitly.
+        $migration->addRight(Profile::PURGE_RIGHT, 0);
         // Migration::addRight() inserts rows directly: reset the rights cache
         ProfileRight::cleanAllPossibleRights();
     }

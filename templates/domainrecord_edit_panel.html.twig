@@ -68,7 +68,7 @@
 {% endif %}
 <script>
     (function () {
-        var lockedFields = {{ locked_fields|json_encode|raw }};
+        var lockedFields = {{ locked_fields|json_encode|raw }}.concat({{ structural_locked_fields|json_encode|raw }});
         if (lockedFields.length) {
             var form = document.getElementById('main-form') || document.querySelector('form[name="asset_form"]');
             if (form) {

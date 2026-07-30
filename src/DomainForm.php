@@ -263,7 +263,16 @@ class DomainForm
             // Cosmetic-only (server-side is authoritative, see docblock
             // above): every editable field disabled unless the user can
             // actually write this record back.
-            'locked_fields' => $can_update ? [] : ['name', 'data', 'ttl', 'domainrecordtypes_id'],
+            'locked_fields' => $can_update ? [] : ['name', 'data', 'ttl'],
+            // Always locked, even for a user with write-back rights: these
+            // three are structural, mirroring LockEnforcer's own
+            // STRUCTURAL_RECORD_FIELD (domains_id) server-side — changing
+            // the domain link or the record type re-parents/retypes a
+            // record the plugin is tracking by (domains_id, remote_id),
+            // and there is no legitimate write-back edit that needs to
+            // touch either; the creation date is likewise never something
+            // an edit should touch.
+            'structural_locked_fields' => ['domains_id', 'domainrecordtypes_id', 'date_creation'],
             'conflict_url'  => $conflict !== null ? '/plugins/domainmanager/recordconflict/' . $conflict->getID() : null,
         ]);
     }

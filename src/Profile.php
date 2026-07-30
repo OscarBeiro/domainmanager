@@ -68,6 +68,23 @@ class Profile extends CoreProfile
     public const DNS_RECORDS_RIGHT_TXT   = 'domainmanager:dns_records_txt';
 
     /**
+     * Right to hard-purge a DomainRecord (permanently empty it from the
+     * GLPI trash), distinct from and independent of the per-type
+     * DNS_RECORDS_RIGHT_* write-back rights above: soft-delete already
+     * pushes the deletion upstream and is recoverable, so any user with
+     * the relevant DELETE write-back right can do it; purge is
+     * irreversible on the GLPI side (the provider was already synced at
+     * soft-delete time) and is gated separately so it can be handed out
+     * more narrowly.
+     */
+    public const PURGE_RIGHT = 'domainmanager:purge_records';
+
+    /**
+     * Single bit carried by the purge right
+     */
+    public const RIGHT_PURGE_RECORDS = 1;
+
+    /**
      * Map of writable `DomainRecordType` name to its per-type right, kept
      * here as the single source of truth (`DnsRecordWriteback` reads it
      * rather than duplicating the mapping).
@@ -127,6 +144,13 @@ class Profile extends CoreProfile
                 ],
                 'label'     => __('Unlock imported domain data', 'domainmanager'),
                 'field'     => self::UNLOCK_RIGHT,
+            ],
+            [
+                'rights'    => [
+                    self::RIGHT_PURGE_RECORDS => __('Permanently delete DNS records from the trash', 'domainmanager'),
+                ],
+                'label'     => __('Purge DNS records', 'domainmanager'),
+                'field'     => self::PURGE_RIGHT,
             ],
         ];
 
