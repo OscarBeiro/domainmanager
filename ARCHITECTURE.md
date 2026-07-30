@@ -1997,7 +1997,7 @@ editability-state badge (§12.3) already renders generically. The one user-visib
 failure messages and the "Editable from GLPI" badge now correctly name whichever driver is
 actually configured, which is exactly what the 2026-07-30 generalization (§12.5 item 4) was for.
 
-## §13 Phase 44 — Update-conflict reconciliation (design only)
+## §13 Phase 44 — Update-conflict reconciliation (implemented, 2026-07-30)
 
 ### 13.1 Trigger
 
@@ -2127,6 +2127,21 @@ Four gaps found on a second read of §13.3–§13.4, fixed here rather than sile
   `81057` — revisit if adoption-without-visibility causes confusion in practice.
 - Any change to `SOA`/other read-only types' handling — unaffected, confirmed with the user.
 
+### 13.8 Implementation (2026-07-30)
+
+Shipped as designed in §13.3–§13.6: `RecordConflict` (CommonDBTM over the new table),
+`RecordConflictController` (`GET /plugins/domainmanager/recordconflict/{id}` for the screen,
+three `POST` actions for the two resolutions and cancel), `recordconflict.html.twig`, and the
+`DnsRecordWriteback::onPreUpdate()` changes for both branches (fresh detection vs. the
+`_domainmanager_conflict_id`-scoped bypass, re-verified at resolution time per §13.6 item 1).
+"Keep the provider's value" reuses `LockEnforcer::$sync_in_progress` (the same runtime-only,
+non-forgeable bypass `SyncEngine` already uses) rather than a new input flag, satisfying §13.6
+item 2 without adding a second bypass mechanism. Orphan cleanup (§13.6 item 4) is an explicit
+delete in `HookHandler::domainRecordPurged()`, alongside the existing `ImportedRecord`/`ImportLock`
+cleanup there — no DB-level cascade, matching this table's own house style (§0.6). A link to any
+unresolved conflict also appears on the record's own edit page (`domainrecord_edit_panel.html.twig`),
+not just in the detection-time flash message.
+
 ---
 
-*Open items awaiting your approval: the four deviations in §0.1–§0.4 (Registrar as plugin field, `date_domaincreation` mapping, plugin-owned lock layer replacing native `Lockedfield`, documented `managed_domainrecordtypes` gate on web-triggered record writes), the CREATE TABLE exception in §0.6, and §11 (Phases 31–35 — Manual DNS record write-back to IONOS). The two items that were blocking Phase 32 — the rights-matrix rendering mechanism (§11.6/§11.16) and the §10 changelog-policy amendment for pre-release versions (§11.14) — are both resolved as of 2026-07-29; Phase 32 is unblocked. **§12 (Phase 41 — Cloudflare write support) is a design-only addition pending your approval; §12.8 lists five implementation-time API verifications that are not blocking approval of the design itself. §13 (Phase 44 — update-conflict reconciliation) is a design-only addition pending your approval, scoped to Update only per the 2026-07-30 confirmation above.***
+*Open items awaiting your approval: the four deviations in §0.1–§0.4 (Registrar as plugin field, `date_domaincreation` mapping, plugin-owned lock layer replacing native `Lockedfield`, documented `managed_domainrecordtypes` gate on web-triggered record writes), the CREATE TABLE exception in §0.6, and §11 (Phases 31–35 — Manual DNS record write-back to IONOS). The two items that were blocking Phase 32 — the rights-matrix rendering mechanism (§11.6/§11.16) and the §10 changelog-policy amendment for pre-release versions (§11.14) — are both resolved as of 2026-07-29; Phase 32 is unblocked. **§12 (Phase 41 — Cloudflare write support) is a design-only addition pending your approval; §12.8 lists five implementation-time API verifications that are not blocking approval of the design itself. §13 (Phase 44 — update-conflict reconciliation) is implemented as of 2026-07-30 (§13.8), scoped to Update only per the 2026-07-30 confirmation above.***

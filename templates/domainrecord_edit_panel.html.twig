@@ -33,6 +33,15 @@
  # (any `DnsRecordWriterInterface` driver) plus this user's per-type rights,
  # never on which provider is actually configured.
  #}
+{% if conflict_url %}
+    <div class="alert alert-warning d-flex align-items-center mb-3" role="alert">
+        <i class="ti ti-alert-triangle me-2"></i>
+        <div>
+            {{ __('This record has an unresolved update conflict with the provider.', 'domainmanager') }}
+            <a href="{{ conflict_url }}">{{ __('Review it', 'domainmanager') }}</a>
+        </div>
+    </div>
+{% endif %}
 {% if can_update %}
     <div class="card m-n2 border-0 shadow-none mb-3">
         <div class="card-header">

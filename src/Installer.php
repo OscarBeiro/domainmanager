@@ -50,6 +50,7 @@ class Installer
         'glpi_plugin_domainmanager_states',
         'glpi_plugin_domainmanager_records',
         'glpi_plugin_domainmanager_locks',
+        'glpi_plugin_domainmanager_recordconflicts',
     ];
 
     /**
@@ -223,6 +224,21 @@ class Installer
                     PRIMARY KEY (`id`),
                     UNIQUE KEY `unicity` (`itemtype`, `items_id`, `field`),
                     KEY `items_id` (`items_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET={$charset} COLLATE={$collation} ROW_FORMAT=DYNAMIC
+                SQL,
+            'glpi_plugin_domainmanager_recordconflicts' => <<<SQL
+                CREATE TABLE `glpi_plugin_domainmanager_recordconflicts` (
+                    `id` int {$key_sign} NOT NULL AUTO_INCREMENT,
+                    `domainrecords_id` int {$key_sign} NOT NULL DEFAULT '0',
+                    `submitted_data` varchar(255) NOT NULL DEFAULT '',
+                    `submitted_ttl` int NOT NULL DEFAULT '0',
+                    `live_data` varchar(255) NOT NULL DEFAULT '',
+                    `live_ttl` int NOT NULL DEFAULT '0',
+                    `date_mod` timestamp NULL DEFAULT NULL,
+                    `date_creation` timestamp NULL DEFAULT NULL,
+                    PRIMARY KEY (`id`),
+                    UNIQUE KEY `domainrecords_id` (`domainrecords_id`),
+                    KEY `date_creation` (`date_creation`)
                 ) ENGINE=InnoDB DEFAULT CHARSET={$charset} COLLATE={$collation} ROW_FORMAT=DYNAMIC
                 SQL,
         ];

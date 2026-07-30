@@ -251,6 +251,11 @@ class DomainForm
         $can_update = $dns_editable && $is_writable_type && DnsRecordWriteback::hasTypeRight($type, UPDATE);
         $can_delete = $dns_editable && $is_writable_type && DnsRecordWriteback::hasTypeRight($type, DELETE);
 
+        // §13 (Phase 44): a record's own edit page is one of the two places
+        // an unresolved conflict is reachable from, alongside the flash
+        // message shown at detection time.
+        $conflict = RecordConflict::getForDomainRecord($records_id);
+
         TemplateRenderer::getInstance()->display('@domainmanager/domainrecord_edit_panel.html.twig', [
             'can_update'    => $can_update,
             'can_delete'    => $can_delete,
@@ -259,6 +264,7 @@ class DomainForm
             // above): every editable field disabled unless the user can
             // actually write this record back.
             'locked_fields' => $can_update ? [] : ['name', 'data', 'ttl', 'domainrecordtypes_id'],
+            'conflict_url'  => $conflict !== null ? '/plugins/domainmanager/recordconflict/' . $conflict->getID() : null,
         ]);
     }
 
