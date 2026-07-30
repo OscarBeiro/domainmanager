@@ -6,11 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-Working version: `1.3.0-beta5` (see `setup.php`'s `PLUGIN_DOMAINMANAGER_VERSION`). Per-pre-release
+Working version: `1.3.0-beta6` (see `setup.php`'s `PLUGIN_DOMAINMANAGER_VERSION`). Per-pre-release
 headers are no longer added here for every alpha/beta bump — entries accumulate under this section
 and get one real version header only at final release.
 
 ### Changed
+- **Supplier "Domain Manager" tab: rebalanced the two-column layout and gave every driver the same setup guidance.** The API access card no longer carries a long Cloudflare-only setup paragraph (which left the shorter Connection diagnostics card looking empty by comparison) — each of the 3 drivers now gets a one-line summary plus a "Setup instructions" link to `README.md`'s new per-driver sections (Cloudflare/IONOS/Dinahosting), which previously only existed for Cloudflare. The read-only "RDAP registrar of record" reference moved from the API access card into the Connection diagnostics card as two rows (registrar name, IANA number), filling the space it left behind instead of leaving it blank.
+- **Documented that Dinahosting requires the account's super-admin credentials** — no scoped API token exists, so a sub-user or domain-limited account can't authenticate at all. Called out in both `README.md#dinahosting` (user-facing) and `ARCHITECTURE.md` §3.8 (why `testConnection()` can only do one account-wide auth check).
 - **"Purge DNS records" is no longer one flat, plugin-wide right.** The single `domainmanager:purge_records` right (Phase 45) granted purge on every DNS record type at once; it's now folded into a PURGE bit on each of the four existing per-type write-back rights (`Domain Record: A/AAAA/CNAME/TXT`), matching native GLPI's own CREATE/UPDATE/DELETE/PURGE convention and letting an admin grant purge for, say, TXT without also granting it for A. `View` stays governed entirely by the native `DomainRecord`/`domainrecord` right, unchanged. Existing profiles that held the old flat right are migrated automatically on upgrade: the PURGE bit is granted on all four per-type rights for any profile that had it, then the old right is removed.
 
 ### Fixed
