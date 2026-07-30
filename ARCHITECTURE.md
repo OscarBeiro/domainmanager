@@ -1736,4 +1736,246 @@ hands-on testing of the new add panel surfaced three more issues, all fixed in t
 
 ---
 
-*Open items awaiting your approval: the four deviations in §0.1–§0.4 (Registrar as plugin field, `date_domaincreation` mapping, plugin-owned lock layer replacing native `Lockedfield`, documented `managed_domainrecordtypes` gate on web-triggered record writes), the CREATE TABLE exception in §0.6, and §11 (Phases 31–35 — Manual DNS record write-back to IONOS). The two items that were blocking Phase 32 — the rights-matrix rendering mechanism (§11.6/§11.16) and the §10 changelog-policy amendment for pre-release versions (§11.14) — are both resolved as of 2026-07-29; Phase 32 is unblocked.*
+## 12. Phase 41 — Cloudflare DNS record write support
+
+### 12.1 Scope and positioning
+
+**Extension, not replacement.** IONOS write-back (Phases 31–37, §11) is unchanged in every
+respect: unchanged code, unchanged rights model, unchanged UI. This phase adds Cloudflare as a
+second implementer of `DnsRecordWriterInterface`, which is the actual test of whether that
+interface's design generalizes — it was written for one driver.
+
+**In scope:** the same four record types (A, AAAA, CNAME, TXT), the same read-write direction
+(upstream authoritative, local reconciler as backstop), the same soft-delete + upstream-first
+delete ordering, the same shared per-type CREATE/UPDATE/DELETE rights (§11.6 — not
+driver-specific). Cloudflare's zone-scoped API tokens introduce one genuinely new question, a
+per-domain write-editability *state*, covered in §12.3.
+
+**Out of scope:** Dinahosting write support, bulk operations, domain registration/lifecycle
+writes — unchanged from §11's own scope statement.
+
+### 12.2 Verified Cloudflare API schemas, and what could not be verified
+
+Endpoints and payload shapes for DNS record mutations were checked against Cloudflare's own
+published API v4 developer documentation for `/zones/{zone_id}/dns_records`.
+
+**Verified:**
+
+| Operation | Endpoint | Verb | Response |
+|---|---|---|---|
+| Create | `/zones/{zone_id}/dns_records` | `POST` | `201` + full record (`id`, `created_on`, `modified_on`, `proxiable`, `proxied`, `meta`) |
+| Retrieve (single) | `/zones/{zone_id}/dns_records/{record_id}` | `GET` | `200` + full record, same shape as create |
+| Update | `/zones/{zone_id}/dns_records/{record_id}` | `PUT` | `200` + full record |
+| Delete | `/zones/{zone_id}/dns_records/{record_id}` | `DELETE` | `200` + `{result: {id: "..."}}` |
+
+**Explicitly unverified — not filled in by analogy with IONOS, and not to be treated as fact until
+a live test against a real zone confirms them (§12.8):**
+
+1. **Whether `PUT` is a full replace or preserves unspecified fields.** Cloudflare's docs describe
+   `PUT` as "overwrite," which reads as full-replace, but don't state whether omitting `name`/`type`
+   on an update is rejected, ignored, or accepted as "leave unchanged." IONOS's own `PUT` (§11.9,
+   as shipped — see §12.5 below) turned out to be a *narrow* schema (`content`/`ttl`/`prio`/
+   `disabled` only), not the full-replace §11.9 originally assumed. The same mistake is possible
+   here in the other direction. **Design stance for Phase 41: send the full known field set
+   (`name`, `type`, `content`, `ttl`, `proxied`) on every update rather than assume partial-preserve
+   — safer against an unverified full-replace than the reverse, and cheap to narrow later if a live
+   test shows fields are rejected.**
+2. **`proxied`'s default value on create/update**, and **whether the dashboard's own default
+   differs from the API's.** Neither is stated in the docs read. **Design stance: never omit
+   `proxied` from a write — always send it explicitly** (`false` unless the record read back on
+   sync already reported `true`), so no default, whatever it turns out to be, is ever silently
+   relied on.
+3. **The relationship between `proxiable` (can this record type be proxied) and `proxied` (is it
+   proxied now).** Unverified whether setting `proxied: true` on a non-`proxiable` record (e.g. an
+   MX-adjacent type, though MX isn't in the writable set) is rejected or silently coerced to
+   `false`. Not expected to matter for A/AAAA/CNAME/TXT specifically, but not confirmed.
+4. **TXT content quoting and CNAME trailing-dot conventions on Cloudflare's own wire format** — not
+   stated in the docs read, and cannot be settled without reading a real record back from a real
+   Cloudflare zone. Left unverified rather than assumed identical to IONOS's convention.
+
+### 12.3 Per-domain write-editability state (settled design — supersedes the draft's "compute live,
+never store" proposal)
+
+Cloudflare API tokens can be scoped to specific zones. A 403 while writing to one zone is evidence
+about *that zone*, not about the account-wide capability of the token — unlike IONOS, where an API
+key is account-wide and a write failure is a fact about the whole credential. This is the one place
+Cloudflare's design genuinely differs from IONOS's, and it is tracked as explicit per-domain state,
+not inferred live on every write:
+
+- Two new columns on `glpi_plugin_domainmanager_states`: **`dns_write_status`** (enum: `manual` /
+  `managed_readonly` / `managed_editable`) and **`dns_write_message`** (nullable string — the
+  specific reason when not editable). No new table.
+- **Learned from real writes, never probed.** No `dns_write` Check Connection capability, no
+  token-policy introspection anywhere. A domain starts `managed_readonly` the moment DNS sync
+  recognizes a write-capable driver as authoritative for it; it only becomes `managed_editable`
+  after a write actually succeeds there.
+- **`dns_write_status` is independent of `dns_status`** (the read-sync status) — a successful
+  *read* never changes it. Only a write attempt does.
+- **Reset triggers:** credentials edited on the supplier, the detected DNS provider changing, or
+  any successful write (which sets `managed_editable`). A successful read is explicitly *not* a
+  reset trigger. No user-facing retry control.
+- **Only a genuine permission failure flips it to `managed_readonly`.** For Cloudflare that's a
+  `403` on a zone-scoped write. Transient network/5xx errors, a `404` on delete (idempotent
+  success — the desired end state already holds), and Cloudflare's create-conflict code
+  (`81057` — record already exists) do **not** change stored state; each is surfaced as a one-off
+  warning only, exactly as §11.10 already does for IONOS's own transient-failure handling.
+- **Failure messages always name the missing permission** — e.g. "this API token lacks `DNS:Edit`
+  permission for this zone" — never a bare "403"/"forbidden," consistent with the driver-agnostic
+  `driverLabel()` messaging already shipped in `DnsRecordWriteback` (§12.5, item 4 below).
+- **UI terminology (settled, not to be re-opened):** *Manual* / *Managed — read-only* /
+  *Managed — editable*; badge text "Editable from GLPI" only in the `managed_editable` case.
+  "Full control" was considered and rejected as badge copy (reads as broader than what the plugin
+  actually verifies).
+
+This model is driver-agnostic by construction: any current or future driver can set
+`dns_write_status` the same way (`managed_readonly` until its first successful write), whether or
+not that driver's tokens are ever zone-scoped. IONOS simply never has a reason to leave
+`managed_readonly` once configured correctly, since its credential is account-wide — the state
+machine doesn't need to know that difference.
+
+### 12.4 Implementation: `CloudflareDriver` extending to `DnsRecordWriterInterface`
+
+**`CloudflareDriver` currently implements:** `RegistrarDriverInterface`, `DnsPipelineInterface`
+(read-only), `ConnectionTestableInterface`, `DomainDiscoveryInterface`.
+
+**Phase 41 adds:** `DnsRecordWriterInterface`.
+
+**Zone resolution:** the existing `findZoneId()` helper (already used by `fetchZoneRecords()`,
+scoped by the stored `account_id`) is reused unchanged for all three write methods below — no new
+zone-lookup logic.
+
+1. **`createRecord()`** — resolve zone; build the absolute name using the same
+   `"$name.$zoneName"` convention `DnsRecordWriterInterface::createRecord()`'s own docblock
+   specifies (the one §11.15 addendum found and fixed for IONOS's call site, not the interface
+   itself — see §12.5 item 3); `POST /zones/{zoneId}/dns_records` with
+   `{name, type, content: data, ttl, proxied}` (proxied always explicit, §12.2 item 2); extract
+   `id` from the response into `ZoneRecord.remoteId`, no follow-up read (§11.9's convention, kept).
+2. **`updateRecord()`** — resolve zone; `PUT /zones/{zoneId}/dns_records/{remoteId}` with the full
+   field set (§12.2 item 1's design stance); on `403`, throw `DriverException` with the
+   permission-specific message (§12.3); return the response body as a `ZoneRecord`.
+3. **`deleteRecord()`** — resolve zone; `DELETE /zones/{zoneId}/dns_records/{remoteId}`; a `404`
+   (already gone) is treated as success (idempotent), not an error; a `403` throws with the
+   permission-specific message.
+
+**Error mapping stays inside the driver.** Cloudflare returns errors as
+`{errors: [{code, message}]}`; `CloudflareDriver` classifies its own codes into
+permission/transient/idempotent buckets and only ever hands `DnsRecordWriteback` an
+already-safe-to-persist `DriverException` message — the shared layer never inspects a status code
+or error body itself (§12.6).
+
+### 12.5 Divergence report: IONOS as shipped vs. as designed in §11
+
+Checked directly against the current code (`DnsRecordWriteback.php`, `IonosDriver.php`,
+`Profile.php`, `DriverRegistry.php`) and against §11's text and its own addenda.
+
+**Confirmed matching, no divergence:**
+- Write list is exactly A, AAAA, CNAME, TXT (`DnsRecordWriterInterface::WRITABLE_TYPES`).
+- Interface shape is `createRecord`/`updateRecord`/`deleteRecord`/`fetchRecord`, unchanged since
+  §11.8.
+- One right per type carrying CREATE/UPDATE/DELETE bits, not three separate rights
+  (`Profile::getDnsRecordRights()`).
+- Delete is a local soft-delete with upstream-first ordering
+  (`DnsRecordWriteback::onPreDelete()`); no rollback anywhere (§11.14, unchanged).
+- `remote_id` is captured from the create response directly, no follow-up read
+  (`DnsRecordWriteback::onPostAdd()`).
+- Historical logging via `'[Domain Manager] ' . ...` prefixed lines, `id_search_option = 0`,
+  unchanged from §11's original convention.
+
+**Real divergences, both already resolved in the shipped code, neither silently:**
+
+1. **`IonosDriver`'s `PUT` update already sends the narrow `{content, ttl, prio, disabled}`
+   schema** (confirmed at `src/Driver/IonosDriver.php:488` and `:522`, `'disabled' => false` sent
+   unconditionally) — not the full-record-replace §11.9 originally described. The shipped code is
+   correct; §11.9's prose was the stale side of this disagreement and should be read as corrected
+   by the implementation, not the other way around.
+2. **The absolute-name construction bug** (§11's own "Live-testing addendum, found 2026-07-29":
+   `DnsRecordWriteback::onPreAdd()` originally built `"$zoneName.$name"`, backwards from the
+   interface's own documented `"$name.$zoneName"` convention) was a real bug in the *call site*,
+   not the interface or IonosDriver — already fixed, and directly relevant to Cloudflare's
+   `createRecord()` above, which must use the corrected convention from day one.
+3. **The hardcoded-`DRIVER_IONOS` coupling in `recheckNameservers()`** — §11.10 described "a live
+   NS re-check runs immediately before every push" but the shipped comparison was pinned to the
+   literal `DRIVER_IONOS` constant rather than the domain's actual configured driver, which would
+   have silently rejected every Cloudflare write once shipped. Fixed on this branch
+   (commit "Generalize DnsRecordWriteback beyond IONOS ahead of Cloudflare write support",
+   2026-07-30) to compare against the domain's own configured driver instead. The re-check
+   *mechanism* (`NsResolver`/`NsProviderRegistry`) is unchanged; only the hardcoded constant was
+   removed.
+4. **Every "at IONOS" user-facing failure message is now driver-name-generic**, via
+   `DriverRegistry::getDriverLabels()[$driver]` (`DnsRecordWriteback.php:159` and siblings) — in
+   the same commit as item 3. A Cloudflare write failure will read "at Cloudflare," not "at the
+   configured provider" or a stale "at IONOS."
+
+**Conclusion:** IONOS shipped matching §11's design in every rights/interface/lifecycle respect;
+the two real gaps found (items 3–4) were provider-coupling bugs in the *shared* orchestration
+layer, not in IONOS's own driver — which is exactly the failure mode Phase 41 needs to avoid
+repeating for Cloudflare, and the reason §12.3/§12.6 are written the way they are.
+
+### 12.6 Maintainability: keeping provider-specific concerns out of the shared layers
+
+**The `proxied`/`is_proxied` field is not a new coupling risk.** `ImportedRecord.is_proxied`
+already exists as a driver-agnostic, nullable column — a driver sets it if the concept applies to
+it, leaves it null otherwise. No Cloudflare-specific schema needed here.
+
+**Per-domain write-editability state (§12.3) is deliberately generic, not Cloudflare-specific.**
+`dns_write_status`/`dns_write_message` describe *any* driver's write capability for *any* domain;
+Cloudflare is simply the first driver where the `managed_readonly` state can actually persist
+past initial configuration (because of zone-scoped tokens), rather than resolving to
+`managed_editable` on the very first successful write. Nothing about the columns themselves
+mentions Cloudflare.
+
+**The real risk — repeating the exact mistake found in §12.5 items 3–4 — is error-message and
+error-code handling leaking into the shared layer.** Concretely: a shared table mapping
+"HTTP 403 → this exact message," maintained inside `DnsRecordWriteback` or `DomainState` and keyed
+by status code alone, would immediately be wrong for the next provider whose 403 means something
+narrower or broader than Cloudflare's zone-scoped one. **Prevention, already the pattern in
+place:** error classification and message construction happen entirely inside each driver's own
+write methods (§12.4); the shared layer (`DnsRecordWriteback`) only ever receives an
+already-formatted, already-safe `DriverException` message and passes it through unchanged
+(exactly as `$e->getMessage()` is used today). No shared code needs to know what a 403 means to
+any particular provider.
+
+### 12.7 Failure modes and recovery
+
+Unchanged pattern from §11.14, extended with Cloudflare's specific codes:
+
+- **Transient** (network, 5xx, timeout): user gets a warning; operation aborts locally; no stored
+  state changes; retry is safe.
+- **Fatal/permission** (`403`): user sees the permission-specific message (§12.3); `dns_write_status`
+  flips to `managed_readonly` with `dns_write_message` set to that reason.
+- **Fatal/validation** (malformed record, e.g. invalid CNAME target): user sees the message; no
+  state change; user edits the form and retries.
+- **Idempotent-already-gone** (`404` on delete, `81057` create-conflict): treated as success, not
+  an error, and not a permission signal.
+- **Rollback:** none, ever (§11.14 stands). The reconciler remains the sole convergence mechanism.
+
+### 12.8 Verifications required before this phase's code is written
+
+Against a live Cloudflare account and zone, before implementation (not before this document is
+approved — the document's job is to state the design and mark what's still open):
+
+1. Whether `PUT` accepts/requires/ignores `name`/`type` on update — one call against a real zone.
+2. The exact error shape and code for a zone-scoped token lacking `DNS:Edit` on a zone — drives
+   the exact permission-message text in §12.3/§12.4.
+3. `proxied`'s actual default on create/update, and whether it matches the dashboard's own default.
+4. Whether Cloudflare returns TXT content quoted or unquoted, and CNAME with or without a trailing
+   dot, on read.
+5. A live round-trip of all four writable types (create → read back → compare against what a
+   subsequent sync-read would produce), to catch any wire-format surprise not covered above.
+
+None of these block approving this document — they're implementation-time verifications, not
+design questions. If any surfaces a design-relevant surprise (e.g. `PUT` truly rejects an omitted
+`name`), that becomes a documented, non-silent correction here, the same way §12.5 items 1–2
+corrected §11.9's original IONOS assumptions.
+
+### 12.9 No rights changes, no new UI surface
+
+The four per-type DNS write-back rights (§11.6) apply to every driver, Cloudflare included — no
+Cloudflare-specific right, no per-provider right. No Cloudflare-specific UI beyond what the
+editability-state badge (§12.3) already renders generically. The one user-visible change is that
+failure messages and the "Editable from GLPI" badge now correctly name whichever driver is
+actually configured, which is exactly what the 2026-07-30 generalization (§12.5 item 4) was for.
+
+---
+
+*Open items awaiting your approval: the four deviations in §0.1–§0.4 (Registrar as plugin field, `date_domaincreation` mapping, plugin-owned lock layer replacing native `Lockedfield`, documented `managed_domainrecordtypes` gate on web-triggered record writes), the CREATE TABLE exception in §0.6, and §11 (Phases 31–35 — Manual DNS record write-back to IONOS). The two items that were blocking Phase 32 — the rights-matrix rendering mechanism (§11.6/§11.16) and the §10 changelog-policy amendment for pre-release versions (§11.14) — are both resolved as of 2026-07-29; Phase 32 is unblocked. **§12 (Phase 41 — Cloudflare write support) is a design-only addition pending your approval; §12.8 lists five implementation-time API verifications that are not blocking approval of the design itself.***
