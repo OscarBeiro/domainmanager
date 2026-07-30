@@ -34,6 +34,8 @@ namespace GlpiPlugin\Domainmanager\Driver;
 use DateTimeImmutable;
 use GlpiPlugin\Domainmanager\Contract\ConnectionTestableInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsPipelineInterface;
+use GlpiPlugin\Domainmanager\Contract\DnsRecordCommentSyncInterface;
+use GlpiPlugin\Domainmanager\Contract\DnsRecordProxyToggleInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsRecordWriterInterface;
 use GlpiPlugin\Domainmanager\Contract\DomainDiscoveryInterface;
 use GlpiPlugin\Domainmanager\Contract\RegistrarDriverInterface;
@@ -82,7 +84,7 @@ use Toolbox;
  *   segment for the Registrar API, instead of the previous approach of
  *   reading `account.id` back out of the zone lookup's own response.
  */
-class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface, ConnectionTestableInterface, DomainDiscoveryInterface, DnsRecordWriterInterface
+class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface, ConnectionTestableInterface, DomainDiscoveryInterface, DnsRecordWriterInterface, DnsRecordProxyToggleInterface, DnsRecordCommentSyncInterface
 {
     private const BASE_URI = 'https://api.cloudflare.com/client/v4/';
 
@@ -440,6 +442,7 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
                 // this plugin. `proxied` (the actual orange/grey cloud
                 // state) is only meaningful when `proxiable` is true.
                 $isProxied = ($row['proxiable'] ?? false) ? (bool) ($row['proxied'] ?? false) : null;
+                $comment   = isset($row['comment']) ? (string) $row['comment'] : null;
 
                 try {
                     $records[] = new ZoneRecord(
@@ -449,6 +452,7 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
                         (int) ($row['ttl'] ?? 0),
                         (string) ($row['id'] ?? ''),
                         $isProxied,
+                        $comment,
                     );
                 } catch (InvalidArgumentException $e) {
                     PluginLogger::activity("Cloudflare record skipped for $domain: " . $e->getMessage());
@@ -664,6 +668,7 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
     private static function rowToZoneRecord(string $type, array $row): ZoneRecord
     {
         $isProxied = ($row['proxiable'] ?? false) ? (bool) ($row['proxied'] ?? false) : null;
+        $comment   = isset($row['comment']) ? (string) $row['comment'] : null;
 
         return new ZoneRecord(
             $type,
@@ -672,7 +677,61 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
             (int) ($row['ttl'] ?? 0),
             (string) ($row['id'] ?? ''),
             $isProxied,
+            $comment,
         );
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * `PATCH /zones/{zoneId}/dns_records/{remoteId}` with just `{proxied}` —
+     * unlike updateRecord()'s full-replace PUT, a partial PATCH here never
+     * touches name/content/ttl, so a proxy toggle can never accidentally
+     * carry a stale copy of the other fields.
+     */
+    public function setProxied(string $domain, string $remoteId, bool $proxied): ZoneRecord
+    {
+        $domain    = self::normalizeDomain($domain);
+        $accountId = $this->requireAccountId();
+        $zoneId    = $this->findZone($domain, $accountId);
+
+        $result = $this->writeRequest('PATCH', 'zones/' . rawurlencode($zoneId) . '/dns_records/' . rawurlencode($remoteId), [
+            'proxied' => $proxied,
+        ]);
+
+        if ($result['status'] === 200) {
+            $row = $result['data']['result'] ?? null;
+            if (!is_array($row)) {
+                throw new DriverException(__('Cloudflare did not return the updated record', 'domainmanager'));
+            }
+
+            return self::rowToZoneRecord(strtoupper((string) ($row['type'] ?? '')), $row);
+        }
+
+        throw self::toException($result, 'update');
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * Same partial-PATCH shape as setProxied() above, just the `comment`
+     * field instead of `proxied` — never touches name/content/ttl/proxied.
+     */
+    public function pushComment(string $domain, string $remoteId, string $comment): void
+    {
+        $domain    = self::normalizeDomain($domain);
+        $accountId = $this->requireAccountId();
+        $zoneId    = $this->findZone($domain, $accountId);
+
+        $result = $this->writeRequest('PATCH', 'zones/' . rawurlencode($zoneId) . '/dns_records/' . rawurlencode($remoteId), [
+            'comment' => $comment,
+        ]);
+
+        if ($result['status'] === 200) {
+            return;
+        }
+
+        throw self::toException($result, 'update');
     }
 
     /**

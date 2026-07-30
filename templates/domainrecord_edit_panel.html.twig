@@ -60,7 +60,31 @@
             </div>
         </div>
     </div>
-{% elseif locked_fields is not empty %}
+{% endif %}
+{% if can_toggle_proxy %}
+    <div class="form-check form-switch mb-3" id="domainmanager-proxy-toggle-container" style="display:none">
+        {# Unchecked checkboxes submit nothing at all — this hidden "0"
+         # fallback is what actually lets a user turn proxying *off*; the
+         # checkbox below shares its name and, when checked, its "1" simply
+         # arrives after the hidden field's "0" in $_POST/$item->input,
+         # which — like any repeated form field — keeps only the last value. #}
+        <input type="hidden" name="_domainmanager_proxied" value="0">
+        <input
+            class="form-check-input"
+            type="checkbox"
+            role="switch"
+            id="domainmanager-proxy-toggle"
+            name="_domainmanager_proxied"
+            value="1"
+            {{ current_proxied ? 'checked' : '' }}
+        >
+        <label class="form-check-label" for="domainmanager-proxy-toggle">
+            <i class="ti ti-cloud"></i>
+            {{ __('Proxied through Cloudflare (orange cloud)', 'domainmanager') }}
+        </label>
+    </div>
+{% endif %}
+{% if not can_update and locked_fields is not empty %}
     <div class="alert alert-secondary d-flex align-items-center mb-3" role="alert">
         <i class="ti ti-lock me-2"></i>
         <div>{{ __('This record is imported by Domain Manager synchronization and cannot be edited here.', 'domainmanager') }}</div>
@@ -68,9 +92,9 @@
 {% endif %}
 <script>
     (function () {
+        var form = document.getElementById('main-form') || document.querySelector('form[name="asset_form"]');
         var lockedFields = {{ locked_fields|json_encode|raw }}.concat({{ structural_locked_fields|json_encode|raw }});
         if (lockedFields.length) {
-            var form = document.getElementById('main-form') || document.querySelector('form[name="asset_form"]');
             if (form) {
                 lockedFields.forEach(function (field) {
                     form.querySelectorAll('[name="' + field + '"]').forEach(function (input) {
@@ -86,6 +110,25 @@
                 });
             }
         }
+
+        {% if can_toggle_proxy %}
+        // `is_proxied` lives on ImportedRecord, not DomainRecord (§9 Phase
+        // 49) — there is no real form field for it to occupy, so the
+        // checkbox rendered above (hidden, outside the <form>) is moved
+        // into the native form here, right after the TTL input, and only
+        // then revealed — never left detached-but-visible even briefly.
+        var proxyContainer = document.getElementById('domainmanager-proxy-toggle-container');
+        if (proxyContainer && form) {
+            var ttlInput = form.querySelector('[name="ttl"]');
+            var anchor = ttlInput ? ttlInput.closest('.form-field, .col, .row') || ttlInput : null;
+            if (anchor && anchor.parentNode) {
+                anchor.parentNode.insertBefore(proxyContainer, anchor.nextSibling);
+            } else {
+                form.appendChild(proxyContainer);
+            }
+            proxyContainer.style.display = '';
+        }
+        {% endif %}
 
         {% if can_delete %}
         var deleteButtons = document.querySelectorAll(

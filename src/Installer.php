@@ -72,6 +72,7 @@ class Installer
         self::addNameAsciiColumn($migration);
         self::addRdapColumns($migration);
         self::addDnsWriteStatusColumns($migration);
+        self::seedRecordProxyDisplayPreference();
         self::clearDuplicateNameAscii();
         self::pruneStaleSearchOptionCriteria();
         self::seedDomainType();
@@ -110,6 +111,19 @@ class Installer
         $DB->delete(
             'glpi_displaypreferences',
             ['itemtype' => ['LIKE', 'GlpiPlugin\\\\Domainmanager\\\\%']],
+        );
+
+        // seedRecordProxyDisplayPreference() below is the one exception:
+        // it seeds a global-default (users_id=0) column on core DomainRecord
+        // itself, not a plugin itemtype, so the LIKE-based delete above
+        // never catches it.
+        $DB->delete(
+            'glpi_displaypreferences',
+            [
+                'itemtype' => 'DomainRecord',
+                'num'      => PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_PROXY,
+                'users_id' => 0,
+            ],
         );
 
         $migration->executeMigration();
@@ -393,6 +407,52 @@ class Installer
 
         $migration->addField($table, 'is_proxied', 'tinyint NULL DEFAULT NULL');
         $migration->addKey($table, 'is_proxied');
+    }
+
+    /**
+     * Makes the "Proxy status" search option (PLUGIN_DOMAINMANAGER_SO_
+     * DOMAINRECORD_PROXY, registered in setup.php against core DomainRecord)
+     * show up as a real column on the native Records list out of the box,
+     * not just something a user can dig for under "Add criteria" (§9 Phase
+     * 49). A `users_id => 0` row is GLPI's own "general default" convention
+     * (DisplayPreference::GENERAL) — applies to every user who hasn't
+     * customized their own DomainRecord list columns, and never overrides
+     * a user who already has. Idempotent: checked for existence first since
+     * there is no unique key to rely on and this runs on every
+     * install/upgrade.
+     *
+     * @return void
+     */
+    private static function seedRecordProxyDisplayPreference(): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $exists = $DB->request([
+            'FROM'  => 'glpi_displaypreferences',
+            'WHERE' => [
+                'itemtype' => 'DomainRecord',
+                'num'      => PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_PROXY,
+                'users_id' => 0,
+            ],
+        ])->count() > 0;
+
+        if ($exists) {
+            return;
+        }
+
+        $rank = (int) ($DB->request([
+            'SELECT' => new \QueryExpression('MAX(' . $DB->quoteName('rank') . ') AS ' . $DB->quoteName('max_rank')),
+            'FROM'   => 'glpi_displaypreferences',
+            'WHERE'  => ['itemtype' => 'DomainRecord', 'users_id' => 0],
+        ])->current()['max_rank'] ?? 0);
+
+        $DB->insert('glpi_displaypreferences', [
+            'itemtype' => 'DomainRecord',
+            'num'      => PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_PROXY,
+            'rank'     => $rank + 1,
+            'users_id' => 0,
+        ]);
     }
 
     /**

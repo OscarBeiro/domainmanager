@@ -74,7 +74,7 @@ class Cron
                 ];
             case 'RdapEnrichment':
                 return [
-                    'description' => __('Fill registrar-reported gaps (dates, lock/DNSSEC status, pending flags) from RDAP', 'domainmanager'),
+                    'description' => __('Fetches missing RDAP data for 1 domain per run (max 1 lookup/domain/day to respect rate limits).', 'domainmanager'),
                 ];
         }
 

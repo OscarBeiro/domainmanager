@@ -256,9 +256,24 @@ class DomainForm
         // message shown at detection time.
         $conflict = RecordConflict::getForDomainRecord($records_id);
 
+        // §9 Phase 49: the proxy-status checkbox is only worth injecting
+        // when this specific record could ever be proxied (A/AAAA/CNAME —
+        // TXT/MX/NS never are) *and* the user can actually push a change
+        // (same $can_update gate as name/data/ttl above).
+        $can_toggle_proxy = $can_update
+            && $type !== null
+            && DnsRecordWriteback::isProxiableType($type)
+            && DnsRecordWriteback::supportsProxyToggle($state);
+        $imported = ImportedRecord::getForDomainRecord($records_id);
+        $current_proxied = $imported !== null && $imported->fields['is_proxied'] !== null
+            ? (bool) $imported->fields['is_proxied']
+            : null;
+
         TemplateRenderer::getInstance()->display('@domainmanager/domainrecord_edit_panel.html.twig', [
-            'can_update'    => $can_update,
-            'can_delete'    => $can_delete,
+            'can_update'       => $can_update,
+            'can_delete'       => $can_delete,
+            'can_toggle_proxy' => $can_toggle_proxy,
+            'current_proxied'  => $current_proxied,
             'supplier_name' => $dns_editable ? DnsRecordWriteback::writableSupplierName($domains_id) : null,
             // Cosmetic-only (server-side is authoritative, see docblock
             // above): every editable field disabled unless the user can

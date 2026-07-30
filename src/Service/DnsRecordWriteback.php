@@ -34,6 +34,8 @@ namespace GlpiPlugin\Domainmanager\Service;
 use Domain;
 use DomainRecord;
 use DomainRecordType;
+use GlpiPlugin\Domainmanager\Contract\DnsRecordCommentSyncInterface;
+use GlpiPlugin\Domainmanager\Contract\DnsRecordProxyToggleInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsRecordWriterInterface;
 use GlpiPlugin\Domainmanager\Dto\ZoneRecord;
 use GlpiPlugin\Domainmanager\DomainState;
@@ -70,6 +72,14 @@ class DnsRecordWriteback
      * design.
      */
     private const WRITABLE_TYPES = DnsRecordWriterInterface::WRITABLE_TYPES;
+
+    /**
+     * Subset of WRITABLE_TYPES a proxy toggle can ever apply to (Cloudflare
+     * itself reports this per-record via `proxiable`, but TXT is never
+     * proxiable there — checked as a cheap early filter before even looking
+     * at ImportedRecord/driver).
+     */
+    private const PROXIABLE_TYPES = ['A', 'AAAA', 'CNAME'];
 
     /**
      * ZoneRecord created by pre_item_add's driver call, stashed for the
@@ -248,6 +258,14 @@ class DnsRecordWriteback
             return false;
         }
 
+        // Proxy status and comment are pushed independently of data/ttl
+        // (§9 Phase 49): neither is a native DomainRecord field write-back
+        // otherwise knows how to handle, and either can change without the
+        // other, so both are best-effort side pushes here rather than
+        // folded into the data/ttl diff-and-conflict machinery below.
+        self::pushProxiedIfRequested($item, $type, $state);
+        self::pushCommentIfChanged($item, $state);
+
         // Only a data/ttl change is actually pushed; a no-op update (e.g.
         // only unrelated fields submitted) shouldn't hit the provider.
         if (
@@ -376,6 +394,126 @@ class DnsRecordWriteback
             PluginLogger::error("Failed to push updated DNS record #{$item->getID()} for domain #$domains_id", $e::class . ': ' . $e->getMessage());
             self::abort($item, sprintf(__('Could not update this record at %s: %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state)), $message));
             return true;
+        }
+    }
+
+    /**
+     * `_domainmanager_proxied` (§9 Phase 49) is a synthetic field, injected
+     * as a plain checkbox by `domainrecord_edit_panel.html.twig`'s own JS —
+     * never a real DomainRecord column, so there is nothing for
+     * LockEnforcer/native save to strip or persist; this is the only place
+     * it's ever read. Best-effort: a failure here warns but never aborts
+     * the underlying record save (data/ttl may be unrelated to this toggle).
+     *
+     * @param  DomainRecord $item
+     * @param  string       $type
+     * @param  DomainState  $state
+     * @return void
+     */
+    private static function pushProxiedIfRequested(DomainRecord $item, string $type, DomainState $state): void
+    {
+        if (!is_array($item->input) || !array_key_exists('_domainmanager_proxied', $item->input)) {
+            return;
+        }
+
+        if (!in_array($type, self::PROXIABLE_TYPES, true)) {
+            return;
+        }
+
+        $imported = ImportedRecord::getForDomainRecord((int) $item->getID());
+        if ($imported === null || $imported->fields['remote_id'] === '') {
+            return;
+        }
+
+        $desired = (bool) $item->input['_domainmanager_proxied'];
+        $current = $imported->fields['is_proxied'] === null ? null : (bool) $imported->fields['is_proxied'];
+        if ($current === $desired) {
+            return;
+        }
+
+        $domain = new Domain();
+        if (!$domain->getFromDB((int) $item->fields['domains_id'])) {
+            return;
+        }
+
+        try {
+            $driver = self::getWritableDriver($state);
+            if (!$driver instanceof DnsRecordProxyToggleInterface) {
+                return;
+            }
+
+            $updated = $driver->setProxied($domain->fields['name'], $imported->fields['remote_id'], $desired);
+            $imported->update([
+                'id'         => $imported->getID(),
+                'is_proxied' => $updated->isProxied !== null ? (int) $updated->isProxied : null,
+            ]);
+
+            Log::history((int) $item->fields['domains_id'], Domain::class, [0, '', '[Domain Manager] ' . sprintf(
+                __('Proxy status changed from GLPI: %s %s → %s', 'domainmanager'),
+                $type,
+                $item->fields['name'] ?: '@',
+                $desired ? __('Proxied', 'domainmanager') : __('DNS only', 'domainmanager'),
+            )]);
+        } catch (Throwable $e) {
+            $message = $e instanceof DriverException ? $e->getMessage() : __('an error occurred', 'domainmanager');
+            PluginLogger::error("Failed to push proxy status for DNS record #{$item->getID()}", $e::class . ': ' . $e->getMessage());
+            Session::addMessageAfterRedirect(
+                '[Domain Manager] ' . sprintf(__('Could not update proxy status at %s: %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state)), $message),
+                false,
+                WARNING,
+            );
+        }
+    }
+
+    /**
+     * GLPI's own `comment` field is always the SSOT (§9 Phase 49, per user
+     * request): this only ever pushes a local edit up to the provider, never
+     * pulls the provider's value down over a local change — the download
+     * direction (seeding an empty local comment from the provider) lives
+     * entirely in RecordReconciler, driven by ZoneRecord::$comment. Scoped to
+     * WRITABLE_TYPES, same as every other write-back path — best-effort,
+     * same non-blocking convention as pushProxiedIfRequested() above.
+     *
+     * @param  DomainRecord $item
+     * @param  DomainState  $state
+     * @return void
+     */
+    private static function pushCommentIfChanged(DomainRecord $item, DomainState $state): void
+    {
+        if (!is_array($item->input) || !array_key_exists('comment', $item->input)) {
+            return;
+        }
+
+        $imported = ImportedRecord::getForDomainRecord((int) $item->getID());
+        if ($imported === null || $imported->fields['remote_id'] === '') {
+            return;
+        }
+
+        $comment = trim((string) $item->input['comment']);
+        if ($comment === trim((string) ($item->fields['comment'] ?? ''))) {
+            return;
+        }
+
+        $domain = new Domain();
+        if (!$domain->getFromDB((int) $item->fields['domains_id'])) {
+            return;
+        }
+
+        try {
+            $driver = self::getWritableDriver($state);
+            if (!$driver instanceof DnsRecordCommentSyncInterface) {
+                return;
+            }
+
+            $driver->pushComment($domain->fields['name'], $imported->fields['remote_id'], $comment);
+        } catch (Throwable $e) {
+            $message = $e instanceof DriverException ? $e->getMessage() : __('an error occurred', 'domainmanager');
+            PluginLogger::error("Failed to push DNS record comment #{$item->getID()}", $e::class . ': ' . $e->getMessage());
+            Session::addMessageAfterRedirect(
+                '[Domain Manager] ' . sprintf(__('Could not update the comment at %s: %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state)), $message),
+                false,
+                WARNING,
+            );
         }
     }
 
@@ -615,6 +753,38 @@ class DnsRecordWriteback
     public static function hasTypeRight(string $type, int $bit): bool
     {
         return self::hasRight($type, $bit);
+    }
+
+    /**
+     * Whether this domain's configured DNS driver can toggle a record's
+     * proxy status at all (§9 Phase 49) — used by `DomainForm` to decide
+     * whether the edit-panel checkbox is worth injecting; independent of
+     * any specific record's type (callers still check PROXIABLE_TYPES
+     * themselves via `isProxiableType()`).
+     *
+     * @param  DomainState $state
+     * @return bool
+     */
+    public static function supportsProxyToggle(DomainState $state): bool
+    {
+        if (!self::isDnsEditable($state)) {
+            return false;
+        }
+
+        try {
+            return self::getWritableDriver($state) instanceof DnsRecordProxyToggleInterface;
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    /**
+     * @param  string $type
+     * @return bool
+     */
+    public static function isProxiableType(string $type): bool
+    {
+        return in_array($type, self::PROXIABLE_TYPES, true);
     }
 
     /**

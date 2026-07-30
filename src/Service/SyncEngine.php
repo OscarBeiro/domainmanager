@@ -32,6 +32,7 @@
 namespace GlpiPlugin\Domainmanager\Service;
 
 use Domain;
+use GlpiPlugin\Domainmanager\Contract\DnsRecordCommentSyncInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsRecordWriterInterface;
 use GlpiPlugin\Domainmanager\Dto\LifecycleStatus;
 use GlpiPlugin\Domainmanager\DomainState;
@@ -436,12 +437,14 @@ class SyncEngine
                 return;
             }
 
-            $records = DriverFactory::forDns($config)->fetchZoneRecords((string) $domain->fields['name']);
+            $driver  = DriverFactory::forDns($config);
+            $records = $driver->fetchZoneRecords((string) $domain->fields['name']);
             $this->logger->activity(
                 (int) $domain->getID(),
                 'DNS fetch succeeded, returned ' . count($records) . ' record(s) from the provider',
             );
-            $stats = $this->reconciler->reconcile($domain, $records);
+            $commentDriver = $driver instanceof DnsRecordCommentSyncInterface ? $driver : null;
+            $stats = $this->reconciler->reconcile($domain, $records, $commentDriver);
 
             $result['dns_status']  = DomainState::STATUS_OK;
             $result['dns_message'] = sprintf(

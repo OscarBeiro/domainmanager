@@ -34,11 +34,13 @@ namespace GlpiPlugin\Domainmanager\Service;
 use Domain;
 use DomainRecord;
 use DomainRecordType;
+use GlpiPlugin\Domainmanager\Contract\DnsRecordCommentSyncInterface;
 use GlpiPlugin\Domainmanager\Dto\ZoneRecord;
 use GlpiPlugin\Domainmanager\ImportedRecord;
 use GlpiPlugin\Domainmanager\ImportLock;
 use GlpiPlugin\Domainmanager\LockEnforcer;
 use Session;
+use Throwable;
 
 /**
  * Idempotent reconciliation of provider zone records into glpi_domainrecords.
@@ -88,29 +90,35 @@ class RecordReconciler
     /**
      * Reconcile upstream records into the domain's native records
      *
-     * @param  Domain       $domain
-     * @param  ZoneRecord[] $records upstream snapshot
+     * @param  Domain                              $domain
+     * @param  ZoneRecord[]                        $records upstream snapshot
+     * @param  DnsRecordCommentSyncInterface|null  $commentDriver same driver
+     *         `$records` was fetched from, only if it can push a comment
+     *         back upstream (§9 Phase 49) — null for every driver without
+     *         that capability, in which case comment sync is download-only
+     *         (seeding a newly-created record from the provider's comment).
      * @return array{added: int, updated: int, restored: int, trashed: int, unchanged: int}
      */
-    public function reconcile(Domain $domain, array $records): array
+    public function reconcile(Domain $domain, array $records, ?DnsRecordCommentSyncInterface $commentDriver = null): array
     {
         // Reconciliation is by definition a plugin-owned write: make sure
         // LockEnforcer never strips it, even when called outside SyncEngine
         $previous = LockEnforcer::$sync_in_progress;
         LockEnforcer::$sync_in_progress = true;
         try {
-            return $this->doReconcile($domain, $records);
+            return $this->doReconcile($domain, $records, $commentDriver);
         } finally {
             LockEnforcer::$sync_in_progress = $previous;
         }
     }
 
     /**
-     * @param  Domain       $domain
-     * @param  ZoneRecord[] $records
+     * @param  Domain                              $domain
+     * @param  ZoneRecord[]                        $records
+     * @param  DnsRecordCommentSyncInterface|null  $commentDriver
      * @return array{added: int, updated: int, restored: int, trashed: int, unchanged: int}
      */
-    private function doReconcile(Domain $domain, array $records): array
+    private function doReconcile(Domain $domain, array $records, ?DnsRecordCommentSyncInterface $commentDriver): array
     {
         /** @var \DBmysql $DB */
         global $DB;
@@ -237,6 +245,8 @@ class RecordReconciler
                 'last_seen'   => $now,
                 'is_proxied'  => self::toNullableInt($record->isProxied),
             ]);
+
+            $this->reconcileComment($domain, $native, $record, $commentDriver);
         }
 
         // Ownership rows not seen upstream anymore: move to the native
@@ -266,6 +276,55 @@ class RecordReconciler
     }
 
     /**
+     * Two-way comment sync (§9 Phase 49, per user request — GLPI's own
+     * `comment` is always the SSOT): downloads the provider's comment only
+     * to seed a local field that's currently empty; any other mismatch
+     * (local has a value the provider disagrees with, including the
+     * provider having gone empty while GLPI still has one) is resolved by
+     * pushing the local value back up. A record type the configured driver
+     * never returns a comment for (`$record->comment === null`, e.g. every
+     * non-Cloudflare driver) is left alone entirely — there's nothing to
+     * reconcile against. Best-effort: a push failure is logged, never
+     * allowed to fail the whole sync over one record's comment.
+     *
+     * @param  Domain                             $domain
+     * @param  DomainRecord                       $native
+     * @param  ZoneRecord                         $record
+     * @param  DnsRecordCommentSyncInterface|null $commentDriver
+     * @return void
+     */
+    private function reconcileComment(Domain $domain, DomainRecord $native, ZoneRecord $record, ?DnsRecordCommentSyncInterface $commentDriver): void
+    {
+        if ($record->comment === null) {
+            return;
+        }
+
+        $local  = trim((string) ($native->fields['comment'] ?? ''));
+        $remote = trim($record->comment);
+
+        if ($local === $remote) {
+            return;
+        }
+
+        if ($local === '' && $remote !== '') {
+            $native->update(['id' => $native->getID(), 'comment' => $remote]);
+            return;
+        }
+
+        if ($commentDriver === null || $record->remoteId === '') {
+            return;
+        }
+
+        try {
+            $commentDriver->pushComment((string) $domain->fields['name'], $record->remoteId, $local);
+        } catch (Throwable $e) {
+            $this->logger->detail(
+                'Failed to push DNS record comment upstream for domain #' . $domain->getID() . ': ' . $e->getMessage(),
+            );
+        }
+    }
+
+    /**
      * @param  Domain             $domain
      * @param  ZoneRecord         $record
      * @param  array<string, int> $type_ids
@@ -283,6 +342,7 @@ class RecordReconciler
             'domainrecordtypes_id' => $type_ids[$record->type],
             'entities_id'          => $domain->fields['entities_id'],
             'is_recursive'         => $domain->fields['is_recursive'],
+            'comment'              => $record->comment ?? '',
         ]);
 
         if (!$records_id) {
