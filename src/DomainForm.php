@@ -264,7 +264,6 @@ class DomainForm
         // TXT/MX/NS never are) *and* the user can actually push a change
         // (same $can_update gate as name/data/ttl above).
         $can_toggle_proxy = $can_update
-            && $type !== null
             && DnsRecordWriteback::isProxiableType($type)
             && DnsRecordWriteback::supportsProxyToggle($state);
         $imported = ImportedRecord::getForDomainRecord($records_id);

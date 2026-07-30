@@ -505,7 +505,7 @@ class DnsRecordWriteback
                 __('Proxy status changed from GLPI: %s %s → %s', 'domainmanager'),
                 $type,
                 $item->fields['name'] ?: '@',
-                $desired ? __('Proxied', 'domainmanager') : __('DNS only', 'domainmanager'),
+                $desired ? __('Proxied', 'domainmanager') : __('DNS only', 'domainmanager')
             )]);
         } catch (Throwable $e) {
             $message = $e instanceof DriverException ? $e->getMessage() : __('an error occurred', 'domainmanager');
