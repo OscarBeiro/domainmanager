@@ -501,12 +501,13 @@ class DnsRecordWriteback
                 'is_proxied' => $updated->isProxied !== null ? (int) $updated->isProxied : null,
             ]);
 
-            Log::history((int) $item->fields['domains_id'], Domain::class, [0, '', '[Domain Manager] ' . sprintf(
+            $message = '[Domain Manager] ' . sprintf(
                 __('Proxy status changed from GLPI: %s %s → %s', 'domainmanager'),
                 $type,
                 $item->fields['name'] ?: '@',
-                $desired ? __('Proxied', 'domainmanager') : __('DNS only', 'domainmanager')
-            )]);
+                $desired ? __('Proxied', 'domainmanager') : __('DNS only', 'domainmanager'),
+            );
+            Log::history((int) $item->fields['domains_id'], Domain::class, [0, '', $message]);
         } catch (Throwable $e) {
             $message = $e instanceof DriverException ? $e->getMessage() : __('an error occurred', 'domainmanager');
             PluginLogger::error("Failed to push proxy status for DNS record #{$item->getID()}", $e::class . ': ' . $e->getMessage());
