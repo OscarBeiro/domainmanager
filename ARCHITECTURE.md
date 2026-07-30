@@ -1997,6 +1997,136 @@ editability-state badge (§12.3) already renders generically. The one user-visib
 failure messages and the "Editable from GLPI" badge now correctly name whichever driver is
 actually configured, which is exactly what the 2026-07-30 generalization (§12.5 item 4) was for.
 
+## §13 Phase 44 — Update-conflict reconciliation (design only)
+
+### 13.1 Trigger
+
+Not a bug found live — a user reviewing a batch of Cloudflare `DNS:Edit`-permission-denied create
+errors (all correctly rejected 403s, no data lost) asked what happens when a write *would*
+succeed but the live value has drifted from what GLPI last knew. Answer: `onPreUpdate()` (§11.10)
+already refuses that edit outright (`"The record at %s has changed since the last sync; refusing
+to overwrite with stale data. Re-sync and try again."`) rather than silently overwriting — safe,
+but a dead end for the user, who has to go re-sync and redo the edit with no visibility into what
+actually changed. This phase replaces the hard refusal with a reconciliation choice.
+
+### 13.2 Scope (confirmed)
+
+- **Update only.** Create and delete are explicitly out of scope for this phase:
+  - Create's only live-conflict case is Cloudflare's `81057`/"record already exists" code, which
+    is already treated as an idempotent adopt-by-lookup, not a data-loss risk — revisit
+    separately if adoption-without-visibility turns out to be a problem in practice.
+  - Delete proceeds today without a pre-delete live diff. Left as-is for this phase; the failure
+    mode (deleting a record whose live value differs from GLPI's copy) is lower-stakes than
+    silently overwriting a value, and is exactly what created the delete-guard ribbon warning in
+    Phase 37 already.
+- **Detection stays reactive** (at edit-time only, via the existing live re-fetch-and-diff already
+  in `onPreUpdate()`). No new proactive drift badge from `SyncEngine` in this phase — that would
+  touch the sync pipeline itself, a materially bigger change than the writeback path this phase
+  touches.
+- **Writable types only** (A/AAAA/CNAME/TXT, §11.4's `WRITABLE_TYPES`) — unchanged. SOA and every
+  other read-only type are never edited from GLPI; a wrong value there is corrected by the next
+  ordinary sync, no reconciliation needed, confirmed unaffected by this phase.
+
+### 13.3 Flow
+
+GLPI's `pre_item_update` hook is a synchronous request/response call — there is no way to pop an
+interactive modal mid-submit and get a decision back within the same request. This phase uses a
+two-step confirm flow instead:
+
+1. **First submit** (the user edits the record's data/ttl in the normal `DomainRecord` form and
+   saves). `onPreUpdate()` runs its existing live re-fetch; if the live value matches what GLPI
+   already has, the update proceeds exactly as today — nothing changes for the non-drifted case.
+2. **On drift**, instead of aborting with a plain error message, the hook:
+   - Stores a short-lived conflict record (new table, §13.4) capturing: `domainrecords_id`, the
+     user's submitted value (`data`/`ttl` from `$item->input`), the live value just fetched
+     (`data`/`ttl` from `fetchRecord()`), and a timestamp.
+   - Aborts the save (`self::abort()`, unchanged mechanism) with a message directing the user to
+     the conflict-resolution screen instead of "re-sync and try again."
+3. **The conflict screen** (new page/panel, reachable from that message and from the record's own
+   tab whenever an unresolved conflict row exists for it) renders both values side by side —
+   labeled by their real source ("Your GLPI edit" / "Current value at {driver label}"), plus the
+   record's name/type for context — with two buttons:
+   - **"Keep my GLPI value"** — re-submits the original edit with a one-time bypass flag so
+     `onPreUpdate()` skips the live-diff check for this specific, just-confirmed submission and
+     pushes the user's value to the provider, overwriting the drifted live value.
+   - **"Keep the provider's value"** — writes the live value into the local `DomainRecord` row
+     directly (a local-only update, exactly like a normal sync would have done, no provider call)
+     and discards the pending GLPI edit.
+   - A **"Cancel"** action discards the conflict row with no changes either side.
+4. Either resolution is logged via `Log::history()` (existing convention, §7): which value was
+   kept, and that it followed a detected conflict — distinct wording from the plain "Record
+   updated from GLPI" line already logged for the non-drifted path, so a reconciliation is always
+   visible after the fact even without visiting the conflict screen.
+
+No extra right beyond the record type's existing per-type UPDATE right gates "Keep my GLPI value"
+— the diff screen itself, requiring an explicit second click after seeing the provider's current
+value, is judged sufficient friction against an accidental overwrite (confirmed with the user;
+no additional confirmation step or elevated right).
+
+### 13.4 New state: `glpi_plugin_domainmanager_recordconflicts`
+
+A conflict is short-lived (created, then resolved-or-cancelled within the same session in the
+common case) but must survive a page reload/redirect between the blocked submit and the
+resolution click, so it needs a row, not just session data:
+
+| column | type | notes |
+|---|---|---|
+| `id` | int PK | |
+| `domainrecords_id` | int NOT NULL | FK to the `DomainRecord` in conflict |
+| `submitted_data` | varchar | the user's just-attempted value |
+| `submitted_ttl` | int | |
+| `live_data` | varchar | value read back from the provider at detection time |
+| `live_ttl` | int | |
+| `date_creation` | timestamp | for staleness/cleanup |
+
+One open row per `domainrecords_id` at a time (a second drifted submit while one is already
+pending replaces it rather than stacking). Rows are deleted on resolution or cancellation; no
+retention requirement — this is working state, not an audit trail (the audit trail is the
+`Log::history()` entry in §13.3 step 4, which does persist).
+
+### 13.6 Review addendum (2026-07-30, before implementation)
+
+Four gaps found on a second read of §13.3–§13.4, fixed here rather than silently in code:
+
+1. **Re-verify at resolution time, not just at detection time.** The live value can drift *again*
+   in the window between the conflict row being created and the user clicking "Keep my GLPI
+   value" — the one-time bypass as originally written would push over a third value nobody ever
+   saw. Fix: the bypass re-fetches the live value one more time at resolution and compares it
+   against `live_data`/`live_ttl` stored in the conflict row; if it still matches, the push
+   proceeds as designed. If it has moved again, the conflict row is refreshed with the newer live
+   value instead of being consumed, and the user sees an updated diff rather than a silent
+   overwrite of a value they never reviewed.
+2. **"Keep the provider's value" must not re-enter the push path.** Writing `live_data`/`live_ttl`
+   into the `DomainRecord` row is still a `CommonDBTM::update()` call, which still fires
+   `onPreUpdate()` — without an explicit bypass this would trigger another live-diff-and-push
+   cycle against the provider for a value that just came *from* the provider (at best a no-op
+   round trip, at worst a duplicate write if anything raced in between). This resolution path
+   must set the same one-time bypass flag (§13.6 item 3) so `onPreUpdate()` treats it as a
+   local-only sync-style write and returns `false` (falls through to the normal, non-writeback
+   update) rather than attempting a provider push.
+3. **The bypass must be tied to the specific conflict row, not a generic flag.** Implement it as
+   a one-time token: the conflict row's own `id`, passed back on the resolution submit and checked
+   against an open conflict row for that exact `domainrecords_id` before being honored, then
+   deleted immediately whether the check passes or fails. A generic "skip diff check" flag on the
+   request would let a crafted submission bypass drift-checking on an unrelated edit; scoping it
+   to one already-detected, already-displayed conflict row removes that.
+4. **Orphan cleanup.** If the `DomainRecord` referenced by a pending conflict row is deleted
+   (soft-delete via `onPreDelete()`, or hard purge) while the conflict is still unresolved, its
+   conflict row must be deleted too — either a `FOREIGN KEY ... ON DELETE CASCADE` on
+   `domainrecords_id`, or an explicit delete alongside the existing purge/soft-delete logic if the
+   project's migration conventions avoid DB-level cascades elsewhere (check `Migration`'s existing
+   table definitions for the house style before choosing).
+
+### 13.7 Out of scope / explicitly deferred
+
+- Proactive sync-time drift detection (§13.2) — would need `SyncEngine` to diff writable-type
+  records against GLPI on every sync and mark them, materially larger than this phase.
+- Delete-time live diff / conflict screen — delete already has a guard-ribbon warning (Phase 37);
+  revisit if a real incident shows it's insufficient.
+- Create-time conflict visibility beyond the existing idempotent-adopt behavior for Cloudflare's
+  `81057` — revisit if adoption-without-visibility causes confusion in practice.
+- Any change to `SOA`/other read-only types' handling — unaffected, confirmed with the user.
+
 ---
 
-*Open items awaiting your approval: the four deviations in §0.1–§0.4 (Registrar as plugin field, `date_domaincreation` mapping, plugin-owned lock layer replacing native `Lockedfield`, documented `managed_domainrecordtypes` gate on web-triggered record writes), the CREATE TABLE exception in §0.6, and §11 (Phases 31–35 — Manual DNS record write-back to IONOS). The two items that were blocking Phase 32 — the rights-matrix rendering mechanism (§11.6/§11.16) and the §10 changelog-policy amendment for pre-release versions (§11.14) — are both resolved as of 2026-07-29; Phase 32 is unblocked. **§12 (Phase 41 — Cloudflare write support) is a design-only addition pending your approval; §12.8 lists five implementation-time API verifications that are not blocking approval of the design itself.***
+*Open items awaiting your approval: the four deviations in §0.1–§0.4 (Registrar as plugin field, `date_domaincreation` mapping, plugin-owned lock layer replacing native `Lockedfield`, documented `managed_domainrecordtypes` gate on web-triggered record writes), the CREATE TABLE exception in §0.6, and §11 (Phases 31–35 — Manual DNS record write-back to IONOS). The two items that were blocking Phase 32 — the rights-matrix rendering mechanism (§11.6/§11.16) and the §10 changelog-policy amendment for pre-release versions (§11.14) — are both resolved as of 2026-07-29; Phase 32 is unblocked. **§12 (Phase 41 — Cloudflare write support) is a design-only addition pending your approval; §12.8 lists five implementation-time API verifications that are not blocking approval of the design itself. §13 (Phase 44 — update-conflict reconciliation) is a design-only addition pending your approval, scoped to Update only per the 2026-07-30 confirmation above.***
