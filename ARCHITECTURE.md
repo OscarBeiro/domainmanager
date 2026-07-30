@@ -2190,9 +2190,22 @@ supplier-discovered, not hand-entered) and only consulted when the state row is 
 first time — every other caller (manual creation's first sync, cron, `SyncController`,
 `MassiveActionHandler`) leaves it `false`, so a newly-created state row defaults to Native.
 Exposed as `PLUGIN_DOMAINMANAGER_SO_DOMAIN_GLPI_CREATED` (id `9431`), same "Native" label and
-`bool` datatype as the DomainRecord option. The actual import-time write *gate* (blocking a
-conflicting write from a different source) is not yet implemented — this slice only makes the
-signal exist and be filterable/settable at creation time.
+`bool` datatype as the DomainRecord option.
+
+**Write gate, implemented (2026-07-30):** `SyncEngine::sync()` now compares the DNS leg's
+newly-resolved supplier against the domain's *previous* `DomainState.dns_suppliers_id` before
+ever calling `RecordReconciler::reconcile()`. If the domain was already `is_managed` under a
+different, non-zero supplier, the DNS leg is skipped entirely for this run — no upstream fetch,
+no trashing/recreating of the previous supplier's owned `DomainRecord`s — and `dns_status` is set
+to the new `DomainState::STATUS_SOURCE_CONFLICT`, with a message naming both supplier ids. The new
+supplier id is still persisted on the state row (unconditionally, same as before this change), so
+a deliberate second sync run sees no mismatch and proceeds normally — the same "re-sync to
+confirm" pattern `STATUS_REASSIGNED` already established for a Registrar change. This transitively
+covers the `DomainRecord`-level case too: `RecordReconciler` only ever runs under whichever
+supplier this check already cleared, so no separate per-record source-tracking column was needed.
+Registrar-import-time Domain conflicts need no equivalent gate: `DomainImportController` already
+never touches an existing Domain's Infocom/supplier assignment at all (a name match is unconditionally
+skipped, §14.1's own open gap being the *lack* of surfacing that skip, not an unguarded write).
 
 ### 14.3 Phase 48 — bug: trashing then restoring a synced DNS record produces a duplicate, not a restore
 

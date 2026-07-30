@@ -61,6 +61,7 @@ class DomainStatusResolver
             DomainState::STATUS_UNKNOWN           => __('Unknown provider', 'domainmanager'),
             DomainState::STATUS_SUPPLIER_INACTIVE => __('Supplier inactive', 'domainmanager'),
             DomainState::STATUS_REASSIGNED        => __('Registrar changed, not yet verified', 'domainmanager'),
+            DomainState::STATUS_SOURCE_CONFLICT   => __('DNS provider changed, records untouched pending confirmation', 'domainmanager'),
         ];
     }
 
@@ -84,6 +85,9 @@ class DomainStatusResolver
             // without implying anything actually failed (§9 Phase 8
             // addendum).
             DomainState::STATUS_REASSIGNED        => 'text-bg-info',
+            // Same reasoning as STATUS_REASSIGNED just above: a deliberate
+            // pause pending a confirming re-sync, not a failure.
+            DomainState::STATUS_SOURCE_CONFLICT   => 'text-bg-info',
         ];
     }
 }

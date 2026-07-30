@@ -173,7 +173,35 @@ class SyncEngine
             $this->syncRegistrarLeg($domain, $registrar_id, $result);
 
             // 4. DNS leg (isolated)
-            if ($dns_config !== null) {
+            // §14.2 (Phase 47 write gate): if this domain's DNS records were
+            // already managed (is_managed) under a *different* resolved
+            // supplier than the one just detected, do not fetch/reconcile
+            // at all this run — silently trashing the previous supplier's
+            // owned records and recreating them under the new one would be
+            // a real, unreviewed data migration. Block once; the new
+            // supplier id is still persisted below, so a deliberate second
+            // sync run (nothing else needs to change) confirms and applies
+            // it, same "re-sync to confirm" pattern STATUS_REASSIGNED
+            // already uses for a Registrar change.
+            $previous_dns_suppliers_id = $state !== null ? (int) $state->fields['dns_suppliers_id'] : 0;
+            $source_conflict = $dns_config !== null
+                && $state !== null
+                && (bool) $state->fields['is_managed']
+                && $previous_dns_suppliers_id > 0
+                && $previous_dns_suppliers_id !== (int) $dns_config->fields['suppliers_id'];
+
+            if ($source_conflict) {
+                $result['dns_status']  = DomainState::STATUS_SOURCE_CONFLICT;
+                $result['dns_message'] = sprintf(
+                    __('DNS provider changed from supplier #%1$d to #%2$d; records were left untouched. Re-run synchronization to confirm and apply this change.', 'domainmanager'),
+                    $previous_dns_suppliers_id,
+                    (int) $dns_config->fields['suppliers_id'],
+                );
+                $this->logger->skip(
+                    (int) $domain->getID(),
+                    "DNS sync skipped: resolved supplier changed from #$previous_dns_suppliers_id to #" . (int) $dns_config->fields['suppliers_id'] . ' (source conflict, pending confirmation)',
+                );
+            } elseif ($dns_config !== null) {
                 $this->syncDnsLeg($domain, $dns_config, $result);
             }
         } finally {

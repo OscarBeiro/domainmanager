@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0-alpha11] - 2026-07-30
+### Added
+- **Write gate for DNS provider (source) conflicts.** `SyncEngine` now detects when a domain's DNS records are already managed (`is_managed`) under a *different*, previously-resolved supplier than the one this sync just detected, and skips the DNS leg entirely for that run — no upstream fetch, no trashing/recreating the previous supplier's records under the new one — instead of silently migrating ownership. Surfaced as a new `DomainState::STATUS_SOURCE_CONFLICT` ("DNS provider changed, records untouched pending confirmation"). The new supplier id is still recorded, so a deliberate second sync run confirms and applies the change, mirroring the existing "re-sync to confirm" pattern for a Registrar reassignment (`STATUS_REASSIGNED`).
+
 ## [1.3.0-alpha10] - 2026-07-30
 ### Added
 - **Domain-level "Native" field** (`is_glpi_created` on `glpi_plugin_domainmanager_states`), the counterpart to `DomainRecord`'s existing field of the same name — `1` for a domain created by hand, `0` for one discovered via supplier import (`DomainImportController`). Set once, at the domain's first sync, never touched afterward. Filterable via the new "Native" Domain search option (id `9431`). Pre-existing domains default to Native (`1`), since a state row alone can't retroactively distinguish the two.

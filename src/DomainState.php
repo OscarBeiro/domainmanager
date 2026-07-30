@@ -67,6 +67,18 @@ class DomainState extends CommonDBTM
     // sync history — it's just history for the wrong supplier now.
     public const STATUS_REASSIGNED        = 'reassigned';
 
+    // ARCHITECTURE.md §14.2 (Phase 47 write gate): the DNS leg resolved a
+    // *different* driver-backed supplier than the one this domain's records
+    // are currently managed under (`is_managed` was already true for the
+    // previous supplier) — reconciliation is skipped entirely for this sync
+    // (no upstream fetch, no trash/recreate of the previous supplier's
+    // owned records) rather than silently migrating ownership. The new
+    // supplier is still recorded on the state row so a second, deliberate
+    // sync run confirms and applies the change — mirrors how a Domain's own
+    // Registrar reassignment already needs a fresh sync to take effect
+    // (STATUS_REASSIGNED above), just for the DNS leg instead.
+    public const STATUS_SOURCE_CONFLICT   = 'source_conflict';
+
     // Per-domain DNS record write-editability state (ARCHITECTURE.md §12.3,
     // Phase 42) — independent of dns_status (the read-sync outcome above).
     // A domain never configured with a write-capable driver stays `manual`
