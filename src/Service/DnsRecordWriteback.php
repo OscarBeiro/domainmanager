@@ -223,6 +223,59 @@ class DnsRecordWriteback
             (int) $item->fields['ttl'],
         ),
         ]);
+
+        self::pushInitialComment($item, $created->remoteId, $domains_id);
+    }
+
+    /**
+     * A comment typed on the native "New Domain record" form has nowhere to
+     * go via `createRecord()` itself (§9 Phase 49 addendum — that call has
+     * no comment parameter, kept minimal on purpose, see
+     * `DnsRecordCommentSyncInterface`'s own docblock), so it would otherwise
+     * sit local-only until the next scheduled sync's `RecordReconciler`
+     * push picked it up. Pushed here instead, right after the record (and
+     * its remote id) actually exist, so it's live immediately. Best-effort,
+     * same non-blocking convention as the other push helpers in this class
+     * — a failure here must never undo the creation that already succeeded.
+     *
+     * @param  DomainRecord $item
+     * @param  string       $remoteId
+     * @param  int          $domains_id
+     * @return void
+     */
+    private static function pushInitialComment(DomainRecord $item, string $remoteId, int $domains_id): void
+    {
+        $comment = trim((string) ($item->fields['comment'] ?? ''));
+        if ($comment === '' || $remoteId === '') {
+            return;
+        }
+
+        $state = DomainState::getForDomain($domains_id);
+        if ($state === null) {
+            return;
+        }
+
+        $domain = new Domain();
+        if (!$domain->getFromDB($domains_id)) {
+            return;
+        }
+
+        try {
+            $driver = self::getWritableDriver($state);
+            if (!$driver instanceof DnsRecordCommentSyncInterface) {
+                return;
+            }
+
+            $driver->pushComment($domain->fields['name'], $remoteId, $comment);
+        } catch (Throwable $e) {
+            $message = $e instanceof DriverException ? $e->getMessage() : __('an error occurred', 'domainmanager');
+            PluginLogger::error("Failed to push initial DNS record comment #{$item->getID()}", $e::class . ': ' . $e->getMessage());
+            Session::addMessageAfterRedirect(
+                '[Domain Manager] ' . sprintf(__('Could not set the comment at %s: %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state)), $message),
+                false,
+                WARNING,
+            );
+        }
     }
 
     /**
