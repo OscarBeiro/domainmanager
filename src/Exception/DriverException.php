@@ -49,9 +49,9 @@ class DriverException extends RuntimeException
      */
     public readonly bool $isPermissionDenied;
 
-    public function __construct(string $message, bool $isPermissionDenied = false)
+    public function __construct(string $message, bool $isPermissionDenied = false, ?\Throwable $previous = null)
     {
-        parent::__construct($message);
+        parent::__construct($message, 0, $previous);
         $this->isPermissionDenied = $isPermissionDenied;
     }
 }

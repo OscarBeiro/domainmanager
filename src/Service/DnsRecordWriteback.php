@@ -210,7 +210,7 @@ class DnsRecordWriteback
             $item->fields['name'] ?: '@',
             $item->fields['data'],
             (int) $item->fields['ttl'],
-        )
+        ),
         ]);
     }
 
@@ -323,7 +323,7 @@ class DnsRecordWriteback
                 $name,
                 $item->fields['data'],
                 $data,
-            )
+            ),
             ]);
 
             return true;
@@ -390,7 +390,7 @@ class DnsRecordWriteback
                 __('Record deleted from GLPI: %s %s', 'domainmanager'),
                 $type,
                 $item->fields['name'],
-            )
+            ),
             ]);
 
             return true;

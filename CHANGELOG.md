@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0-alpha5] - 2026-07-30
+### Fixed
+- **Phase 43: Check Connection can now actually detect the Cloudflare zone/DNS scope gap, closing the last open item from Phase 40's investigation**: `CloudflareDriver::testConnection()` previously stopped at `probeTokenVerify()` (`accounts/{id}/tokens/verify`), which only confirms the token itself is valid/unrevoked — a token could pass Check Connection with "Success" and still 403 on every real DNS sync because it simply wasn't scoped for `Zone:Read`/`DNS:Read`. A new follow-up probe, `probeZoneScope()`, now runs immediately after a successful token-verify: the same account-scoped `GET /zones` lookup `findZone()` uses for a real sync (`account.id` + `per_page=1`, no `name` filter), classified from the raw HTTP status rather than through `request()`'s exception path so the status code stays available. A `403` here now reports "this Cloudflare API token lacks DNS:Read permission for this zone" — the exact wording a real sync failure already used (1.3.0-alpha4) — directly from Check Connection, before any domain ever gets synced. An account with genuinely zero zones (`200` with an empty `result`) still reports success, since that's a "nothing to sync yet" state, not a permissions problem.
+
 ## [1.3.0-alpha4] - 2026-07-30
 ### Fixed
 - **Cloudflare read-path 401 and 403 were both surfaced as the same "authentication failed, check the API token" message** (`CloudflareDriver::request()`), which is actively misleading for a 403: that status typically means a perfectly valid token simply isn't scoped for `DNS:Read` on this zone, not that the token itself is bad. A DNS sync failure now distinguishes the two: 401 keeps the existing "check the API token" wording, 403 now reads "this Cloudflare API token lacks DNS:Read permission for this zone" — the read-path counterpart to the write-path 403 classification already added in `1.3.0-alpha3`. Part of the original Check Connection gap (tokens/verify passing while a zone/DNS scope is actually missing), tracked separately from Phase 42's write support.

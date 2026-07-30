@@ -288,7 +288,7 @@ class DomainForm
         self::renderManagedIndicator($is_managed);
 
         $tab_itemtype = $params['options']['itemtype'] ?? '';
-        if ($is_managed && $state !== null && $tab_itemtype === DomainRecord::class) {
+        if ($state !== null && $is_managed && $tab_itemtype === DomainRecord::class) {
             self::renderRecordWritePanel($domains_id, $state);
         }
     }

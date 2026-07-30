@@ -38,6 +38,7 @@ use GlpiPlugin\Domainmanager\Contract\DnsRecordWriterInterface;
 use GlpiPlugin\Domainmanager\Contract\DomainDiscoveryInterface;
 use GlpiPlugin\Domainmanager\Contract\RegistrarDriverInterface;
 use GlpiPlugin\Domainmanager\Dto\ConnectionTestResult;
+use GlpiPlugin\Domainmanager\Dto\ConnectionTestStatus;
 use GlpiPlugin\Domainmanager\Dto\DiscoveredDomain;
 use GlpiPlugin\Domainmanager\Dto\DomainLifecycle;
 use GlpiPlugin\Domainmanager\Dto\LifecycleStatus;
@@ -130,6 +131,17 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
             $result  = $missing !== null
                 ? ConnectionTestResult::notConfigured('dns', $missing)
                 : $this->probeTokenVerify();
+
+            // tokens/verify only proves the token itself is valid/unrevoked
+            // — it says nothing about whether it's actually scoped for
+            // Zone:Read/DNS:Read (the Check Connection gap: a token can
+            // pass this and still 403 on every real DNS sync). Only run
+            // the follow-up zone probe once verify has already succeeded;
+            // no point layering a second call on top of a result that's
+            // already a definite failure.
+            if ($result->status === ConnectionTestStatus::Success) {
+                $result = $this->probeZoneScope($this->requireAccountId());
+            }
         } catch (Throwable $e) {
             $result = ConnectionTestResult::fromException('dns', $e);
         } finally {
@@ -206,6 +218,71 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
         $raw_detail = $success ? '' : ('Cloudflare ' . $path . ' (HTTP ' . $status . '): ' . self::sanitizeMessage($body));
 
         return ConnectionTestResult::fromHttpResponse('dns', $status, $success, $raw_detail);
+    }
+
+    /**
+     * Closes the actual Check Connection gap: `probeTokenVerify()` above
+     * only proves the token itself hasn't been revoked, not that it
+     * carries `Zone:Read`/`DNS:Read` for this account's zones — a token
+     * can pass that probe and still 403 on every real sync call
+     * (`findZone()`, `fetchZoneRecords()`). This issues the same
+     * account-scoped `GET /zones` lookup `findZone()` uses for a real
+     * sync (`account.id` + `per_page=1`, no `name` filter — the goal here
+     * is only to prove the *scope* exists, not that any particular zone
+     * does), and classifies the raw HTTP status directly rather than via
+     * `request()` — `request()`'s own 401/403 handling throws a
+     * `DriverException` with no status code attached, which
+     * `fromException()` would then have to reclassify blind.
+     *
+     * A `200` with an empty `result` (this account genuinely has zero
+     * zones) still counts as scope confirmed — that's a "nothing to sync
+     * yet" state, not a permissions problem, and must not be reported as
+     * a failure.
+     *
+     * @param  string $accountId
+     * @return ConnectionTestResult
+     * @throws DriverException when the API is unreachable
+     */
+    private function probeZoneScope(string $accountId): ConnectionTestResult
+    {
+        $client = $this->getClient();
+        $path   = 'zones';
+        $query  = ['account.id' => $accountId, 'per_page' => 1];
+
+        try {
+            $response = $client->request('GET', $path, ['query' => $query, 'timeout' => self::TEST_TIMEOUT]);
+        } catch (GuzzleException $e) {
+            PluginLogger::error('Cloudflare connection test HTTP failure: ' . $e->getMessage());
+            throw $e;
+        }
+
+        $status  = $response->getStatusCode();
+        $body    = (string) $response->getBody();
+        $data    = json_decode($body, true);
+        $success = is_array($data) && ($data['success'] ?? false) === true;
+
+        $raw_detail = $success ? '' : ('Cloudflare ' . $path . ' (HTTP ' . $status . '): ' . self::sanitizeMessage($body));
+
+        $result = ConnectionTestResult::fromHttpResponse('dns', $status, $success, $raw_detail);
+
+        // fromHttpResponse()'s generic 403 message ("lack the required
+        // permission/scope") doesn't name the scope — reuse the exact,
+        // actionable wording request()'s own 403 branch already gives
+        // real sync failures, so Check Connection and a sync failure read
+        // as the same diagnosis instead of two different sentences for
+        // the same root cause.
+        if ($status === 403) {
+            $result = new ConnectionTestResult(
+                $result->status,
+                'dns',
+                $status,
+                __('This Cloudflare API token lacks DNS:Read permission for this zone', 'domainmanager'),
+                $raw_detail,
+                $result->checkedAt,
+            );
+        }
+
+        return $result;
     }
 
     /**
