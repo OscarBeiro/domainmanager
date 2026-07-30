@@ -55,34 +55,26 @@ class Profile extends CoreProfile
      * Per-type DNS record write-back rights (ARCHITECTURE.md §11.6, Phase
      * 34b, superseding Phase 32's single `domainmanager:dns_records`
      * right). One right per writable `DomainRecordType`, each carrying
-     * core's own CREATE/UPDATE/DELETE bits, rendered via
+     * core's own CREATE/UPDATE/DELETE/PURGE bits, rendered via
      * `Profile::displayRightsChoiceMatrix()` so each reads like any other
      * GLPI right. Distinct from `UNLOCK_RIGHT`: that one governs local
      * overrides of plugin locks on the native form; these authorise the
      * native `DomainRecord` tab's add/update/delete to be pushed to IONOS,
      * per type, via `hook.php` item hooks (§11.7).
+     *
+     * PURGE on each per-type right gates hard-purging a DomainRecord of
+     * that type (permanently emptying it from the GLPI trash) — distinct
+     * from and independent of the same right's own DELETE bit: soft-delete
+     * already pushes the deletion upstream and is recoverable, so any user
+     * with DELETE can do it; purge is irreversible on the GLPI side (the
+     * provider was already synced at soft-delete time), so it's a separate
+     * bit that can be handed out more narrowly, per type, matching how
+     * native GLPI itemtypes distinguish DELETE from PURGE.
      */
     public const DNS_RECORDS_RIGHT_A     = 'domainmanager:dns_records_a';
     public const DNS_RECORDS_RIGHT_AAAA  = 'domainmanager:dns_records_aaaa';
     public const DNS_RECORDS_RIGHT_CNAME = 'domainmanager:dns_records_cname';
     public const DNS_RECORDS_RIGHT_TXT   = 'domainmanager:dns_records_txt';
-
-    /**
-     * Right to hard-purge a DomainRecord (permanently empty it from the
-     * GLPI trash), distinct from and independent of the per-type
-     * DNS_RECORDS_RIGHT_* write-back rights above: soft-delete already
-     * pushes the deletion upstream and is recoverable, so any user with
-     * the relevant DELETE write-back right can do it; purge is
-     * irreversible on the GLPI side (the provider was already synced at
-     * soft-delete time) and is gated separately so it can be handed out
-     * more narrowly.
-     */
-    public const PURGE_RIGHT = 'domainmanager:purge_records';
-
-    /**
-     * Single bit carried by the purge right
-     */
-    public const RIGHT_PURGE_RECORDS = 1;
 
     /**
      * Map of writable `DomainRecordType` name to its per-type right, kept
@@ -145,13 +137,6 @@ class Profile extends CoreProfile
                 'label'     => __('Unlock imported domain data', 'domainmanager'),
                 'field'     => self::UNLOCK_RIGHT,
             ],
-            [
-                'rights'    => [
-                    self::RIGHT_PURGE_RECORDS => __('Permanently delete DNS records from the trash', 'domainmanager'),
-                ],
-                'label'     => __('Purge DNS records', 'domainmanager'),
-                'field'     => self::PURGE_RIGHT,
-            ],
         ];
 
         // §11.6 (Phase 34b): one row per writable record type instead of
@@ -169,6 +154,7 @@ class Profile extends CoreProfile
                     CREATE => __('Create'),
                     UPDATE => __('Update'),
                     DELETE => __('Delete'),
+                    PURGE  => __('Purge'),
                 ],
                 'label'  => $labels[$type],
                 'field'  => $field,

@@ -6,9 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-Working version: `1.3.0-beta4` (see `setup.php`'s `PLUGIN_DOMAINMANAGER_VERSION`). Per-pre-release
+Working version: `1.3.0-beta5` (see `setup.php`'s `PLUGIN_DOMAINMANAGER_VERSION`). Per-pre-release
 headers are no longer added here for every alpha/beta bump — entries accumulate under this section
 and get one real version header only at final release.
+
+### Changed
+- **"Purge DNS records" is no longer one flat, plugin-wide right.** The single `domainmanager:purge_records` right (Phase 45) granted purge on every DNS record type at once; it's now folded into a PURGE bit on each of the four existing per-type write-back rights (`Domain Record: A/AAAA/CNAME/TXT`), matching native GLPI's own CREATE/UPDATE/DELETE/PURGE convention and letting an admin grant purge for, say, TXT without also granting it for A. `View` stays governed entirely by the native `DomainRecord`/`domainrecord` right, unchanged. Existing profiles that held the old flat right are migrated automatically on upgrade: the PURGE bit is granted on all four per-type rights for any profile that had it, then the old right is removed.
 
 ### Fixed
 - **Restoring a trashed, write-back-managed DNS record from GLPI's native trash bin didn't actually bring it back at the provider.** Trashing a record already pushed a real `deleteRecord()` upstream (`DnsRecordWriteback::onPreDelete()`), but nothing pushed a matching re-create on restore — restore only flipped the local `is_deleted` flag, so the provider stayed missing the record, and the very next sync read that as "vanished upstream" and re-trashed it, making the restore look like a no-op. Added `DnsRecordWriteback::onPreRestore()`, hooked on GLPI's `PRE_ITEM_RESTORE` for `DomainRecord` (a hook this plugin didn't register before), which recreates the record at the provider and refreshes the ownership row's `remote_id`/`record_hash` before the native restore completes.

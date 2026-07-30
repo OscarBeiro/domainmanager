@@ -264,12 +264,13 @@ class LockEnforcer
             return;
         }
 
-        // Purge (emptying the trash) is a separate, dedicated right: the
+        // Purge (emptying the trash) is gated by the PURGE bit on the
+        // per-type write-back right matching this record's type: the
         // provider was already synced when the record was soft-deleted
         // above, so this only affects the local GLPI copy — but it's
         // irreversible on that side, so it's granted independently of
-        // the per-type write-back DELETE rights.
-        if (!$is_soft_delete && Session::haveRight(Profile::PURGE_RIGHT, Profile::RIGHT_PURGE_RECORDS)) {
+        // the same right's own DELETE bit, per type.
+        if (!$is_soft_delete && DnsRecordWriteback::hasPurgeRight($item)) {
             return;
         }
 
@@ -281,7 +282,7 @@ class LockEnforcer
         Session::addMessageAfterRedirect(
             $is_soft_delete
                 ? __s('This record is imported by Domain Manager synchronization and cannot be removed', 'domainmanager')
-                : __s('Purging Domain Manager records requires the "Purge DNS records" right', 'domainmanager'),
+                : __s('Purging this record requires the "Purge" right for its DNS record type', 'domainmanager'),
             false,
             ERROR,
         );

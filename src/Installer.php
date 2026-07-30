@@ -78,6 +78,7 @@ class Installer
         self::seedDomainType();
         self::seedRecordTypes();
         self::registerRights($migration);
+        self::migratePurgeRight();
         self::registerCronTasks();
 
         $migration->executeMigration();
@@ -886,6 +887,55 @@ class Installer
      * @param  Migration $migration
      * @return void
      */
+    /**
+     * One-time cleanup for pre-existing installs that already carried the
+     * old single flat `domainmanager:purge_records` right (Phase 45),
+     * folded here into per-type PURGE bits (ARCHITECTURE.md §11.6
+     * addendum): any profile that held the old right's bit 1 gets the
+     * PURGE bit granted on every per-type `dns_records_*` right instead —
+     * the old right had no per-type distinction, so this is the closest
+     * equivalent — then the old right's rows are removed entirely.
+     *
+     * @return void
+     */
+    private static function migratePurgeRight(): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $old_right = 'domainmanager:purge_records';
+
+        $iterator = $DB->request([
+            'SELECT' => ['profiles_id'],
+            'FROM'   => 'glpi_profilerights',
+            'WHERE'  => ['name' => $old_right, 'rights' => ['&', 1]],
+        ]);
+
+        foreach ($iterator as $row) {
+            $profiles_id = (int) $row['profiles_id'];
+            foreach (Profile::getDnsRecordRights() as $field) {
+                $current = $DB->request([
+                    'SELECT' => ['rights'],
+                    'FROM'   => 'glpi_profilerights',
+                    'WHERE'  => ['profiles_id' => $profiles_id, 'name' => $field],
+                ])->current();
+
+                if ($current === null) {
+                    continue;
+                }
+
+                $DB->update(
+                    'glpi_profilerights',
+                    ['rights' => ((int) $current['rights']) | PURGE],
+                    ['profiles_id' => $profiles_id, 'name' => $field],
+                );
+            }
+        }
+
+        $DB->delete('glpi_profilerights', ['name' => $old_right]);
+        ProfileRight::cleanAllPossibleRights();
+    }
+
     private static function registerRights(Migration $migration): void
     {
         $migration->addRight(Profile::UNLOCK_RIGHT, Profile::RIGHT_UNLOCK_IMPORTED, ['config' => UPDATE]);
@@ -895,14 +945,12 @@ class Installer
         // right above (piggybacked on config UPDATE), pushing changes to a
         // live provider is sensitive enough that an admin must grant each
         // type explicitly per profile.
+        // Each right's PURGE bit (irreversible on the GLPI side, since the
+        // provider was already synced at soft-delete time) is likewise not
+        // auto-granted — an admin must opt a profile in explicitly, per type.
         foreach (Profile::getDnsRecordRights() as $field) {
             $migration->addRight($field, 0);
         }
-        // Purging is irreversible on the GLPI side (the provider was
-        // already synced at soft-delete time), so — like the per-type
-        // rights above — it is not auto-granted to any existing profile;
-        // an admin must opt a profile in explicitly.
-        $migration->addRight(Profile::PURGE_RIGHT, 0);
         // Migration::addRight() inserts rows directly: reset the rights cache
         ProfileRight::cleanAllPossibleRights();
     }

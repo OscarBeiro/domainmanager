@@ -3255,3 +3255,27 @@ amendment.
   immediately, with no undo." Confirmed rendering live 2026-07-29 via the `DomainRecord$main` tab's
   ajax content.
 - [x] Verified (live, 2026-07-29, `glpi-claude`)
+
+### Phase 49 Per-type "Purge DNS records" right (replaces the old flat right)
+- **Requirement:** Purging a trashed `DomainRecord` should be gated per record type
+  (A/AAAA/CNAME/TXT), not by one plugin-wide right, matching native GLPI's own
+  CREATE/UPDATE/DELETE/PURGE convention.
+- **Steps:** As an admin, open Setup > Profiles > any profile > Domain Manager tab. Confirm each
+  of the four "Domain Record: A/AAAA/CNAME/TXT" rows now shows a "Purge" checkbox alongside
+  Create/Update/Delete, and that the old standalone "Purge DNS records" row is gone.
+- **Expected:** Granting only the A row's Purge bit lets a user in that profile hard-purge a
+  trashed A record but not a trashed TXT record (blocked with "Purging this record requires the
+  'Purge' right for its DNS record type"); granting Purge on TXT as well then allows both.
+- [ ] Verified
+
+### Phase 49 Upgrade migration for the old flat purge right
+- **Requirement:** A profile that already held the old `domainmanager:purge_records` right
+  (bit 1) before this upgrade should end up with the PURGE bit granted on all four per-type
+  rights afterwards, and the old right row should be gone from `glpi_profilerights`.
+- **Steps:** On a pre-upgrade database, grant the old right to a test profile, then run the
+  plugin's install/upgrade (e.g. re-enable the plugin or run `bin/console glpi:plugin:install
+  --username=glpi_username domainmanager` per the plugin's own upgrade path).
+- **Expected:** After upgrade, that profile has the PURGE bit set on
+  `domainmanager:dns_records_a/aaaa/cname/txt`, and no `glpi_profilerights` row named
+  `domainmanager:purge_records` remains.
+- [ ] Verified

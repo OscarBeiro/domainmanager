@@ -780,6 +780,27 @@ class DnsRecordWriteback
     }
 
     /**
+     * Whether the current user holds the PURGE bit on the per-type DNS
+     * write-back right matching this record's type — used by
+     * `LockEnforcer::blockRecordRemoval()` to gate hard-purging a
+     * DomainRecord, one right per type rather than a single flat right
+     * (ARCHITECTURE.md §11.6 addendum, matching native GLPI's own
+     * DELETE/PURGE distinction).
+     *
+     * @param  DomainRecord $item
+     * @return bool
+     */
+    public static function hasPurgeRight(DomainRecord $item): bool
+    {
+        $type = self::typeName((int) ($item->fields['type'] ?? 0));
+        if ($type === null) {
+            return false;
+        }
+
+        return self::hasRight($type, PURGE);
+    }
+
+    /**
      * Public wrapper around `isDnsEditable()` for callers outside this
      * class (§11.6 addendum) — e.g. `DomainForm::onShowTab()`, deciding
      * whether the domain's DNS is under write-back at all before
