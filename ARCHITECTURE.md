@@ -1968,6 +1968,21 @@ design questions. If any surfaces a design-relevant surprise (e.g. `PUT` truly r
 `name`), that becomes a documented, non-silent correction here, the same way §12.5 items 1–2
 corrected §11.9's original IONOS assumptions.
 
+### 12.10 Phase 42 implementation status
+
+Implemented as designed above (`1.3.0-alpha3`, 2026-07-30; Cloudflare write support tracks as its
+own `1.3.0` line starting at Phase 40, rather than continuing the `1.2.0` series IONOS write-back
+shipped under): `CloudflareDriver` now implements
+`DnsRecordWriterInterface` (§12.4), the `dns_write_status`/`dns_write_message` columns and their
+reset/recording logic (§12.3) are live in `SyncEngine::sync()` and
+`DomainState::recordWriteOutcome()`, and `DriverException::$isPermissionDenied` carries the
+403-vs-everything-else classification out of the shared layer per §12.6. Not yet done: the five
+live-account verifications listed in §12.8 — the code took the documented safe design stance on
+each (full field set on `PUT`, always-explicit `proxied`, TXT/CNAME passed through unchanged) but
+none of the five has actually been exercised against a real Cloudflare zone yet. Until that
+verification happens, treat those design stances as the current best guess, not confirmed fact,
+exactly as §12.8 anticipated.
+
 ### 12.9 No rights changes, no new UI surface
 
 The four per-type DNS write-back rights (§11.6) apply to every driver, Cloudflare included — no

@@ -39,4 +39,19 @@ use RuntimeException;
  */
 class DriverException extends RuntimeException
 {
+    /**
+     * Whether this failure is a genuine write-permission denial (e.g.
+     * Cloudflare's zone-scoped-token 403, ARCHITECTURE.md §12.3) — as
+     * opposed to a transient, validation, or idempotent-already-satisfied
+     * failure. `DnsRecordWriteback` uses this flag to decide whether to call
+     * `DomainState::recordWriteOutcome()`, instead of any shared layer ever
+     * inspecting a status code or provider error body itself (§12.6).
+     */
+    public readonly bool $isPermissionDenied;
+
+    public function __construct(string $message, bool $isPermissionDenied = false)
+    {
+        parent::__construct($message);
+        $this->isPermissionDenied = $isPermissionDenied;
+    }
 }

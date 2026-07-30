@@ -153,8 +153,12 @@ class DnsRecordWriteback
             $absoluteName = ($name !== '' && $name !== '@') ? $name . '.' . $zoneName : $zoneName;
             $created = $driver->createRecord($zoneName, $type, $absoluteName, $data, $ttl);
             self::$pendingCreated[spl_object_id($item)] = $created;
+            DomainState::recordWriteOutcome($domains_id, true);
         } catch (Throwable $e) {
             $message = $e instanceof DriverException ? $e->getMessage() : __('An error occurred while creating the record at the provider', 'domainmanager');
+            if ($e instanceof DriverException && $e->isPermissionDenied) {
+                DomainState::recordWriteOutcome($domains_id, false, $message);
+            }
             PluginLogger::error("Failed to push new DNS record for domain #$domains_id", $e::class . ': ' . $e->getMessage());
             self::abort($item, sprintf(__('Could not create this record at %s: %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state)), $message));
         }
@@ -304,6 +308,7 @@ class DnsRecordWriteback
             }
 
             $driver->updateRecord($domain->fields['name'], $imported->fields['remote_id'], $type, $name, $data, $ttl);
+            DomainState::recordWriteOutcome($domains_id, true);
 
             ImportLock::replaceLocks(DomainRecord::class, (int) $item->getID(), [
                 'name'                 => $name,
@@ -324,6 +329,9 @@ class DnsRecordWriteback
             return true;
         } catch (Throwable $e) {
             $message = $e instanceof DriverException ? $e->getMessage() : __('An error occurred while updating the record at the provider', 'domainmanager');
+            if ($e instanceof DriverException && $e->isPermissionDenied) {
+                DomainState::recordWriteOutcome($domains_id, false, $message);
+            }
             PluginLogger::error("Failed to push updated DNS record #{$item->getID()} for domain #$domains_id", $e::class . ': ' . $e->getMessage());
             self::abort($item, sprintf(__('Could not update this record at %s: %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state)), $message));
             return true;
@@ -376,6 +384,7 @@ class DnsRecordWriteback
         try {
             $driver = self::getWritableDriver($state);
             $driver->deleteRecord($domain->fields['name'], $imported->fields['remote_id']);
+            DomainState::recordWriteOutcome($domains_id, true);
 
             Log::history($domains_id, Domain::class, [0, '', '[Domain Manager] ' . sprintf(
                 __('Record deleted from GLPI: %s %s', 'domainmanager'),
@@ -387,6 +396,9 @@ class DnsRecordWriteback
             return true;
         } catch (Throwable $e) {
             $message = $e instanceof DriverException ? $e->getMessage() : __('An error occurred while deleting the record at the provider', 'domainmanager');
+            if ($e instanceof DriverException && $e->isPermissionDenied) {
+                DomainState::recordWriteOutcome($domains_id, false, $message);
+            }
             PluginLogger::error("Failed to push deletion of DNS record #{$item->getID()} for domain #$domains_id", $e::class . ': ' . $e->getMessage());
             self::abort($item, sprintf(__('Could not delete this record at %s: %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state)), $message));
             return true;

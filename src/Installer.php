@@ -69,6 +69,7 @@ class Installer
         self::addDomainManagedColumn($migration);
         self::addNameAsciiColumn($migration);
         self::addRdapColumns($migration);
+        self::addDnsWriteStatusColumns($migration);
         self::clearDuplicateNameAscii();
         self::pruneStaleSearchOptionCriteria();
         self::seedDomainType();
@@ -170,6 +171,8 @@ class Installer
                     `rdap_registrar_name` varchar(255) NULL DEFAULT NULL,
                     `rdap_registrar_iana_id` varchar(32) NULL DEFAULT NULL,
                     `rdap_nameservers` text,
+                    `dns_write_status` varchar(20) NOT NULL DEFAULT 'manual',
+                    `dns_write_message` text,
                     `date_mod` timestamp NULL DEFAULT NULL,
                     `date_creation` timestamp NULL DEFAULT NULL,
                     PRIMARY KEY (`id`),
@@ -180,6 +183,7 @@ class Installer
                     KEY `is_managed` (`is_managed`),
                     KEY `name_ascii` (`name_ascii`),
                     KEY `last_rdap_check_date` (`last_rdap_check_date`),
+                    KEY `dns_write_status` (`dns_write_status`),
                     KEY `date_mod` (`date_mod`),
                     KEY `date_creation` (`date_creation`)
                 ) ENGINE=InnoDB DEFAULT CHARSET={$charset} COLLATE={$collation} ROW_FORMAT=DYNAMIC
@@ -396,6 +400,31 @@ class Installer
 
         $migration->addField($table, 'is_glpi_created', 'bool', ['value' => 0]);
         $migration->addKey($table, 'is_glpi_created');
+    }
+
+    /**
+     * Add `dns_write_status`/`dns_write_message` to the states table
+     * (ARCHITECTURE.md §12.3, Phase 42) — per-domain, per-write-capable-driver
+     * editability state for DNS record write-back, learned from real writes
+     * only, never probed. Idempotent via `Migration::addField()`/`addKey()`
+     * for upgrades; already present in `createTables()`'s raw CREATE TABLE for
+     * fresh installs, same convention as `is_proxied`/`is_glpi_created`.
+     *
+     * `dns_write_status` defaults to `DomainState::DNS_WRITE_MANUAL` on every
+     * pre-existing row: the next sync that recognizes a write-capable driver
+     * for that domain moves it to `managed_readonly` (§12.3) — no backfill
+     * needed here.
+     *
+     * @param  Migration $migration
+     * @return void
+     */
+    private static function addDnsWriteStatusColumns(Migration $migration): void
+    {
+        $table = 'glpi_plugin_domainmanager_states';
+
+        $migration->addField($table, 'dns_write_status', 'string', ['value' => 'manual']);
+        $migration->addKey($table, 'dns_write_status');
+        $migration->addField($table, 'dns_write_message', 'text', ['value' => null]);
     }
 
     /**

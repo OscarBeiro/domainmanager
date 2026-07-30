@@ -32,6 +32,7 @@
 namespace GlpiPlugin\Domainmanager\Service;
 
 use Domain;
+use GlpiPlugin\Domainmanager\Contract\DnsRecordWriterInterface;
 use GlpiPlugin\Domainmanager\Dto\LifecycleStatus;
 use GlpiPlugin\Domainmanager\DomainState;
 use GlpiPlugin\Domainmanager\DriverFactory;
@@ -221,6 +222,41 @@ class SyncEngine
         ) {
             if ($result[$field] !== null) {
                 $state_input[$field] = $result[$field];
+            }
+        }
+
+        // §12.3 (Phase 42): `dns_write_status` starts at `managed_readonly`
+        // the moment this sync recognizes a write-capable driver for the
+        // domain, and resets to it again if the resolved DNS supplier
+        // changes — a nameserver move can point the same domain at a
+        // different account/zone the current write history says nothing
+        // about. It is otherwise left untouched here: a successful *read*
+        // is explicitly not a reset trigger (only a real write attempt,
+        // via `DomainState::recordWriteOutcome()`, ever moves it to
+        // `managed_editable` or back). A driver that isn't write-capable at
+        // all (or no resolved DNS config) always reads as `manual`.
+        $is_write_capable = false;
+        if ($dns_config !== null) {
+            try {
+                $is_write_capable = DriverFactory::forDns($dns_config) instanceof DnsRecordWriterInterface;
+            } catch (Throwable) {
+                $is_write_capable = false;
+            }
+        }
+
+        if (!$is_write_capable) {
+            $state_input['dns_write_status']  = DomainState::DNS_WRITE_MANUAL;
+            $state_input['dns_write_message'] = null;
+        } else {
+            $new_dns_suppliers_id = (int) $dns_config->fields['suppliers_id'];
+            $previous_dns_suppliers_id = $state !== null ? (int) ($state->fields['dns_suppliers_id'] ?? 0) : 0;
+            $previous_write_status = $state !== null
+                ? (string) ($state->fields['dns_write_status'] ?? DomainState::DNS_WRITE_MANUAL)
+                : DomainState::DNS_WRITE_MANUAL;
+
+            if ($state === null || $previous_dns_suppliers_id !== $new_dns_suppliers_id || $previous_write_status === DomainState::DNS_WRITE_MANUAL) {
+                $state_input['dns_write_status']  = DomainState::DNS_WRITE_READONLY;
+                $state_input['dns_write_message'] = null;
             }
         }
 
