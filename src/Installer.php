@@ -415,14 +415,11 @@ class Installer
         /** @var \DBmysql $DB */
         global $DB;
 
-        $exists = $DB->request([
-            'FROM'  => 'glpi_displaypreferences',
-            'WHERE' => [
-                'itemtype' => 'DomainRecord',
-                'num'      => PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_PROXY,
-                'users_id' => 0,
-            ],
-        ])->count() > 0;
+        $exists = countElementsInTable('glpi_displaypreferences', [
+            'itemtype' => 'DomainRecord',
+            'num'      => PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_PROXY,
+            'users_id' => 0,
+        ]) > 0;
 
         if ($exists) {
             return;

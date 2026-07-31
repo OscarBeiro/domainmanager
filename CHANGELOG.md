@@ -11,6 +11,10 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-07-31
+### Features
+- Installer's display-preference seeding now uses the native `countElementsInTable()` helper instead of a manual query for its existence check (no behavior change).
+
 ## [1.3.0] - 2026-07-31
 Note: `1.2.0` was never cut as a real release (only its alpha/beta line exists — see
 `CHANGELOG-dev.md`), so this entry also covers everything shipped since `1.1.0`, including the

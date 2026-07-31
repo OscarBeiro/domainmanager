@@ -12,6 +12,10 @@ change) and **Bugs** (something that was actually broken, fixed) — one line ea
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-07-31
+### Features
+- Raw-DB audit: confirmed no raw SQL exists outside the justified `CREATE TABLE` bootstrap in `Installer.php` (Migration has no schema-creation builder); replaced one manual existence-check query with the native `countElementsInTable()` helper.
+
 ## [1.3.0] - 2026-07-31
 ### Features
 - Domain type dropdown (`domaintypes_id`) is now locked on a managed domain, joining name/registration/expiration date.
