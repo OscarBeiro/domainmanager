@@ -487,11 +487,14 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
             default => throw new DriverException(sprintf(__('Record type %s is not writable through Domain Manager', 'domainmanager'), $type)),
         };
 
+        // No `default` throw here: the match above already narrowed $type to
+        // exactly {A,AAAA,CNAME,TXT} (anything else threw), so TXT is the
+        // only value left once the first three arms are excluded — PHPStan
+        // flags an explicit 'TXT' arm plus a further default as dead code.
         $params = ['domain' => $domain, 'hostname' => $name] + match ($type) {
             'A', 'AAAA' => ['ip' => $data],
             'CNAME'     => ['destinationHostname' => $data],
-            'TXT'       => ['text' => $data],
-            default     => throw new DriverException(sprintf(__('Record type %s is not writable through Domain Manager', 'domainmanager'), $type)),
+            default     => ['text' => $data],
         };
 
         $this->request($command, $params);
