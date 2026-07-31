@@ -67,6 +67,28 @@ class DomainState extends CommonDBTM
     // sync history — it's just history for the wrong supplier now.
     public const STATUS_REASSIGNED        = 'reassigned';
 
+    // ARCHITECTURE.md §14.2 (Phase 47 write gate): the DNS leg resolved a
+    // *different* driver-backed supplier than the one this domain's records
+    // are currently managed under (`is_managed` was already true for the
+    // previous supplier) — reconciliation is skipped entirely for this sync
+    // (no upstream fetch, no trash/recreate of the previous supplier's
+    // owned records) rather than silently migrating ownership. The new
+    // supplier is still recorded on the state row so a second, deliberate
+    // sync run confirms and applies the change — mirrors how a Domain's own
+    // Registrar reassignment already needs a fresh sync to take effect
+    // (STATUS_REASSIGNED above), just for the DNS leg instead.
+    public const STATUS_SOURCE_CONFLICT   = 'source_conflict';
+
+    // Per-domain DNS record write-editability state (ARCHITECTURE.md §12.3,
+    // Phase 42) — independent of dns_status (the read-sync outcome above).
+    // A domain never configured with a write-capable driver stays `manual`
+    // forever; a write-capable driver starts every domain at
+    // `managed_readonly` and only reaches `managed_editable` after a write
+    // actually succeeds there. Learned from real writes, never probed.
+    public const DNS_WRITE_MANUAL   = 'manual';
+    public const DNS_WRITE_READONLY = 'managed_readonly';
+    public const DNS_WRITE_EDITABLE = 'managed_editable';
+
     /**
      * {@inheritDoc}
      */
@@ -113,6 +135,11 @@ class DomainState extends CommonDBTM
             case 'dns_status':
                 $value  = (string) ($values[$field] ?? '');
                 $labels = DomainStatusResolver::getStatusLabels();
+                return \htmlescape($labels[$value] ?? $value);
+
+            case 'dns_write_status':
+                $value  = (string) ($values[$field] ?? self::DNS_WRITE_MANUAL);
+                $labels = self::getDnsWriteStatusLabels();
                 return \htmlescape($labels[$value] ?? $value);
 
             case 'detected_provider':
@@ -440,6 +467,56 @@ class DomainState extends CommonDBTM
             'name'    => (string) $row['rdap_registrar_name'],
             'iana_id' => $row['rdap_registrar_iana_id'] !== null ? (string) $row['rdap_registrar_iana_id'] : null,
         ];
+    }
+
+    /**
+     * Human-readable labels for `dns_write_status` (§12.3 "settled, not to
+     * be re-opened" UI terminology) — used by the domain panel badge and by
+     * search rendering, kept here rather than duplicated at each call site.
+     *
+     * @return array<string, string>
+     */
+    public static function getDnsWriteStatusLabels(): array
+    {
+        return [
+            self::DNS_WRITE_MANUAL   => __('Manual', 'domainmanager'),
+            self::DNS_WRITE_READONLY => __('Managed — read-only', 'domainmanager'),
+            self::DNS_WRITE_EDITABLE => __('Managed — editable', 'domainmanager'),
+        ];
+    }
+
+    /**
+     * Record the outcome of a real DNS record write attempt against this
+     * domain's configured driver (§12.3) — the only way `dns_write_status`
+     * ever changes outside of `SyncEngine::sync()`'s own reset-on-recognition
+     * logic. Never called for a transient failure (network/5xx), an
+     * idempotent-already-gone outcome, or a validation error: none of those
+     * are evidence about write *permission*, so none of them change stored
+     * state (§12.7) — callers must only invoke this for a genuine success or
+     * a genuine permission failure.
+     *
+     * @param  int         $domains_id
+     * @param  bool        $success
+     * @param  string|null $permission_message reason text when $success is false
+     * @return void
+     */
+    public static function recordWriteOutcome(int $domains_id, bool $success, ?string $permission_message = null): void
+    {
+        $state = self::getForDomain($domains_id);
+        if ($state === null) {
+            return;
+        }
+
+        $status = $success ? self::DNS_WRITE_EDITABLE : self::DNS_WRITE_READONLY;
+        if ($state->fields['dns_write_status'] === $status && (string) $state->fields['dns_write_message'] === (string) $permission_message) {
+            return;
+        }
+
+        $state->update([
+            'id'                => $state->getID(),
+            'dns_write_status'  => $status,
+            'dns_write_message' => $success ? null : $permission_message,
+        ]);
     }
 
     /**

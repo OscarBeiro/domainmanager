@@ -34,9 +34,9 @@
  # never on which provider is actually configured.
  #}
 {% if can_update %}
-    <div class="card m-n2 border-0 shadow-none mb-3">
+    <div class="card m-n2 border-0 shadow-none mb-3" id="domainmanager-managed-banner" style="display:none">
         <div class="card-header">
-            <div class="ribbon ribbon-bookmark ribbon-top ribbon-start bg-orange s-1">
+            <div class="ribbon ribbon-bookmark ribbon-top ribbon-start bg-blue s-1">
                 <i class="ti ti-world-cog fa-2x"></i>
             </div>
             <h4 class="card-title ps-5">{{ __('Managed by Domain Manager', 'domainmanager') }}</h4>
@@ -51,17 +51,41 @@
             </div>
         </div>
     </div>
-{% elseif locked_fields is not empty %}
+{% endif %}
+{% if can_toggle_proxy %}
+    <div class="form-check form-switch mb-3" id="domainmanager-proxy-toggle-container" style="display:none">
+        {# Unchecked checkboxes submit nothing at all — this hidden "0"
+         # fallback is what actually lets a user turn proxying *off*; the
+         # checkbox below shares its name and, when checked, its "1" simply
+         # arrives after the hidden field's "0" in $_POST/$item->input,
+         # which — like any repeated form field — keeps only the last value. #}
+        <input type="hidden" name="_domainmanager_proxied" value="0">
+        <input
+            class="form-check-input"
+            type="checkbox"
+            role="switch"
+            id="domainmanager-proxy-toggle"
+            name="_domainmanager_proxied"
+            value="1"
+            {{ current_proxied ? 'checked' : '' }}
+        >
+        <label class="form-check-label" for="domainmanager-proxy-toggle">
+            <i class="ti ti-cloud-filled"></i>
+            {{ __('Proxied', 'domainmanager') }}
+        </label>
+    </div>
+{% endif %}
+{% if not can_update and locked_fields is not empty %}
     <div class="alert alert-secondary d-flex align-items-center mb-3" role="alert">
-        <i class="ti ti-lock me-2"></i>
+        <i class="ti ti-cloud-lock me-2"></i>
         <div>{{ __('This record is imported by Domain Manager synchronization and cannot be edited here.', 'domainmanager') }}</div>
     </div>
 {% endif %}
 <script>
     (function () {
-        var lockedFields = {{ locked_fields|json_encode|raw }};
+        var form = document.getElementById('main-form') || document.querySelector('form[name="asset_form"]');
+        var lockedFields = {{ locked_fields|json_encode|raw }}.concat({{ structural_locked_fields|json_encode|raw }});
         if (lockedFields.length) {
-            var form = document.getElementById('main-form') || document.querySelector('form[name="asset_form"]');
             if (form) {
                 lockedFields.forEach(function (field) {
                     form.querySelectorAll('[name="' + field + '"]').forEach(function (input) {
@@ -69,7 +93,7 @@
                         var label = form.querySelector('label[for="' + input.id + '"]');
                         if (label && !label.querySelector('.domainmanager-lock')) {
                             var icon = document.createElement('i');
-                            icon.className = 'ti ti-lock ms-1 domainmanager-lock';
+                            icon.className = 'ti ti-cloud-lock ms-1 domainmanager-lock';
                             icon.title = {{ __('Locked by Domain Manager synchronization', 'domainmanager')|json_encode|raw }};
                             label.appendChild(icon);
                         }
@@ -77,6 +101,65 @@
                 });
             }
         }
+
+        {% if can_update %}
+        // The "Managed by Domain Manager" banner is rendered by GLPI's
+        // POST_ITEM_FORM hook at the very end of the form body (right
+        // before the submit buttons) — there is no server-side way to
+        // place plugin-injected content earlier in a native form, so it's
+        // moved to the top here, before the first native field, and only
+        // then revealed (never left in its original spot even briefly).
+        var banner = document.getElementById('domainmanager-managed-banner');
+        if (banner && form) {
+            var firstField = form.querySelector('.card-body, .row, .form-field') || form.firstElementChild;
+            if (firstField && firstField.parentNode && firstField !== banner) {
+                firstField.parentNode.insertBefore(banner, firstField);
+            } else {
+                form.insertBefore(banner, form.firstChild);
+            }
+            banner.style.display = '';
+        }
+        {% endif %}
+
+        {% if can_toggle_proxy %}
+        // `is_proxied` lives on ImportedRecord, not DomainRecord (§9 Phase
+        // 49) — there is no real form field for it to occupy, so the
+        // checkbox rendered above (hidden, outside the <form>) is moved
+        // into the native form here, as its own row directly below the
+        // Creation date row (and above TTL), and only then revealed — never
+        // left detached-but-visible even briefly.
+        var proxyContainer = document.getElementById('domainmanager-proxy-toggle-container');
+        if (proxyContainer && form) {
+            var dateInput = form.querySelector('[name="date_creation"]');
+            var dateRow = dateInput ? dateInput.closest('.row') : null;
+            if (dateRow && dateRow.parentNode) {
+                dateRow.parentNode.insertBefore(proxyContainer, dateRow.nextSibling);
+            } else {
+                var ttlInput = form.querySelector('[name="ttl"]');
+                var ttlCol = ttlInput ? ttlInput.closest('.form-field, .col') : null;
+                if (ttlCol && ttlCol.parentNode) {
+                    ttlCol.parentNode.insertBefore(proxyContainer, ttlCol.closest('.row') || ttlCol);
+                } else {
+                    form.appendChild(proxyContainer);
+                }
+            }
+            proxyContainer.style.display = '';
+        }
+        {% endif %}
+
+        {% if can_update %}
+        var updateButtons = document.querySelectorAll(
+            '.form-button-separator button[name="update"]'
+        );
+        updateButtons.forEach(function (btn) {
+            btn.addEventListener('click', function (event) {
+                if (!window.confirm({{ __('This updates the record live at the DNS provider. Continue?', 'domainmanager')|json_encode|raw }})) {
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                }
+            }, true);
+        });
+        {% endif %}
 
         {% if can_delete %}
         var deleteButtons = document.querySelectorAll(

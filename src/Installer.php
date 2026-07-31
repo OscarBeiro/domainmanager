@@ -67,14 +67,20 @@ class Installer
         self::addRecordProxiedColumn($migration);
         self::addRecordGlpiCreatedColumn($migration);
         self::addDomainManagedColumn($migration);
+        self::addDomainGlpiCreatedColumn($migration);
         self::addNameAsciiColumn($migration);
         self::addRdapColumns($migration);
+        self::addDnsWriteStatusColumns($migration);
+        self::seedRecordProxyDisplayPreference();
         self::clearDuplicateNameAscii();
         self::pruneStaleSearchOptionCriteria();
         self::seedDomainType();
         self::seedRecordTypes();
         self::registerRights($migration);
+        self::migratePurgeRight();
         self::registerCronTasks();
+        self::dropRecordConflictsTable($migration);
+        self::backfillManagedFieldLocks();
 
         $migration->executeMigration();
 
@@ -107,6 +113,19 @@ class Installer
         $DB->delete(
             'glpi_displaypreferences',
             ['itemtype' => ['LIKE', 'GlpiPlugin\\\\Domainmanager\\\\%']],
+        );
+
+        // seedRecordProxyDisplayPreference() below is the one exception:
+        // it seeds a global-default (users_id=0) column on core DomainRecord
+        // itself, not a plugin itemtype, so the LIKE-based delete above
+        // never catches it.
+        $DB->delete(
+            'glpi_displaypreferences',
+            [
+                'itemtype' => 'DomainRecord',
+                'num'      => PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_PROXY,
+                'users_id' => 0,
+            ],
         );
 
         $migration->executeMigration();
@@ -161,6 +180,7 @@ class Installer
                     `dns_status` varchar(50) NOT NULL DEFAULT 'never',
                     `dns_message` text,
                     `is_managed` tinyint NOT NULL DEFAULT '0',
+                    `is_glpi_created` tinyint NOT NULL DEFAULT '1',
                     `name_ascii` varchar(255) NOT NULL DEFAULT '',
                     `last_rdap_check_date` datetime NULL DEFAULT NULL,
                     `last_changed_date` datetime NULL DEFAULT NULL,
@@ -170,6 +190,8 @@ class Installer
                     `rdap_registrar_name` varchar(255) NULL DEFAULT NULL,
                     `rdap_registrar_iana_id` varchar(32) NULL DEFAULT NULL,
                     `rdap_nameservers` text,
+                    `dns_write_status` varchar(20) NOT NULL DEFAULT 'manual',
+                    `dns_write_message` text,
                     `date_mod` timestamp NULL DEFAULT NULL,
                     `date_creation` timestamp NULL DEFAULT NULL,
                     PRIMARY KEY (`id`),
@@ -178,8 +200,10 @@ class Installer
                     KEY `dns_suppliers_id` (`dns_suppliers_id`),
                     KEY `last_sync_date` (`last_sync_date`),
                     KEY `is_managed` (`is_managed`),
+                    KEY `is_glpi_created` (`is_glpi_created`),
                     KEY `name_ascii` (`name_ascii`),
                     KEY `last_rdap_check_date` (`last_rdap_check_date`),
+                    KEY `dns_write_status` (`dns_write_status`),
                     KEY `date_mod` (`date_mod`),
                     KEY `date_creation` (`date_creation`)
                 ) ENGINE=InnoDB DEFAULT CHARSET={$charset} COLLATE={$collation} ROW_FORMAT=DYNAMIC
@@ -373,6 +397,49 @@ class Installer
     }
 
     /**
+     * Makes the "Proxy status" search option (PLUGIN_DOMAINMANAGER_SO_
+     * DOMAINRECORD_PROXY, registered in setup.php against core DomainRecord)
+     * show up as a real column on the native Records list out of the box,
+     * not just something a user can dig for under "Add criteria" (§9 Phase
+     * 49). A `users_id => 0` row is GLPI's own "general default" convention
+     * (DisplayPreference::GENERAL) — applies to every user who hasn't
+     * customized their own DomainRecord list columns, and never overrides
+     * a user who already has. Idempotent: checked for existence first since
+     * there is no unique key to rely on and this runs on every
+     * install/upgrade.
+     *
+     * @return void
+     */
+    private static function seedRecordProxyDisplayPreference(): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $exists = countElementsInTable('glpi_displaypreferences', [
+            'itemtype' => 'DomainRecord',
+            'num'      => PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_PROXY,
+            'users_id' => 0,
+        ]) > 0;
+
+        if ($exists) {
+            return;
+        }
+
+        $rank = (int) ($DB->request([
+            'SELECT' => new \QueryExpression('MAX(' . $DB->quoteName('rank') . ') AS ' . $DB->quoteName('max_rank')),
+            'FROM'   => 'glpi_displaypreferences',
+            'WHERE'  => ['itemtype' => 'DomainRecord', 'users_id' => 0],
+        ])->current()['max_rank'] ?? 0);
+
+        $DB->insert('glpi_displaypreferences', [
+            'itemtype' => 'DomainRecord',
+            'num'      => PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_PROXY,
+            'rank'     => $rank + 1,
+            'users_id' => 0,
+        ]);
+    }
+
+    /**
      * Add `is_glpi_created` to the records table (ARCHITECTURE.md §11.12,
      * Phase 32) — same table `is_managed`/`is_proxied` already live on.
      * Idempotent via `Migration::addField()`/`addKey()` for upgrades;
@@ -396,6 +463,31 @@ class Installer
 
         $migration->addField($table, 'is_glpi_created', 'bool', ['value' => 0]);
         $migration->addKey($table, 'is_glpi_created');
+    }
+
+    /**
+     * Add `dns_write_status`/`dns_write_message` to the states table
+     * (ARCHITECTURE.md §12.3, Phase 42) — per-domain, per-write-capable-driver
+     * editability state for DNS record write-back, learned from real writes
+     * only, never probed. Idempotent via `Migration::addField()`/`addKey()`
+     * for upgrades; already present in `createTables()`'s raw CREATE TABLE for
+     * fresh installs, same convention as `is_proxied`/`is_glpi_created`.
+     *
+     * `dns_write_status` defaults to `DomainState::DNS_WRITE_MANUAL` on every
+     * pre-existing row: the next sync that recognizes a write-capable driver
+     * for that domain moves it to `managed_readonly` (§12.3) — no backfill
+     * needed here.
+     *
+     * @param  Migration $migration
+     * @return void
+     */
+    private static function addDnsWriteStatusColumns(Migration $migration): void
+    {
+        $table = 'glpi_plugin_domainmanager_states';
+
+        $migration->addField($table, 'dns_write_status', 'string', ['value' => 'manual']);
+        $migration->addKey($table, 'dns_write_status');
+        $migration->addField($table, 'dns_write_message', 'text', ['value' => null]);
     }
 
     /**
@@ -454,6 +546,38 @@ class Installer
                 }
             }
         }
+    }
+
+    /**
+     * Add `is_glpi_created` to the states table (ARCHITECTURE.md §14.2,
+     * Phase 47) — the Domain-level counterpart to
+     * `addRecordGlpiCreatedColumn()` above, backing the new "Native" search
+     * option. Idempotent via `Migration::addField()`/`addKey()` for
+     * upgrades; already present in `createTables()`'s raw CREATE TABLE for
+     * fresh installs.
+     *
+     * Unlike the records table's version (which defaults `0`, since every
+     * pre-existing row there was reconciler-created), this one defaults `1`:
+     * every Domain that already has a state row got there either by manual
+     * creation followed by a sync, or — before this phase existed — by
+     * `DomainImportController`'s bulk import, with no way to tell the two
+     * apart retroactively from the state row alone. Defaulting to "Native"
+     * matches the far more common real-world case this plugin is deployed
+     * into (§14, ARCHITECTURE.md: "most scenarios will be running GLPIs with
+     * manual domains") and errs toward under- rather than over-reporting
+     * imported domains as native. Set once at state-row creation only
+     * (`SyncEngine::sync()`, `$isImport` parameter), never changed
+     * afterward, same convention as the records table's version.
+     *
+     * @param  Migration $migration
+     * @return void
+     */
+    private static function addDomainGlpiCreatedColumn(Migration $migration): void
+    {
+        $table = 'glpi_plugin_domainmanager_states';
+
+        $migration->addField($table, 'is_glpi_created', 'bool', ['value' => 1]);
+        $migration->addKey($table, 'is_glpi_created');
     }
 
     /**
@@ -746,6 +870,55 @@ class Installer
      * @param  Migration $migration
      * @return void
      */
+    /**
+     * One-time cleanup for pre-existing installs that already carried the
+     * old single flat `domainmanager:purge_records` right (Phase 45),
+     * folded here into per-type PURGE bits (ARCHITECTURE.md §11.6
+     * addendum): any profile that held the old right's bit 1 gets the
+     * PURGE bit granted on every per-type `dns_records_*` right instead —
+     * the old right had no per-type distinction, so this is the closest
+     * equivalent — then the old right's rows are removed entirely.
+     *
+     * @return void
+     */
+    private static function migratePurgeRight(): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $old_right = 'domainmanager:purge_records';
+
+        $iterator = $DB->request([
+            'SELECT' => ['profiles_id'],
+            'FROM'   => 'glpi_profilerights',
+            'WHERE'  => ['name' => $old_right, 'rights' => ['&', 1]],
+        ]);
+
+        foreach ($iterator as $row) {
+            $profiles_id = (int) $row['profiles_id'];
+            foreach (Profile::getDnsRecordRights() as $field) {
+                $current = $DB->request([
+                    'SELECT' => ['rights'],
+                    'FROM'   => 'glpi_profilerights',
+                    'WHERE'  => ['profiles_id' => $profiles_id, 'name' => $field],
+                ])->current();
+
+                if ($current === null) {
+                    continue;
+                }
+
+                $DB->update(
+                    'glpi_profilerights',
+                    ['rights' => ((int) $current['rights']) | PURGE],
+                    ['profiles_id' => $profiles_id, 'name' => $field],
+                );
+            }
+        }
+
+        $DB->delete('glpi_profilerights', ['name' => $old_right]);
+        ProfileRight::cleanAllPossibleRights();
+    }
+
     private static function registerRights(Migration $migration): void
     {
         $migration->addRight(Profile::UNLOCK_RIGHT, Profile::RIGHT_UNLOCK_IMPORTED, ['config' => UPDATE]);
@@ -755,11 +928,88 @@ class Installer
         // right above (piggybacked on config UPDATE), pushing changes to a
         // live provider is sensitive enough that an admin must grant each
         // type explicitly per profile.
+        // Each right's PURGE bit (irreversible on the GLPI side, since the
+        // provider was already synced at soft-delete time) is likewise not
+        // auto-granted — an admin must opt a profile in explicitly, per type.
         foreach (Profile::getDnsRecordRights() as $field) {
             $migration->addRight($field, 0);
         }
         // Migration::addRight() inserts rows directly: reset the rights cache
         ProfileRight::cleanAllPossibleRights();
+    }
+
+    /**
+     * The RecordConflict update-conflict-resolution feature (was
+     * ARCHITECTURE.md §13, Phase 44) was removed: for a record Domain
+     * Manager actively manages, GLPI's value is always authoritative, so
+     * there was never a genuine conflict to reconcile. No longer created
+     * for fresh installs (dropped from `createTables()`'s schema); this
+     * drops the table for anyone upgrading from a version that still has
+     * it, leaving no residue, same as `uninstall()`'s own table cleanup.
+     *
+     * @param  Migration $migration
+     * @return void
+     */
+    private static function dropRecordConflictsTable(Migration $migration): void
+    {
+        $migration->dropTable('glpi_plugin_domainmanager_recordconflicts');
+    }
+
+    /**
+     * §9: one-time (per-install/upgrade, idempotent) backfill locking
+     * `domaintypes_id`/`date_domaincreation`/`date_expiration` on every
+     * already-managed domain that has a value for them but no lock yet.
+     * Needed because both are otherwise only ever locked as a *side effect*
+     * of a live sync/RDAP-enrichment run actually touching that field —
+     * `SyncEngine`/`Cron` only relock what a run itself just wrote or had
+     * previously locked, so a domain that was already fully enriched
+     * before this locking existed (RDAP's own `hasGap()` pre-check means
+     * such a domain may never run its enrichment again at all) would
+     * otherwise stay unlocked forever.
+     *
+     * @return void
+     */
+    private static function backfillManagedFieldLocks(): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $iterator = $DB->request([
+            'SELECT' => [
+                'glpi_domains.id',
+                'glpi_domains.domaintypes_id',
+                'glpi_domains.date_domaincreation',
+                'glpi_domains.date_expiration',
+            ],
+            'FROM'      => 'glpi_domains',
+            'INNER JOIN' => [
+                'glpi_plugin_domainmanager_states' => [
+                    'ON' => [
+                        'glpi_plugin_domainmanager_states' => 'domains_id',
+                        'glpi_domains'                      => 'id',
+                    ],
+                ],
+            ],
+            'WHERE' => [
+                'glpi_domains.is_deleted'                       => 0,
+                'glpi_plugin_domainmanager_states.is_managed'   => 1,
+            ],
+        ]);
+
+        foreach ($iterator as $row) {
+            $domains_id = (int) $row['id'];
+            $locked     = ImportLock::getLockedFieldNames(\Domain::class, $domains_id);
+
+            if ((int) $row['domaintypes_id'] > 0 && !in_array('domaintypes_id', $locked, true)) {
+                ImportLock::setLock(\Domain::class, $domains_id, 'domaintypes_id', $row['domaintypes_id']);
+            }
+            if (!empty($row['date_domaincreation']) && !in_array('date_domaincreation', $locked, true)) {
+                ImportLock::setLock(\Domain::class, $domains_id, 'date_domaincreation', $row['date_domaincreation']);
+            }
+            if (!empty($row['date_expiration']) && !in_array('date_expiration', $locked, true)) {
+                ImportLock::setLock(\Domain::class, $domains_id, 'date_expiration', $row['date_expiration']);
+            }
+        }
     }
 
     /**

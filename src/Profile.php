@@ -55,12 +55,21 @@ class Profile extends CoreProfile
      * Per-type DNS record write-back rights (ARCHITECTURE.md §11.6, Phase
      * 34b, superseding Phase 32's single `domainmanager:dns_records`
      * right). One right per writable `DomainRecordType`, each carrying
-     * core's own CREATE/UPDATE/DELETE bits, rendered via
+     * core's own CREATE/UPDATE/DELETE/PURGE bits, rendered via
      * `Profile::displayRightsChoiceMatrix()` so each reads like any other
      * GLPI right. Distinct from `UNLOCK_RIGHT`: that one governs local
      * overrides of plugin locks on the native form; these authorise the
      * native `DomainRecord` tab's add/update/delete to be pushed to IONOS,
      * per type, via `hook.php` item hooks (§11.7).
+     *
+     * PURGE on each per-type right gates hard-purging a DomainRecord of
+     * that type (permanently emptying it from the GLPI trash) — distinct
+     * from and independent of the same right's own DELETE bit: soft-delete
+     * already pushes the deletion upstream and is recoverable, so any user
+     * with DELETE can do it; purge is irreversible on the GLPI side (the
+     * provider was already synced at soft-delete time), so it's a separate
+     * bit that can be handed out more narrowly, per type, matching how
+     * native GLPI itemtypes distinguish DELETE from PURGE.
      */
     public const DNS_RECORDS_RIGHT_A     = 'domainmanager:dns_records_a';
     public const DNS_RECORDS_RIGHT_AAAA  = 'domainmanager:dns_records_aaaa';
@@ -134,10 +143,10 @@ class Profile extends CoreProfile
         // Phase 32's single flat right, so a profile can be granted (e.g.)
         // TXT write-back without also getting AAAA.
         $labels = [
-            'A'     => __('DNS record write-back: A', 'domainmanager'),
-            'AAAA'  => __('DNS record write-back: AAAA', 'domainmanager'),
-            'CNAME' => __('DNS record write-back: CNAME', 'domainmanager'),
-            'TXT'   => __('DNS record write-back: TXT', 'domainmanager'),
+            'A'     => __('Domain Record: A', 'domainmanager'),
+            'AAAA'  => __('Domain Record: AAAA', 'domainmanager'),
+            'CNAME' => __('Domain Record: CNAME', 'domainmanager'),
+            'TXT'   => __('Domain Record: TXT', 'domainmanager'),
         ];
         foreach (self::getDnsRecordRights() as $type => $field) {
             $rights[] = [
@@ -145,6 +154,7 @@ class Profile extends CoreProfile
                     CREATE => __('Create'),
                     UPDATE => __('Update'),
                     DELETE => __('Delete'),
+                    PURGE  => __('Purge'),
                 ],
                 'label'  => $labels[$type],
                 'field'  => $field,

@@ -40,7 +40,7 @@ use GlpiPlugin\Domainmanager\Profile as DomainmanagerProfile;
 use GlpiPlugin\Domainmanager\Service\DnsRecordWriteback;
 use GlpiPlugin\Domainmanager\SupplierTab;
 
-define('PLUGIN_DOMAINMANAGER_VERSION', '1.2.0-beta3');
+define('PLUGIN_DOMAINMANAGER_VERSION', '1.3.1');
 define('PLUGIN_DOMAINMANAGER_MIN_GLPI', '11.0.0');
 define('PLUGIN_DOMAINMANAGER_MAX_GLPI', '11.0.99');
 define('PLUGIN_DOMAINMANAGER_REPOSITORY_URL', 'https://github.com/TICGAL-GLPI-Plugins/domainmanager');
@@ -85,7 +85,6 @@ define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_STATUS', 9409);
 define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_LAST_SYNC', 9410);
 // Real, filterable search options on Supplier (§9 Phase 16 "Supplier-side
 // searchable fields") — see their own registration below.
-define('PLUGIN_DOMAINMANAGER_SO_SUPPLIER_DOMAINS', 9411);
 define('PLUGIN_DOMAINMANAGER_SO_SUPPLIER_REGISTRAR', 9412);
 define('PLUGIN_DOMAINMANAGER_SO_SUPPLIER_NS_PROVIDER', 9413);
 define('PLUGIN_DOMAINMANAGER_SO_SUPPLIER_REGISTRAR_COUNT', 9414);
@@ -132,6 +131,11 @@ define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_PENDING_TRANSFER', 9428);
 // spoken for, so this widens it the same way 9400-9409 was widened to
 // 9400-9429 originally.
 define('PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_GLPI_CREATED', 9430);
+// Real, filterable search option on Domain (ARCHITECTURE.md §14.2, Phase 47)
+// — the Domain-level counterpart to PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_GLPI_CREATED
+// above, same "Native" label/is_glpi_created-style field, backed by its own
+// column on the states table rather than the records table.
+define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_GLPI_CREATED', 9431);
 
 /**
  * Plugin_Version_Domainmanager
@@ -210,6 +214,25 @@ function plugin_domainmanager_getAddSearchOptionsNew($itemtype): array
             'field'         => 'is_managed',
             'linkfield'     => 'domains_id',
             'name'          => __('Managed', 'domainmanager'),
+            'datatype'      => 'bool',
+            'massiveaction' => false,
+            'joinparams'    => [
+                'jointype' => 'child',
+            ],
+        ];
+
+        // ARCHITECTURE.md §14.2 (Phase 47): "Native" — the Domain-level
+        // counterpart to PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_GLPI_CREATED
+        // below, backed by `is_glpi_created` on this same states table
+        // (SyncEngine::sync() sets it once, at state-row creation only,
+        // never touched afterward). Same single-hop 'child' join shape as
+        // "Managed" above.
+        $options[] = [
+            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN_GLPI_CREATED,
+            'table'         => DomainState::getTable(),
+            'field'         => 'is_glpi_created',
+            'linkfield'     => 'domains_id',
+            'name'          => __('Native', 'domainmanager'),
             'datatype'      => 'bool',
             'massiveaction' => false,
             'joinparams'    => [
@@ -447,7 +470,7 @@ function plugin_domainmanager_getAddSearchOptionsNew($itemtype): array
             'table'         => DomainState::getTable(),
             'field'         => 'registrar_auth_info',
             'linkfield'     => 'domains_id',
-            'name'          => __('Transfer / EPP auth code', 'domainmanager'),
+            'name'          => __('Auth code', 'domainmanager'),
             'datatype'      => 'specific',
             'searchtype'    => ['empty'],
             'massiveaction' => false,
@@ -536,7 +559,7 @@ function plugin_domainmanager_getAddSearchOptionsNew($itemtype): array
             'table'         => ImportedRecord::getTable(),
             'field'         => 'is_glpi_created',
             'linkfield'     => 'domainrecords_id',
-            'name'          => __('Created from GLPI', 'domainmanager'),
+            'name'          => __('Native', 'domainmanager'),
             'datatype'      => 'bool',
             'massiveaction' => false,
             'joinparams'    => [
@@ -569,36 +592,6 @@ function plugin_domainmanager_getAddSearchOptionsNew($itemtype): array
         // reverse-list options do (e.g. Software's "Number of
         // installations", Ticket's "Parent tickets"/id 50).
         //
-        // "Domains" (total, union of both roles) stays count-only: it
-        // reuses DomainState's own registrar_suppliers_id mirror column
-        // (§0.1, kept in sync with the live Infocom link by
-        // HookHandler::infocomSaved()) to OR both roles in one join, since
-        // a single search-option join can only encode one OR'd pair of
-        // columns on one table — there is no single table that could carry
-        // an actual combined domain-name *list* the same way (that would
-        // need two different tables' rows unioned, which the search
-        // framework's one-join-per-option/beforejoin-chain model can't
-        // express). Good enough for "is this supplier worth a closer look"
-        // filtering; it is not the authoritative per-domain view that's on
-        // the Supplier's own Domain Manager tab
-        // (DomainState::getDomainsForSupplier(), which cross-checks the
-        // mirror against the live Infocom value row by row).
-        $options[] = [
-            'id'            => PLUGIN_DOMAINMANAGER_SO_SUPPLIER_DOMAINS,
-            'table'         => DomainState::getTable(),
-            'field'         => 'id',
-            'name'          => __('Domains', 'domainmanager'),
-            'datatype'      => 'count',
-            'forcegroupby'  => true,
-            'usehaving'     => true,
-            'massiveaction' => false,
-            'joinparams'    => [
-                'jointype'  => 'child',
-                'linkfield' => 'registrar_suppliers_id',
-                'condition' => 'OR NEWTABLE.`dns_suppliers_id` = REFTABLE.`id`',
-            ],
-        ];
-
         // "Registrar": the actual domain names (clickable, 'itemlink'),
         // reading the live, authoritative link (glpi_infocoms, the same
         // one that puts a Domain on this Supplier's native "Items" tab)
@@ -641,7 +634,7 @@ function plugin_domainmanager_getAddSearchOptionsNew($itemtype): array
             'id'            => PLUGIN_DOMAINMANAGER_SO_SUPPLIER_REGISTRAR_COUNT,
             'table'         => 'glpi_infocoms',
             'field'         => 'id',
-            'name'          => __('Number of domains (Registrar)', 'domainmanager'),
+            'name'          => __('Registrar Count', 'domainmanager'),
             'datatype'      => 'count',
             'forcegroupby'  => true,
             'usehaving'     => true,
@@ -692,7 +685,7 @@ function plugin_domainmanager_getAddSearchOptionsNew($itemtype): array
             'id'            => PLUGIN_DOMAINMANAGER_SO_SUPPLIER_NS_PROVIDER_COUNT,
             'table'         => DomainState::getTable(),
             'field'         => 'id',
-            'name'          => __('Number of domains (NS Provider)', 'domainmanager'),
+            'name'          => __('Provider Count', 'domainmanager'),
             'datatype'      => 'count',
             'forcegroupby'  => true,
             'usehaving'     => true,
@@ -801,6 +794,16 @@ function plugin_init_domainmanager(): void
         ];
         $PLUGIN_HOOKS[Hooks::PRE_ITEM_PURGE]['domainmanager'] = [
             DomainRecord::class => [LockEnforcer::class, 'domainRecordPrePurge'],
+        ];
+
+        // ARCHITECTURE.md §14.3 (Phase 48 bug fix): paired counterpart to the
+        // PRE_ITEM_DELETE entry above — recreates the record upstream when a
+        // write-back-managed trashed record is restored, since the trash
+        // itself already pushed a real deletion (DnsRecordWriteback::
+        // onPreRestore()); without this, restoring only flipped is_deleted
+        // locally and the next sync re-trashed it, looking like a no-op.
+        $PLUGIN_HOOKS[Hooks::PRE_ITEM_RESTORE]['domainmanager'] = [
+            DomainRecord::class => [DnsRecordWriteback::class, 'onPreRestore'],
         ];
 
         // Resolves to /plugins/domainmanager/Config, which redirects to the

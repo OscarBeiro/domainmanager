@@ -32,6 +32,8 @@
 namespace GlpiPlugin\Domainmanager\Service;
 
 use Domain;
+use GlpiPlugin\Domainmanager\Contract\DnsRecordCommentSyncInterface;
+use GlpiPlugin\Domainmanager\Contract\DnsRecordWriterInterface;
 use GlpiPlugin\Domainmanager\Dto\LifecycleStatus;
 use GlpiPlugin\Domainmanager\DomainState;
 use GlpiPlugin\Domainmanager\DriverFactory;
@@ -61,6 +63,17 @@ class SyncEngine
      * Run both pipelines for a domain and persist the outcome in its state row
      *
      * @param  Domain $domain
+     * @param  bool   $isImport ARCHITECTURE.md §14.2 (Phase 47): true only
+     *                          when this call's state row (if newly created
+     *                          here) should be marked `is_glpi_created = 0`
+     *                          — set by `DomainImportController` for its
+     *                          bulk-import path; every other caller (manual
+     *                          Domain creation's first sync, cron,
+     *                          MassiveActionHandler, SyncController) leaves
+     *                          this false, so a newly-created state row
+     *                          defaults to "Native". Ignored entirely when
+     *                          the domain already has a state row — this
+     *                          field is set once, at creation, never again.
      * @return array{registrar_status: string, dns_status: string,
      *               registrar_message: string, dns_message: string,
      *               detected_provider: string, last_sync_date: string,
@@ -69,11 +82,20 @@ class SyncEngine
      *               registrar_auto_renew: ?int, registrar_domain_type: ?string,
      *               registrar_dnssec_enabled: ?int}
      */
-    public function sync(Domain $domain): array
+    public function sync(Domain $domain, bool $isImport = false): array
     {
         $state = DomainState::getForDomain((int) $domain->getID());
         $fqdn  = (string) $domain->fields['name'];
         $now   = $_SESSION['glpi_currenttime'] ?? date('Y-m-d H:i:s');
+
+        // §9: snapshot taken before syncRegistrarLeg()'s own replaceLocks()
+        // call below can run — that call wipes and rewrites the Domain's
+        // *entire* lock set with whatever this run's registrar leg itself
+        // supplies, which would otherwise silently erase a
+        // `date_domaincreation`/`date_expiration` lock that Cron's RDAP
+        // gap-fill had set on a prior run for a driver that never reports
+        // one of those itself (e.g. IONOS — see IonosDriver.php).
+        $previously_locked = ImportLock::getLockedFieldNames(Domain::class, (int) $domain->getID());
 
         // Read live, not from the state row's own (possibly stale) mirror:
         // Infocom's "Supplier" field (§0.1) is the single source of truth
@@ -161,7 +183,35 @@ class SyncEngine
             $this->syncRegistrarLeg($domain, $registrar_id, $result);
 
             // 4. DNS leg (isolated)
-            if ($dns_config !== null) {
+            // §14.2 (Phase 47 write gate): if this domain's DNS records were
+            // already managed (is_managed) under a *different* resolved
+            // supplier than the one just detected, do not fetch/reconcile
+            // at all this run — silently trashing the previous supplier's
+            // owned records and recreating them under the new one would be
+            // a real, unreviewed data migration. Block once; the new
+            // supplier id is still persisted below, so a deliberate second
+            // sync run (nothing else needs to change) confirms and applies
+            // it, same "re-sync to confirm" pattern STATUS_REASSIGNED
+            // already uses for a Registrar change.
+            $previous_dns_suppliers_id = $state !== null ? (int) $state->fields['dns_suppliers_id'] : 0;
+            $source_conflict = $dns_config !== null
+                && $state !== null
+                && (bool) $state->fields['is_managed']
+                && $previous_dns_suppliers_id > 0
+                && $previous_dns_suppliers_id !== (int) $dns_config->fields['suppliers_id'];
+
+            if ($source_conflict) {
+                $result['dns_status']  = DomainState::STATUS_SOURCE_CONFLICT;
+                $result['dns_message'] = sprintf(
+                    __('DNS provider changed from supplier #%1$d to #%2$d; records were left untouched. Re-run synchronization to confirm and apply this change.', 'domainmanager'),
+                    $previous_dns_suppliers_id,
+                    (int) $dns_config->fields['suppliers_id'],
+                );
+                $this->logger->skip(
+                    (int) $domain->getID(),
+                    "DNS sync skipped: resolved supplier changed from #$previous_dns_suppliers_id to #" . (int) $dns_config->fields['suppliers_id'] . ' (source conflict, pending confirmation)',
+                );
+            } elseif ($dns_config !== null) {
                 $this->syncDnsLeg($domain, $dns_config, $result);
             }
         } finally {
@@ -178,6 +228,34 @@ class SyncEngine
         $resolved_statuses = [DomainState::STATUS_OK, DomainState::STATUS_ERROR];
         $is_managed = in_array($result['registrar_status'], $resolved_statuses, true)
             || in_array($result['dns_status'], $resolved_statuses, true);
+
+        // §9: `domaintypes_id` is set once by `DomainImportController` (only
+        // when the admin configured a "domain type to apply to imported
+        // domains"), independent of either sync leg — locked via `setLock()`
+        // rather than folded into `syncRegistrarLeg()`'s own `replaceLocks()`
+        // call, since that call wipes and rewrites the *entire* Domain lock
+        // set and only runs when the registrar leg succeeds (a DNS-only
+        // managed domain would never see it otherwise). Cleared the moment
+        // the domain stops being managed or the field is left unset, so a
+        // once-imported domain that later loses its provider isn't left
+        // permanently locked out of hand-editing its type.
+        $domaintypes_id = (int) ($domain->fields['domaintypes_id'] ?? 0);
+        if ($is_managed && $domaintypes_id > 0) {
+            ImportLock::setLock(Domain::class, (int) $domain->getID(), 'domaintypes_id', $domaintypes_id);
+        } else {
+            ImportLock::clearLock(Domain::class, (int) $domain->getID(), 'domaintypes_id');
+        }
+
+        // §9: restore an RDAP-set date lock this run's registrar leg wiped
+        // (see $previously_locked's docblock above) — a no-op whenever the
+        // registrar leg itself already relocked the field with the same
+        // value, since setLock() is idempotent.
+        foreach (['date_domaincreation', 'date_expiration'] as $date_field) {
+            $value = $domain->fields[$date_field] ?? null;
+            if ($is_managed && !empty($value) && in_array($date_field, $previously_locked, true)) {
+                ImportLock::setLock(Domain::class, (int) $domain->getID(), $date_field, $value);
+            }
+        }
 
         $state_input = [
             'registrar_suppliers_id' => $registrar_id,
@@ -224,9 +302,48 @@ class SyncEngine
             }
         }
 
+        // §12.3 (Phase 42): `dns_write_status` starts at `managed_readonly`
+        // the moment this sync recognizes a write-capable driver for the
+        // domain, and resets to it again if the resolved DNS supplier
+        // changes — a nameserver move can point the same domain at a
+        // different account/zone the current write history says nothing
+        // about. It is otherwise left untouched here: a successful *read*
+        // is explicitly not a reset trigger (only a real write attempt,
+        // via `DomainState::recordWriteOutcome()`, ever moves it to
+        // `managed_editable` or back). A driver that isn't write-capable at
+        // all (or no resolved DNS config) always reads as `manual`.
+        $is_write_capable = false;
+        if ($dns_config !== null) {
+            try {
+                $is_write_capable = DriverFactory::forDns($dns_config) instanceof DnsRecordWriterInterface;
+            } catch (Throwable) {
+                $is_write_capable = false;
+            }
+        }
+
+        if (!$is_write_capable) {
+            $state_input['dns_write_status']  = DomainState::DNS_WRITE_MANUAL;
+            $state_input['dns_write_message'] = null;
+        } else {
+            $new_dns_suppliers_id = (int) $dns_config->fields['suppliers_id'];
+            $previous_dns_suppliers_id = $state !== null ? (int) ($state->fields['dns_suppliers_id'] ?? 0) : 0;
+            $previous_write_status = $state !== null
+                ? (string) ($state->fields['dns_write_status'] ?? DomainState::DNS_WRITE_MANUAL)
+                : DomainState::DNS_WRITE_MANUAL;
+
+            if ($state === null || $previous_dns_suppliers_id !== $new_dns_suppliers_id || $previous_write_status === DomainState::DNS_WRITE_MANUAL) {
+                $state_input['dns_write_status']  = DomainState::DNS_WRITE_READONLY;
+                $state_input['dns_write_message'] = null;
+            }
+        }
+
         if ($state !== null) {
             $state->update(['id' => $state->getID()] + $state_input);
         } else {
+            // §14.2 (Phase 47): set once, only on the row's first creation —
+            // an update never carries this key, so an already-existing
+            // state row's value is never touched by a later sync.
+            $state_input['is_glpi_created'] = $isImport ? 0 : 1;
             (new DomainState())->add(['domains_id' => $domain->getID()] + $state_input);
         }
 
@@ -357,12 +474,14 @@ class SyncEngine
                 return;
             }
 
-            $records = DriverFactory::forDns($config)->fetchZoneRecords((string) $domain->fields['name']);
+            $driver  = DriverFactory::forDns($config);
+            $records = $driver->fetchZoneRecords((string) $domain->fields['name']);
             $this->logger->activity(
                 (int) $domain->getID(),
                 'DNS fetch succeeded, returned ' . count($records) . ' record(s) from the provider',
             );
-            $stats = $this->reconciler->reconcile($domain, $records);
+            $commentDriver = $driver instanceof DnsRecordCommentSyncInterface ? $driver : null;
+            $stats = $this->reconciler->reconcile($domain, $records, $commentDriver);
 
             $result['dns_status']  = DomainState::STATUS_OK;
             $result['dns_message'] = sprintf(

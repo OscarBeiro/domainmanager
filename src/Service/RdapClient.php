@@ -70,7 +70,7 @@ class RdapClient
         try {
             $response = $this->getClient()->request('GET', 'domain/' . rawurlencode($domain));
         } catch (GuzzleException $e) {
-            throw new DriverException(__('RDAP lookup failed: connection error', 'domainmanager'), 0, $e);
+            throw new DriverException(__('RDAP lookup failed: connection error', 'domainmanager'), false, $e);
         }
 
         $status = $response->getStatusCode();
@@ -94,7 +94,7 @@ class RdapClient
         try {
             return self::parse($decoded);
         } catch (Throwable $e) {
-            throw new DriverException(__('RDAP lookup failed: unable to parse response', 'domainmanager'), 0, $e);
+            throw new DriverException(__('RDAP lookup failed: unable to parse response', 'domainmanager'), false, $e);
         }
     }
 

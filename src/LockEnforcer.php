@@ -111,9 +111,14 @@ class LockEnforcer
      */
     public static function domainRecordPreUpdate(DomainRecord $item): void
     {
-        if (self::canBypass() || !is_array($item->input)) {
-            // A sync-driven/cron/unlock-right update: never treated as a
-            // manual write-back push, same bypass as every other lock here.
+        // Unlike Domain/Infocom, DomainRecord does NOT honour the
+        // unlock-imported bypass here: that bypass predates write-back
+        // support and was only ever a way to force-edit plugin-owned
+        // records locally. Now that edits can be pushed upstream, a
+        // privileged user's change must still go through DnsRecordWriteback
+        // rather than silently skipping the provider. Only the sync
+        // engine's own writes (and cron) bypass.
+        if (self::canBypassSync() || !is_array($item->input)) {
             return;
         }
 
@@ -244,7 +249,10 @@ class LockEnforcer
      */
     private static function blockRecordRemoval(DomainRecord $item, bool $is_soft_delete): void
     {
-        if (self::canBypass()) {
+        // Same reasoning as domainRecordPreUpdate(): the unlock-imported
+        // right must not skip the write-back push on DomainRecord — only
+        // the sync engine's own removals (and cron) bypass.
+        if (self::canBypassSync()) {
             return;
         }
 
@@ -256,25 +264,52 @@ class LockEnforcer
             return;
         }
 
+        // Purge (emptying the trash) is gated by the PURGE bit on the
+        // per-type write-back right matching this record's type: the
+        // provider was already synced when the record was soft-deleted
+        // above, so this only affects the local GLPI copy — but it's
+        // irreversible on that side, so it's granted independently of
+        // the same right's own DELETE bit, per type.
+        if (!$is_soft_delete && DnsRecordWriteback::hasPurgeRight($item)) {
+            return;
+        }
+
         if (!ImportedRecord::isPluginOwned((int) $item->getID())) {
             return;
         }
 
         $item->input = false;
         Session::addMessageAfterRedirect(
-            __s('This record is imported by Domain Manager synchronization and cannot be removed', 'domainmanager'),
+            $is_soft_delete
+                ? __s('This record is imported by Domain Manager synchronization and cannot be removed', 'domainmanager')
+                : __s('Purging this record requires the "Purge" right for its DNS record type', 'domainmanager'),
             false,
             ERROR,
         );
     }
 
     /**
+     * Full bypass: Domain/Infocom locks — includes the unlock-imported
+     * right, since those fields have no write-back path to a provider.
+     *
      * @return bool
      */
     private static function canBypass(): bool
     {
-        return self::$sync_in_progress
-            || Session::isCron()
+        return self::canBypassSync()
             || Session::haveRight(Profile::UNLOCK_RIGHT, Profile::RIGHT_UNLOCK_IMPORTED);
+    }
+
+    /**
+     * Sync-only bypass: DomainRecord locks — deliberately excludes the
+     * unlock-imported right so a privileged user's create/edit/delete
+     * still goes through DnsRecordWriteback instead of skipping the
+     * provider push.
+     *
+     * @return bool
+     */
+    private static function canBypassSync(): bool
+    {
+        return self::$sync_in_progress || Session::isCron();
     }
 }

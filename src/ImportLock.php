@@ -125,6 +125,59 @@ class ImportLock extends CommonDBTM
     }
 
     /**
+     * Add or refresh a single field's lock without touching any other lock
+     * already held on the same item — unlike `replaceLocks()`, which wipes
+     * and rewrites the item's *entire* lock set and is only safe when one
+     * caller owns that whole set (registrar-leg sync's name/dates). Used for
+     * `domaintypes_id` (§9), which is written independently by import,
+     * not by either sync leg.
+     *
+     * @param  string $itemtype
+     * @param  int    $items_id
+     * @param  string $field
+     * @param  mixed  $value
+     * @return void
+     */
+    public static function setLock(string $itemtype, int $items_id, string $field, $value): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $DB->delete(self::getTable(), [
+            'itemtype' => $itemtype,
+            'items_id' => $items_id,
+            'field'    => $field,
+        ]);
+
+        (new self())->add([
+            'itemtype' => $itemtype,
+            'items_id' => $items_id,
+            'field'    => $field,
+            'value'    => mb_substr((string) $value, 0, 255),
+        ]);
+    }
+
+    /**
+     * Drop a single field's lock, counterpart to `setLock()`
+     *
+     * @param  string $itemtype
+     * @param  int    $items_id
+     * @param  string $field
+     * @return void
+     */
+    public static function clearLock(string $itemtype, int $items_id, string $field): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $DB->delete(self::getTable(), [
+            'itemtype' => $itemtype,
+            'items_id' => $items_id,
+            'field'    => $field,
+        ]);
+    }
+
+    /**
      * Drop every lock of an item (purge cascade)
      *
      * @param  string $itemtype

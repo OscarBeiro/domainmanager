@@ -29,29 +29,28 @@
  * -------------------------------------------------------------------------
  */
 
-namespace GlpiPlugin\Domainmanager\Exception;
+namespace GlpiPlugin\Domainmanager\Contract;
 
-use RuntimeException;
+use GlpiPlugin\Domainmanager\Exception\DriverException;
 
 /**
- * Driver failure whose message is safe to persist and display
- * (payload/technical detail belongs in the plugin log file, never here)
+ * Optional capability: a driver whose provider has no per-record comment/
+ * note concept simply doesn't implement this. GLPI's own DomainRecord
+ * `comment` field is always the SSOT — this is only ever called to push the
+ * GLPI-side value up to the provider (RecordReconciler on drift, and
+ * DnsRecordWriteback on a manual edit); reading the provider's comment back
+ * down only ever happens when the GLPI side is empty (ZoneRecord::$comment,
+ * consumed directly by RecordReconciler, no driver call needed for that
+ * direction).
  */
-class DriverException extends RuntimeException
+interface DnsRecordCommentSyncInterface
 {
     /**
-     * Whether this failure is a genuine write-permission denial (e.g.
-     * Cloudflare's zone-scoped-token 403, ARCHITECTURE.md §12.3) — as
-     * opposed to a transient, validation, or idempotent-already-satisfied
-     * failure. `DnsRecordWriteback` uses this flag to decide whether to call
-     * `DomainState::recordWriteOutcome()`, instead of any shared layer ever
-     * inspecting a status code or provider error body itself (§12.6).
+     * @param  string $domain   FQDN, e.g. "example.com"
+     * @param  string $remoteId provider-assigned record id
+     * @param  string $comment  desired comment (empty string clears it)
+     * @return void
+     * @throws DriverException on any failure (message safe to persist)
      */
-    public readonly bool $isPermissionDenied;
-
-    public function __construct(string $message, bool $isPermissionDenied = false, ?\Throwable $previous = null)
-    {
-        parent::__construct($message, 0, $previous);
-        $this->isPermissionDenied = $isPermissionDenied;
-    }
+    public function pushComment(string $domain, string $remoteId, string $comment): void;
 }

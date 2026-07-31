@@ -50,6 +50,7 @@ final class ZoneRecord
     public readonly int $ttl;
     public readonly string $remoteId;
     public readonly ?bool $isProxied;
+    public readonly ?string $comment;
 
     /**
      * $isProxied is a genuine tri-state (§9 Phase 7 addendum "Searchable
@@ -59,8 +60,13 @@ final class ZoneRecord
      * hardcoded type list — see CloudflareDriver::fetchZoneRecords()),
      * `null` for every non-Cloudflare driver and any record Cloudflare
      * itself reports as not proxyable.
+     *
+     * $comment is the provider's own free-text per-record note (Cloudflare
+     * only; `null` for every driver that has no such concept) — kept out
+     * of getHash() deliberately, same as $isProxied, since it never governs
+     * add/update/trash reconciliation, only the separate comment sync.
      */
-    public function __construct(string $type, string $name, string $data, int $ttl, string $remoteId = '', ?bool $isProxied = null)
+    public function __construct(string $type, string $name, string $data, int $ttl, string $remoteId = '', ?bool $isProxied = null, ?string $comment = null)
     {
         $type = strtoupper(trim($type));
         if (!in_array($type, self::TYPES, true)) {
@@ -79,12 +85,20 @@ final class ZoneRecord
             throw new InvalidArgumentException("TTL $ttl out of range");
         }
 
+        if ($comment !== null) {
+            $comment = self::sanitizeString($comment, 100, 'comment', true);
+            if ($comment === '') {
+                $comment = null;
+            }
+        }
+
         $this->type      = $type;
         $this->name      = $name;
         $this->data      = $data;
         $this->ttl       = $ttl;
         $this->remoteId  = $remoteId;
         $this->isProxied = $isProxied;
+        $this->comment   = $comment;
     }
 
     /**

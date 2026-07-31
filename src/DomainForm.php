@@ -167,9 +167,12 @@ class DomainForm
             && $registrar_supplier !== null
             && !self::registrarNamesLikelyMatch((string) $state->fields['rdap_registrar_name'], $registrar_supplier->getName());
 
+        $is_managed = $state !== null && (bool) $state->fields['is_managed'];
+
         TemplateRenderer::getInstance()->display('@domainmanager/domain_panel.html.twig', [
             'is_new'             => $is_new,
             'can_update'         => $can_update,
+            'is_managed'         => $is_managed,
             'state'              => $state?->fields,
             'registrar_supplier' => $registrar_supplier,
             'dns_supplier'       => $dns_supplier,
@@ -188,7 +191,7 @@ class DomainForm
             'registrar_mismatch' => $registrar_mismatch,
         ]);
 
-        self::renderManagedIndicator($state !== null && (bool) $state->fields['is_managed']);
+        self::renderManagedIndicator($is_managed);
     }
 
     /**
@@ -251,14 +254,37 @@ class DomainForm
         $can_update = $dns_editable && $is_writable_type && DnsRecordWriteback::hasTypeRight($type, UPDATE);
         $can_delete = $dns_editable && $is_writable_type && DnsRecordWriteback::hasTypeRight($type, DELETE);
 
+        // §9 Phase 49: the proxy-status checkbox is only worth injecting
+        // when this specific record could ever be proxied (A/AAAA/CNAME —
+        // TXT/MX/NS never are) *and* the user can actually push a change
+        // (same $can_update gate as name/data/ttl above).
+        $can_toggle_proxy = $can_update
+            && DnsRecordWriteback::isProxiableType($type)
+            && DnsRecordWriteback::supportsProxyToggle($state);
+        $imported = ImportedRecord::getForDomainRecord($records_id);
+        $current_proxied = $imported !== null && $imported->fields['is_proxied'] !== null
+            ? (bool) $imported->fields['is_proxied']
+            : null;
+
         TemplateRenderer::getInstance()->display('@domainmanager/domainrecord_edit_panel.html.twig', [
-            'can_update'    => $can_update,
-            'can_delete'    => $can_delete,
+            'can_update'       => $can_update,
+            'can_delete'       => $can_delete,
+            'can_toggle_proxy' => $can_toggle_proxy,
+            'current_proxied'  => $current_proxied,
             'supplier_name' => $dns_editable ? DnsRecordWriteback::writableSupplierName($domains_id) : null,
             // Cosmetic-only (server-side is authoritative, see docblock
             // above): every editable field disabled unless the user can
             // actually write this record back.
-            'locked_fields' => $can_update ? [] : ['name', 'data', 'ttl', 'domainrecordtypes_id'],
+            'locked_fields' => $can_update ? [] : ['name', 'data', 'ttl'],
+            // Always locked, even for a user with write-back rights: these
+            // three are structural, mirroring LockEnforcer's own
+            // STRUCTURAL_RECORD_FIELD (domains_id) server-side — changing
+            // the domain link or the record type re-parents/retypes a
+            // record the plugin is tracking by (domains_id, remote_id),
+            // and there is no legitimate write-back edit that needs to
+            // touch either; the creation date is likewise never something
+            // an edit should touch.
+            'structural_locked_fields' => ['domains_id', 'domainrecordtypes_id', 'date_creation'],
         ]);
     }
 
@@ -288,9 +314,52 @@ class DomainForm
         self::renderManagedIndicator($is_managed);
 
         $tab_itemtype = $params['options']['itemtype'] ?? '';
-        if ($is_managed && $tab_itemtype === DomainRecord::class) {
-            self::renderRecordWritePanel($domains_id, $state);
+        if ($tab_itemtype === DomainRecord::class) {
+            if ($state !== null && $is_managed) {
+                self::renderRecordWritePanel($domains_id, $state);
+            }
+            self::renderProxyIndicators($domains_id);
         }
+    }
+
+    /**
+     * Records tab: `DomainRecord::showForDomain()` is core's own hardcoded
+     * table (`components/datatable.html.twig` with a fixed Type/Name/TTL/Target
+     * column set) — there's no hook to add a column to it, so proxy status
+     * (`is_proxied` on `ImportedRecord`, keyed by `domains_id` directly on
+     * that table) is instead overlaid client-side: a cloud icon is appended
+     * next to any proxied record's Name link, matched by the record id
+     * already present in that link's native `getFormURLWithID()` href.
+     *
+     * @param  int $domains_id
+     * @return void
+     */
+    private static function renderProxyIndicators(int $domains_id): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $iterator = $DB->request([
+            'SELECT' => 'domainrecords_id',
+            'FROM'   => 'glpi_plugin_domainmanager_records',
+            'WHERE'  => [
+                'domains_id'  => $domains_id,
+                'is_proxied'  => 1,
+            ],
+        ]);
+
+        $proxied_ids = [];
+        foreach ($iterator as $row) {
+            $proxied_ids[] = (int) $row['domainrecords_id'];
+        }
+
+        if ($proxied_ids === []) {
+            return;
+        }
+
+        TemplateRenderer::getInstance()->display('@domainmanager/domainrecord_proxy_indicators.html.twig', [
+            'proxied_ids' => $proxied_ids,
+        ]);
     }
 
     /**

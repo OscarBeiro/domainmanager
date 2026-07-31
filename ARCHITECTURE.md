@@ -376,6 +376,7 @@ Goal: make every field this plugin tracks on `glpi_plugin_domainmanager_states` 
 
 - **Envelope**: `{trId, responseCode, message, data, errors, command}`. Success = `message === "Success."` OR `responseCode === 1000`. Failure responses put a human message + code in `errors[]` (`{code, message, parameter}`), **always over HTTP 200** — Dinahosting never varies the HTTP status for business-logic outcomes, only for real transport failures.
 - **Auth**: the docs list two equivalent options — `AUTH_USER`/`AUTH_PWD` query parameters (used in their own example URLs), or a `Authorization: Basic` header. This driver deliberately uses the **Basic Auth header** (via Guzzle's `auth` client option) rather than query parameters, so credentials never end up in a request URI that could be captured by a proxy/CDN access log — confirmed working against the live API (a deliberately-wrong username/password round-tripped a real `responseCode=2200` "Authentication error." from Dinahosting's own server, correctly classified as `AuthFailed`).
+- **Credentials must belong to the account's super-admin user** — a sub-user or domain-limited account cannot authenticate against the API at all (see `README.md#dinahosting` for the user-facing setup note). This is also *why* `testConnection()` below can only do one account-wide auth check rather than a scoped-permission probe: there's no lesser-privileged credential to test against.
 - **`testConnection()`**: Dinahosting authentication is a single account-wide username/password, not scoped per capability, so one lightweight, side-effect-free probe (`System_GetRequestTypes` — confirmed domain-independent from the docs' own example request, which omits a `domain` parameter) classifies both `'registrar'` and `'dns'` from the same outcome. `responseCode` → `ConnectionTestStatus`: `2200` (`AUTH_ERROR_USER`) → `AuthFailed`, `2201` (`AUTH_ERROR_OBJECT`) → `Forbidden`, `2501` (`COMMAND_TIMEOUT`) → `Timeout`, anything else non-success → `UnknownError`. `httpStatusCode` is left `null` for these envelope-classified outcomes (always ~200 regardless of the real result — showing "HTTP 200" next to an "auth failed" badge would be misleading); it's only populated for genuine transport-level 5xx.
 - **`fetchLifecycle()`**: `Domain_GetExpirationDate` / `Domain_GetRegistrationDate` (each confirmed: single `domain` parameter, returns a string). **Known gap, flagged rather than guessed**: no documented response shape for a registrar-hold/suspended status command (`Domain_Status_Get`) was found anywhere searched, so `LifecycleStatus` here only distinguishes `Ok`/`Expired` (via the expiration date) — never `Suspended`. Revisit if Dinahosting's docs (or a support ticket) ever surface that command's real shape.
   - **`Domain_GetRegistrationDate`'s exact semantics are unconfirmed** (checked directly against the live doc page, not from memory: the entire description is "Returns registration date of domain." — no elaboration). Two readings are possible: (a) the domain's real/original registry creation date (a WHOIS/RDAP-style "Creation Date", invariant across registrar transfers per ICANN's Transfer Policy), or (b) the date the domain was added to/transferred into this Dinahosting account specifically. **Assumed to be (a)**, based on the command taking only `domain` (no account-scoping hint) and Dinahosting modeling inbound transfers as their own separate command family (`Domain_CheckForTransfer`, `Domain_Transfer_GetStatus`, `Billing_Transfer_Domain`) rather than folding "transfer date" into this general domain-info command — but this is inference from API shape and EPP/registry convention, not a confirmed fact. **Only verifiable against a domain known to have been transferred in from another registrar** (compare this command's returned date to that domain's actual WHOIS/RDAP creation date) — genuinely hard to test opportunistically since transferring a domain isn't a routine, frequent event; revisit whenever such a domain becomes available to check.
@@ -428,6 +429,12 @@ Cloudflare supports two token origins that authenticate identically (`Authorizat
 - **Existing configs missing `account_id`** (token saved, no account id): `SupplierTab::showForSupplier()` computes `cloudflare_missing_account_id` and `supplier_tab.html.twig` renders a standing warning alert in the credentials card ("...reissue this token as an Account API Token to continue using Cloudflare sync") whenever it's true — informational only, doesn't block editing/saving the rest of the form, and disappears once a value is saved. Nothing silently breaks and nothing silently keeps working on the old, less-scoped assumption either.
 - **New help text** for the Cloudflare credential fields (toggled by the same driver-select JS as the fields themselves) pointing at Manage Account → API Tokens (not My Profile), the two minimum permissions (`Zone:DNS:Read`, `Zone:Zone:Read`), and where to find the Account ID (account Overview page's API section, or "Copy account ID" from the account-row menu) — confirmed against Cloudflare's own current docs (`developers.cloudflare.com/fundamentals/api/get-started/account-owned-tokens/` and `.../fundamentals/account/find-account-and-zone-ids/`), not assumed. No pre-existing "how to obtain a token" reference box was found anywhere in this plugin for any driver to model this on or update — this is a new addition, not an edit of prior content.
 - **§9 Phase 7 (2026-07-21)**: `fetchLifecycle()`'s existing `$result` (the same `accounts/{id}/registrar/domains/{domain}` response already read for `created_at`/`expires_at`/`registry_statuses`) also carries `privacy` → `privacyEnabled`, `locked` → `transferLock`, and `auto_renew` → `autoRenew` (all confirmed directly against Cloudflare's live `registrar-api_domain_properties` schema, re-read 2026-07-21). `authInfo`/`domainLock`/`domainType`/`dnsSecEnabled` are confirmed genuinely absent from this schema — `locked` is the *only* lock concept Cloudflare's Registrar API models, with no separate general-edit-lock field, so it maps to `transferLock` only, never `domainLock`. See §9 for the full per-driver support matrix.
+
+### 3.10.1 Check Connection now also probes zone/DNS scope (Phase 43, 2026-07-30)
+
+`probeTokenVerify()` above only proves the token itself is valid/unrevoked (`accounts/{id}/tokens/verify`) — it says nothing about whether the token actually carries `Zone:DNS:Read`/`Zone:Zone:Read` for any zone. That gap was real and observed live: Check Connection reported "Success HTTP 200" for a supplier whose subsequent DNS sync 401/403'd on every domain (see CHANGELOG 1.3.0-alpha1/alpha4 for the logging-side half of this investigation).
+
+`CloudflareDriver::testConnection()` now runs a second probe, `probeZoneScope()`, whenever `probeTokenVerify()` itself succeeds: the same account-scoped `GET /zones?account.id={id}&per_page=1` lookup `findZone()` uses for a real sync, with no `name` filter (only the scope matters here, not any particular zone). It classifies the raw HTTP status directly (not through `request()`, whose 401/403 branches throw a `DriverException` with no status code attached) and, on a `403`, returns the exact same user-facing message a real sync failure already gives (`request()`'s 403 branch, 1.3.0-alpha4): "this Cloudflare API token lacks DNS:Read permission for this zone" — so Check Connection and a live sync failure now agree on the diagnosis instead of the UI ever showing "Success" for a token that will demonstrably fail. A `200` with zero zones in the account is still reported as success (no zones to sync is a legitimate empty state, not a scope problem).
 
 ---
 
@@ -854,19 +861,19 @@ Every phase leaves install → uninstall residue-free.
 
 ## 10. Versioning & changelog policy
 
-`PLUGIN_DOMAINMANAGER_VERSION` in `setup.php` is the single source of truth for the plugin's version (no `composer.json` version field is used). **Every bump of that constant must land in the same commit as a matching `CHANGELOG.md` entry** — a new `## [x.y.z] - YYYY-MM-DD` section (Keep a Changelog format) containing whatever `### Added`/`### Changed`/`### Fixed` bullets accumulated under `[Unreleased]` since the previous version section, moved (not duplicated) out of `[Unreleased]` into the new version's section. A bump with no shipped content yet (e.g. a bare version-number increment immediately superseded by a later bump before anything else changed) still gets its own one-line section noting "version bump only — no functional changes", so the version history stays honest and every constant value that ever existed is traceable in the changelog. `[Unreleased]` itself is kept present but empty between releases, ready to accumulate the next round of bullets.
+`PLUGIN_DOMAINMANAGER_VERSION` in `setup.php` is the single source of truth for the plugin's version (no `composer.json` version field is used). **Every bump of that constant must land in the same commit as a matching changelog entry** — never bump the version constant without touching a changelog file in the same change. What that entry looks like depends on whether the bump is a pre-release or a real release, and the two-file split below (added 2026-07-31).
 
-**Pre-release amendment (resolved 2026-07-29, for §11.15's five-phase `-alphaN`/`-betaN` sequence):**
-each pre-release bump (`1.2.0-alpha1`, `-alpha2`, `-alpha3`, `-beta1`) still gets its own dated
-`## [1.2.0-alphaN] - YYYY-MM-DD` section at the time it lands, same as any other bump — nothing
-changes about *when* changelog entries are written. The amendment is about the eventual `1.2.0`
-release section: **it consolidates.** When the plain `## [1.2.0] - YYYY-MM-DD` section is written
-at release, its `### Added`/`### Changed`/`### Fixed` bullets are a clean rewrite of everything
-that shipped across `-alpha1` through `-beta1` — not a duplicate list, not a bare "see above"
-pointer. The four pre-release sections themselves are **not deleted**; they stay in the file as
-the honest historical record of how the feature actually landed session-by-session, but a reader
-who only cares about released versions gets one coherent `1.2.0` entry without needing to read
-the pre-release trail.
+**Two changelog files, split by audience (added 2026-07-31):**
+- **`CHANGELOG-dev.md`** — the full history. Every version this constant has ever held, pre-release included, each with its own dated header.
+- **`CHANGELOG.md`** — user-facing, one header per **real release only** (no `-alphaN`/`-betaN` suffix). No pre-release detail lives here at all.
+
+**Entry format (both files, revised 2026-07-31):** two buckets per version header, `### Features` and `### Bugs` — not Keep a Changelog's Added/Changed/Removed/Fixed/Documented/Verified split. One line per item, a short factual statement, not a multi-sentence paragraph with investigation narrative. (The narrative/root-cause detail this project used to carry inline in the changelog belongs in commit messages and this doc's own phase log above, not the changelog — a changelog entry answers "what changed," not "how was it found and why.") A version with nothing fitting either bucket (a pure refactor, a version-bump-only release) still gets a one-line note under whichever bucket fits best, or a single top-level line if genuinely neither (e.g. "version bump only — no functional changes").
+
+**Where a bump's entry goes:**
+- **Pre-release bump** (`-alphaN`/`-betaN`): entry goes under `CHANGELOG-dev.md`'s running `## [Unreleased]` section — **not** a new dated header of its own. (This reverses this section's own earlier "Pre-release amendment," which had each pre-release bump minting its own header; reversed 2026-07-30 per direct user feedback that a wall of near-identical per-bump headers for one continuous line of work reads as noisy churn, not useful history. `CHANGELOG.md` is untouched by a pre-release bump — nothing to add there yet.)
+- **Real release** (no suffix, e.g. `1.3.0`): this is the point `CHANGELOG-dev.md`'s accumulated `[Unreleased]` content gets promoted into one new dated `## [x.y.z] - YYYY-MM-DD` section there, and `CHANGELOG.md` gets its own new dated header with the same Features/Bugs bullets, trimmed further if needed. `[Unreleased]` resets to present-but-empty in `CHANGELOG-dev.md` afterward.
+
+**Known gap, already reconciled (2026-07-31):** `1.2.0` itself was never actually cut as a real release — only `1.2.0-alpha1`..`-alpha4` and `1.2.0-beta1`..`-beta3` exist in the history, then the version line jumped straight to `1.3.0-alpha1`. Rather than leaving that whole feature arc (the entire DNS-record-write-back capability) absent from the user-facing `CHANGELOG.md`, the `[1.3.0]` entry there explicitly covers everything shipped since `1.1.0` (the true previous real release), with a note explaining why. Don't retroactively invent a `[1.2.0]` header — that gap in the version-number sequence is real project history.
 
 ---
 
@@ -1736,4 +1743,373 @@ hands-on testing of the new add panel surfaced three more issues, all fixed in t
 
 ---
 
-*Open items awaiting your approval: the four deviations in §0.1–§0.4 (Registrar as plugin field, `date_domaincreation` mapping, plugin-owned lock layer replacing native `Lockedfield`, documented `managed_domainrecordtypes` gate on web-triggered record writes), the CREATE TABLE exception in §0.6, and §11 (Phases 31–35 — Manual DNS record write-back to IONOS). The two items that were blocking Phase 32 — the rights-matrix rendering mechanism (§11.6/§11.16) and the §10 changelog-policy amendment for pre-release versions (§11.14) — are both resolved as of 2026-07-29; Phase 32 is unblocked.*
+## 12. Phase 41 — Cloudflare DNS record write support
+
+### 12.1 Scope and positioning
+
+**Extension, not replacement.** IONOS write-back (Phases 31–37, §11) is unchanged in every
+respect: unchanged code, unchanged rights model, unchanged UI. This phase adds Cloudflare as a
+second implementer of `DnsRecordWriterInterface`, which is the actual test of whether that
+interface's design generalizes — it was written for one driver.
+
+**In scope:** the same four record types (A, AAAA, CNAME, TXT), the same read-write direction
+(upstream authoritative, local reconciler as backstop), the same soft-delete + upstream-first
+delete ordering, the same shared per-type CREATE/UPDATE/DELETE rights (§11.6 — not
+driver-specific). Cloudflare's zone-scoped API tokens introduce one genuinely new question, a
+per-domain write-editability *state*, covered in §12.3.
+
+**Out of scope:** Dinahosting write support, bulk operations, domain registration/lifecycle
+writes — unchanged from §11's own scope statement.
+
+### 12.2 Verified Cloudflare API schemas, and what could not be verified
+
+Endpoints and payload shapes for DNS record mutations were checked against Cloudflare's own
+published API v4 developer documentation for `/zones/{zone_id}/dns_records`.
+
+**Verified:**
+
+| Operation | Endpoint | Verb | Response |
+|---|---|---|---|
+| Create | `/zones/{zone_id}/dns_records` | `POST` | `201` + full record (`id`, `created_on`, `modified_on`, `proxiable`, `proxied`, `meta`) |
+| Retrieve (single) | `/zones/{zone_id}/dns_records/{record_id}` | `GET` | `200` + full record, same shape as create |
+| Update | `/zones/{zone_id}/dns_records/{record_id}` | `PUT` | `200` + full record |
+| Delete | `/zones/{zone_id}/dns_records/{record_id}` | `DELETE` | `200` + `{result: {id: "..."}}` |
+
+**Explicitly unverified — not filled in by analogy with IONOS, and not to be treated as fact until
+a live test against a real zone confirms them (§12.8):**
+
+1. **Whether `PUT` is a full replace or preserves unspecified fields.** Cloudflare's docs describe
+   `PUT` as "overwrite," which reads as full-replace, but don't state whether omitting `name`/`type`
+   on an update is rejected, ignored, or accepted as "leave unchanged." IONOS's own `PUT` (§11.9,
+   as shipped — see §12.5 below) turned out to be a *narrow* schema (`content`/`ttl`/`prio`/
+   `disabled` only), not the full-replace §11.9 originally assumed. The same mistake is possible
+   here in the other direction. **Design stance for Phase 41: send the full known field set
+   (`name`, `type`, `content`, `ttl`, `proxied`) on every update rather than assume partial-preserve
+   — safer against an unverified full-replace than the reverse, and cheap to narrow later if a live
+   test shows fields are rejected.**
+2. **`proxied`'s default value on create/update**, and **whether the dashboard's own default
+   differs from the API's.** Neither is stated in the docs read. **Design stance: never omit
+   `proxied` from a write — always send it explicitly** (`false` unless the record read back on
+   sync already reported `true`), so no default, whatever it turns out to be, is ever silently
+   relied on.
+3. **The relationship between `proxiable` (can this record type be proxied) and `proxied` (is it
+   proxied now).** Unverified whether setting `proxied: true` on a non-`proxiable` record (e.g. an
+   MX-adjacent type, though MX isn't in the writable set) is rejected or silently coerced to
+   `false`. Not expected to matter for A/AAAA/CNAME/TXT specifically, but not confirmed.
+4. **TXT content quoting and CNAME trailing-dot conventions on Cloudflare's own wire format** — not
+   stated in the docs read, and cannot be settled without reading a real record back from a real
+   Cloudflare zone. Left unverified rather than assumed identical to IONOS's convention.
+
+### 12.3 Per-domain write-editability state (settled design — supersedes the draft's "compute live,
+never store" proposal)
+
+Cloudflare API tokens can be scoped to specific zones. A 403 while writing to one zone is evidence
+about *that zone*, not about the account-wide capability of the token — unlike IONOS, where an API
+key is account-wide and a write failure is a fact about the whole credential. This is the one place
+Cloudflare's design genuinely differs from IONOS's, and it is tracked as explicit per-domain state,
+not inferred live on every write:
+
+- Two new columns on `glpi_plugin_domainmanager_states`: **`dns_write_status`** (enum: `manual` /
+  `managed_readonly` / `managed_editable`) and **`dns_write_message`** (nullable string — the
+  specific reason when not editable). No new table.
+- **Learned from real writes, never probed.** No `dns_write` Check Connection capability, no
+  token-policy introspection anywhere. A domain starts `managed_readonly` the moment DNS sync
+  recognizes a write-capable driver as authoritative for it; it only becomes `managed_editable`
+  after a write actually succeeds there.
+- **`dns_write_status` is independent of `dns_status`** (the read-sync status) — a successful
+  *read* never changes it. Only a write attempt does.
+- **Reset triggers:** credentials edited on the supplier, the detected DNS provider changing, or
+  any successful write (which sets `managed_editable`). A successful read is explicitly *not* a
+  reset trigger. No user-facing retry control.
+- **Only a genuine permission failure flips it to `managed_readonly`.** For Cloudflare that's a
+  `403` on a zone-scoped write. Transient network/5xx errors, a `404` on delete (idempotent
+  success — the desired end state already holds), and Cloudflare's create-conflict code
+  (`81057` — record already exists) do **not** change stored state; each is surfaced as a one-off
+  warning only, exactly as §11.10 already does for IONOS's own transient-failure handling.
+- **Failure messages always name the missing permission** — e.g. "this API token lacks `DNS:Edit`
+  permission for this zone" — never a bare "403"/"forbidden," consistent with the driver-agnostic
+  `driverLabel()` messaging already shipped in `DnsRecordWriteback` (§12.5, item 4 below).
+- **UI terminology (settled, not to be re-opened):** *Manual* / *Managed — read-only* /
+  *Managed — editable*; badge text "Editable from GLPI" only in the `managed_editable` case.
+  "Full control" was considered and rejected as badge copy (reads as broader than what the plugin
+  actually verifies).
+
+This model is driver-agnostic by construction: any current or future driver can set
+`dns_write_status` the same way (`managed_readonly` until its first successful write), whether or
+not that driver's tokens are ever zone-scoped. IONOS simply never has a reason to leave
+`managed_readonly` once configured correctly, since its credential is account-wide — the state
+machine doesn't need to know that difference.
+
+### 12.4 Implementation: `CloudflareDriver` extending to `DnsRecordWriterInterface`
+
+**`CloudflareDriver` currently implements:** `RegistrarDriverInterface`, `DnsPipelineInterface`
+(read-only), `ConnectionTestableInterface`, `DomainDiscoveryInterface`.
+
+**Phase 41 adds:** `DnsRecordWriterInterface`.
+
+**Zone resolution:** the existing `findZoneId()` helper (already used by `fetchZoneRecords()`,
+scoped by the stored `account_id`) is reused unchanged for all three write methods below — no new
+zone-lookup logic.
+
+1. **`createRecord()`** — resolve zone; build the absolute name using the same
+   `"$name.$zoneName"` convention `DnsRecordWriterInterface::createRecord()`'s own docblock
+   specifies (the one §11.15 addendum found and fixed for IONOS's call site, not the interface
+   itself — see §12.5 item 3); `POST /zones/{zoneId}/dns_records` with
+   `{name, type, content: data, ttl, proxied}` (proxied always explicit, §12.2 item 2); extract
+   `id` from the response into `ZoneRecord.remoteId`, no follow-up read (§11.9's convention, kept).
+2. **`updateRecord()`** — resolve zone; `PUT /zones/{zoneId}/dns_records/{remoteId}` with the full
+   field set (§12.2 item 1's design stance); on `403`, throw `DriverException` with the
+   permission-specific message (§12.3); return the response body as a `ZoneRecord`.
+3. **`deleteRecord()`** — resolve zone; `DELETE /zones/{zoneId}/dns_records/{remoteId}`; a `404`
+   (already gone) is treated as success (idempotent), not an error; a `403` throws with the
+   permission-specific message.
+
+**Error mapping stays inside the driver.** Cloudflare returns errors as
+`{errors: [{code, message}]}`; `CloudflareDriver` classifies its own codes into
+permission/transient/idempotent buckets and only ever hands `DnsRecordWriteback` an
+already-safe-to-persist `DriverException` message — the shared layer never inspects a status code
+or error body itself (§12.6).
+
+### 12.5 Divergence report: IONOS as shipped vs. as designed in §11
+
+Checked directly against the current code (`DnsRecordWriteback.php`, `IonosDriver.php`,
+`Profile.php`, `DriverRegistry.php`) and against §11's text and its own addenda.
+
+**Confirmed matching, no divergence:**
+- Write list is exactly A, AAAA, CNAME, TXT (`DnsRecordWriterInterface::WRITABLE_TYPES`).
+- Interface shape is `createRecord`/`updateRecord`/`deleteRecord`/`fetchRecord`, unchanged since
+  §11.8.
+- One right per type carrying CREATE/UPDATE/DELETE bits, not three separate rights
+  (`Profile::getDnsRecordRights()`).
+- Delete is a local soft-delete with upstream-first ordering
+  (`DnsRecordWriteback::onPreDelete()`); no rollback anywhere (§11.14, unchanged).
+- `remote_id` is captured from the create response directly, no follow-up read
+  (`DnsRecordWriteback::onPostAdd()`).
+- Historical logging via `'[Domain Manager] ' . ...` prefixed lines, `id_search_option = 0`,
+  unchanged from §11's original convention.
+
+**Real divergences, both already resolved in the shipped code, neither silently:**
+
+1. **`IonosDriver`'s `PUT` update already sends the narrow `{content, ttl, prio, disabled}`
+   schema** (confirmed at `src/Driver/IonosDriver.php:488` and `:522`, `'disabled' => false` sent
+   unconditionally) — not the full-record-replace §11.9 originally described. The shipped code is
+   correct; §11.9's prose was the stale side of this disagreement and should be read as corrected
+   by the implementation, not the other way around.
+2. **The absolute-name construction bug** (§11's own "Live-testing addendum, found 2026-07-29":
+   `DnsRecordWriteback::onPreAdd()` originally built `"$zoneName.$name"`, backwards from the
+   interface's own documented `"$name.$zoneName"` convention) was a real bug in the *call site*,
+   not the interface or IonosDriver — already fixed, and directly relevant to Cloudflare's
+   `createRecord()` above, which must use the corrected convention from day one.
+3. **The hardcoded-`DRIVER_IONOS` coupling in `recheckNameservers()`** — §11.10 described "a live
+   NS re-check runs immediately before every push" but the shipped comparison was pinned to the
+   literal `DRIVER_IONOS` constant rather than the domain's actual configured driver, which would
+   have silently rejected every Cloudflare write once shipped. Fixed on this branch
+   (commit "Generalize DnsRecordWriteback beyond IONOS ahead of Cloudflare write support",
+   2026-07-30) to compare against the domain's own configured driver instead. The re-check
+   *mechanism* (`NsResolver`/`NsProviderRegistry`) is unchanged; only the hardcoded constant was
+   removed.
+4. **Every "at IONOS" user-facing failure message is now driver-name-generic**, via
+   `DriverRegistry::getDriverLabels()[$driver]` (`DnsRecordWriteback.php:159` and siblings) — in
+   the same commit as item 3. A Cloudflare write failure will read "at Cloudflare," not "at the
+   configured provider" or a stale "at IONOS."
+
+**Conclusion:** IONOS shipped matching §11's design in every rights/interface/lifecycle respect;
+the two real gaps found (items 3–4) were provider-coupling bugs in the *shared* orchestration
+layer, not in IONOS's own driver — which is exactly the failure mode Phase 41 needs to avoid
+repeating for Cloudflare, and the reason §12.3/§12.6 are written the way they are.
+
+### 12.6 Maintainability: keeping provider-specific concerns out of the shared layers
+
+**The `proxied`/`is_proxied` field is not a new coupling risk.** `ImportedRecord.is_proxied`
+already exists as a driver-agnostic, nullable column — a driver sets it if the concept applies to
+it, leaves it null otherwise. No Cloudflare-specific schema needed here.
+
+**Per-domain write-editability state (§12.3) is deliberately generic, not Cloudflare-specific.**
+`dns_write_status`/`dns_write_message` describe *any* driver's write capability for *any* domain;
+Cloudflare is simply the first driver where the `managed_readonly` state can actually persist
+past initial configuration (because of zone-scoped tokens), rather than resolving to
+`managed_editable` on the very first successful write. Nothing about the columns themselves
+mentions Cloudflare.
+
+**The real risk — repeating the exact mistake found in §12.5 items 3–4 — is error-message and
+error-code handling leaking into the shared layer.** Concretely: a shared table mapping
+"HTTP 403 → this exact message," maintained inside `DnsRecordWriteback` or `DomainState` and keyed
+by status code alone, would immediately be wrong for the next provider whose 403 means something
+narrower or broader than Cloudflare's zone-scoped one. **Prevention, already the pattern in
+place:** error classification and message construction happen entirely inside each driver's own
+write methods (§12.4); the shared layer (`DnsRecordWriteback`) only ever receives an
+already-formatted, already-safe `DriverException` message and passes it through unchanged
+(exactly as `$e->getMessage()` is used today). No shared code needs to know what a 403 means to
+any particular provider.
+
+### 12.7 Failure modes and recovery
+
+Unchanged pattern from §11.14, extended with Cloudflare's specific codes:
+
+- **Transient** (network, 5xx, timeout): user gets a warning; operation aborts locally; no stored
+  state changes; retry is safe.
+- **Fatal/permission** (`403`): user sees the permission-specific message (§12.3); `dns_write_status`
+  flips to `managed_readonly` with `dns_write_message` set to that reason.
+- **Fatal/validation** (malformed record, e.g. invalid CNAME target): user sees the message; no
+  state change; user edits the form and retries.
+- **Idempotent-already-gone** (`404` on delete, `81057` create-conflict): treated as success, not
+  an error, and not a permission signal.
+- **Rollback:** none, ever (§11.14 stands). The reconciler remains the sole convergence mechanism.
+
+### 12.8 Verifications required before this phase's code is written
+
+Against a live Cloudflare account and zone, before implementation (not before this document is
+approved — the document's job is to state the design and mark what's still open):
+
+1. Whether `PUT` accepts/requires/ignores `name`/`type` on update — one call against a real zone.
+2. The exact error shape and code for a zone-scoped token lacking `DNS:Edit` on a zone — drives
+   the exact permission-message text in §12.3/§12.4.
+3. `proxied`'s actual default on create/update, and whether it matches the dashboard's own default.
+4. Whether Cloudflare returns TXT content quoted or unquoted, and CNAME with or without a trailing
+   dot, on read.
+5. A live round-trip of all four writable types (create → read back → compare against what a
+   subsequent sync-read would produce), to catch any wire-format surprise not covered above.
+
+None of these block approving this document — they're implementation-time verifications, not
+design questions. If any surfaces a design-relevant surprise (e.g. `PUT` truly rejects an omitted
+`name`), that becomes a documented, non-silent correction here, the same way §12.5 items 1–2
+corrected §11.9's original IONOS assumptions.
+
+### 12.10 Phase 42 implementation status
+
+Implemented as designed above (`1.3.0-alpha3`, 2026-07-30; Cloudflare write support tracks as its
+own `1.3.0` line starting at Phase 40, rather than continuing the `1.2.0` series IONOS write-back
+shipped under): `CloudflareDriver` now implements
+`DnsRecordWriterInterface` (§12.4), the `dns_write_status`/`dns_write_message` columns and their
+reset/recording logic (§12.3) are live in `SyncEngine::sync()` and
+`DomainState::recordWriteOutcome()`, and `DriverException::$isPermissionDenied` carries the
+403-vs-everything-else classification out of the shared layer per §12.6. Not yet done: the five
+live-account verifications listed in §12.8 — the code took the documented safe design stance on
+each (full field set on `PUT`, always-explicit `proxied`, TXT/CNAME passed through unchanged) but
+none of the five has actually been exercised against a real Cloudflare zone yet. Until that
+verification happens, treat those design stances as the current best guess, not confirmed fact,
+exactly as §12.8 anticipated.
+
+### 12.9 No rights changes, no new UI surface
+
+The four per-type DNS write-back rights (§11.6) apply to every driver, Cloudflare included — no
+Cloudflare-specific right, no per-provider right. No Cloudflare-specific UI beyond what the
+editability-state badge (§12.3) already renders generically. The one user-visible change is that
+failure messages and the "Editable from GLPI" badge now correctly name whichever driver is
+actually configured, which is exactly what the 2026-07-30 generalization (§12.5 item 4) was for.
+
+## §13 Phase 44 — Update-conflict reconciliation (removed 2026-07-31)
+
+Implemented 2026-07-30 as a live re-fetch-and-diff before pushing an edit to an already-managed,
+write-back record: if the provider's live value had drifted from GLPI's last-known copy,
+`DnsRecordWriteback::onPreUpdate()` refused the edit and created a `RecordConflict` row directing
+the user to a resolution screen (`/plugins/domainmanager/recordconflict/{id}`) to pick "keep GLPI"
+or "keep provider".
+
+**Removed 2026-07-31, per design clarification:** once a record is under Domain Manager
+management/write-back, GLPI's value is always authoritative — editing it in GLPI and pushing to
+the provider is the normal, intended workflow, not a conflict. A genuine conflict (ambiguous source
+of truth) can only exist for native records that predate management, before a supplier/driver was
+ever configured — never for a record GLPI is actively managing, matching how every other
+write-back field (name, proxy toggle, comment) already behaves with no conflict step. The live
+re-fetch-and-diff/abort/resolution-screen mechanism, the `RecordConflict` model, its controller and
+template, and the `glpi_plugin_domainmanager_recordconflicts` table were all removed;
+`onPreUpdate()` now pushes the submitted `data`/`ttl` straight to the provider unconditionally.
+
+## §14 Phases 46–48 — manual/import reconciliation, managed-flag import gate, trash/restore duplicate bug (design, 2026-07-30)
+
+Three issues raised together on 2026-07-30, from a real-world observation: most GLPI instances
+already have Domains entered manually, long before this plugin's supplier import exists, and the
+current import path has no notion of "this Domain already exists and is intentionally unmanaged."
+
+### 14.1 Phase 46 — surface unlinked/manual-domain matches during import instead of skipping them
+
+Today `DomainDiscoveryMatcher` matches purely by normalized name (Punycode/lowercased,
+`normalize()`) and `DomainImportController` either creates a new Domain or restores one from
+trash — there is no third outcome for "a Domain with this name already exists, has no Infocom
+supplier link, and `is_managed=0`" (i.e. plausibly hand-entered, never touched by this plugin).
+Today that case is invisible: the importer can't tell "genuinely new" apart from "exists but
+manual" from name matching alone, so it either silently creates a duplicate-by-name Domain or
+silently claims the existing one, depending on match logic elsewhere.
+
+**Closed as already solved (2026-07-30):** re-investigated before implementing and found this
+exact case already handled, by the older Phase 8 "Import Domains" discovery modal
+(`DomainDiscoveryController` + `domain_discovery_modal.html.twig`, `DomainDiscoveryMatcher::match()`)
+— not by `DomainImportController` alone, which is only the bulk-create half of that same flow.
+`DomainDiscoveryMatcher::match()` already matches every discovered registrar-account domain
+against every existing GLPI `Domain` by name, globally, independent of Infocom, and already
+distinguishes "exists, no supplier link" (`existing_suppliers_id === 0`, renders "Set registrar to
+X") from "exists, linked to a *different* supplier" ("Reassign registrar to X") — the exact two
+cases this phase set out to add. `DomainRegistrarReassignController`'s one-click action attaches/
+updates the Infocom supplier, and `HookHandler::infocomSaved()` (already wired) fixes the state
+row/`is_managed` from that alone. No code change made.
+
+The one real gap identified, deliberately left open rather than fixed here (confirmed
+out-of-scope with you 2026-07-30): this reconciliation only runs for suppliers whose driver
+implements discovery (`DriverFactory::forDiscovery()`) — a driver that can't list account domains
+gets no modal at all, so a manual domain under that supplier is never offered this treatment. A
+future phase could add a name-only fallback reconciliation path for that case if it turns out to
+matter in practice.
+
+### 14.2 Phase 47 — enforce `is_managed` as an import gate, not just a search filter
+
+Confirmed 2026-07-30: boolean is the right shape — `is_managed` already exists at both Domain
+(`glpi_plugin_domainmanager_states.is_managed`) and DomainRecord
+(`glpi_plugin_domainmanager_records.is_managed`) level, already indexed and exposed as real search
+options (`PLUGIN_DOMAINMANAGER_SO_DOMAIN_MANAGED` / `_DOMAINRECORD_MANAGED`). What's missing is
+using it as a write gate: nothing today stops an import/sync from overwriting a Domain or
+DomainRecord that a *different* driver/source already marked `is_managed=1`. Design: before an
+import or sync write touches a matched Domain/DomainRecord, check `is_managed` plus the recorded
+source (registrar/DNS driver already resolved via `DomainState`); if it's `1` under a different
+source than the one currently writing, block the write and raise the same conflict-flagging path
+Phase 44's `RecordConflict` (§13) already established, rather than adding a second conflict
+mechanism.
+
+**Implemented (2026-07-30), first slice:** a Domain-level "Native" field, the direct counterpart
+to `DomainRecord`'s existing `is_glpi_created` — `glpi_plugin_domainmanager_states.is_glpi_created`
+(new column, `Installer::addDomainGlpiCreatedColumn()`, defaults `1`/Native for every pre-existing
+row, since a state row alone can't retroactively tell manual creation apart from a pre-Phase-47
+import). `SyncEngine::sync()` gained an `$isImport` parameter, set only by
+`DomainImportController` (its bulk-import path is the one caller that actually knows a Domain was
+supplier-discovered, not hand-entered) and only consulted when the state row is created for the
+first time — every other caller (manual creation's first sync, cron, `SyncController`,
+`MassiveActionHandler`) leaves it `false`, so a newly-created state row defaults to Native.
+Exposed as `PLUGIN_DOMAINMANAGER_SO_DOMAIN_GLPI_CREATED` (id `9431`), same "Native" label and
+`bool` datatype as the DomainRecord option.
+
+**Write gate, implemented (2026-07-30):** `SyncEngine::sync()` now compares the DNS leg's
+newly-resolved supplier against the domain's *previous* `DomainState.dns_suppliers_id` before
+ever calling `RecordReconciler::reconcile()`. If the domain was already `is_managed` under a
+different, non-zero supplier, the DNS leg is skipped entirely for this run — no upstream fetch,
+no trashing/recreating of the previous supplier's owned `DomainRecord`s — and `dns_status` is set
+to the new `DomainState::STATUS_SOURCE_CONFLICT`, with a message naming both supplier ids. The new
+supplier id is still persisted on the state row (unconditionally, same as before this change), so
+a deliberate second sync run sees no mismatch and proceeds normally — the same "re-sync to
+confirm" pattern `STATUS_REASSIGNED` already established for a Registrar change. This transitively
+covers the `DomainRecord`-level case too: `RecordReconciler` only ever runs under whichever
+supplier this check already cleared, so no separate per-record source-tracking column was needed.
+Registrar-import-time Domain conflicts need no equivalent gate: `DomainImportController` already
+never touches an existing Domain's Infocom/supplier assignment at all (a name match is unconditionally
+skipped, §14.1's own open gap being the *lack* of surfacing that skip, not an unguarded write).
+
+### 14.3 Phase 48 — bug: trashing then restoring a synced DNS record produces a duplicate, not a restore
+
+Root cause (verified against `RecordReconciler::doReconcile()`, ~line 170–177): GLPI's default
+`getFromDB()` excludes trashed (`is_deleted=1`) rows. When a synced `DomainRecord` is manually
+trashed, the next reconciliation pass reads that as "the owned record vanished," deletes its
+`ImportedRecord` ownership row, and creates a **new** `DomainRecord` with identical content
+(`createRecord()`). Restoring the original trashed row afterward (via GLPI's native trash UI)
+succeeds at the GLPI level, but it's now an orphaned duplicate sitting next to the reconciler's
+new record — appearing to the user as "restore did nothing," when actually a duplicate was
+silently created before the restore ever happened.
+
+**Fix (preferred):** in `RecordReconciler::doReconcile()`, look up a trashed match by ownership
+row *before* concluding a record vanished, and restore-and-reuse it (mirroring the pattern
+`DomainImportController` already uses for trashed Domains) instead of deleting ownership and
+recreating. **Safety net:** register an `item_restore` hook (none exists today — `setup.php`
+741–804 only has `PRE_ITEM_DELETE`/`ITEM_PURGE`/`PRE_ITEM_PURGE`) to detect and clean up any
+duplicate created by this race for records already affected before the fix ships.
+
+---
+
+*Open items awaiting your approval: the four deviations in §0.1–§0.4 (Registrar as plugin field, `date_domaincreation` mapping, plugin-owned lock layer replacing native `Lockedfield`, documented `managed_domainrecordtypes` gate on web-triggered record writes), the CREATE TABLE exception in §0.6, and §11 (Phases 31–35 — Manual DNS record write-back to IONOS). The two items that were blocking Phase 32 — the rights-matrix rendering mechanism (§11.6/§11.16) and the §10 changelog-policy amendment for pre-release versions (§11.14) — are both resolved as of 2026-07-29; Phase 32 is unblocked. **§12 (Phase 41 — Cloudflare write support) is a design-only addition pending your approval; §12.8 lists five implementation-time API verifications that are not blocking approval of the design itself. §13 (Phase 44 — update-conflict reconciliation) was implemented 2026-07-30 and removed 2026-07-31 — a managed record's GLPI value is always authoritative, so there was no genuine conflict to reconcile. §14 (Phases 46–48) is fully resolved as of 2026-07-30: Phase 46 closed as already solved (§14.1, no code change), Phase 47's Domain-level "Native" field and DNS source-conflict write gate are implemented (§14.2), and Phase 48's trash/restore bug is fixed (§14.3). This closes out the 1.3.0 line at `1.3.0-beta1`.***

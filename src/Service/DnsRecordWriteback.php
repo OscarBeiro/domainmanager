@@ -34,6 +34,8 @@ namespace GlpiPlugin\Domainmanager\Service;
 use Domain;
 use DomainRecord;
 use DomainRecordType;
+use GlpiPlugin\Domainmanager\Contract\DnsRecordCommentSyncInterface;
+use GlpiPlugin\Domainmanager\Contract\DnsRecordProxyToggleInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsRecordWriterInterface;
 use GlpiPlugin\Domainmanager\Dto\ZoneRecord;
 use GlpiPlugin\Domainmanager\DomainState;
@@ -51,7 +53,9 @@ use Supplier;
 use Throwable;
 
 /**
- * Native-tab write-back to IONOS (ARCHITECTURE.md §11.7, §11.10, Phase 34b),
+ * Native-tab write-back to whichever driver a domain's DNS is configured
+ * under (ARCHITECTURE.md §11.7, §11.10, Phase 34b — IONOS was the only
+ * implementation at the time this was written, generalized in Phase 41),
  * superseding the removed `DnsRecordWriteController` + confirmation-modal
  * design. Called from `hook.php`'s `pre_item_add`/`item_add`/
  * `pre_item_update`/`pre_item_delete` entries on `DomainRecord` — all logic
@@ -69,6 +73,14 @@ class DnsRecordWriteback
     private const WRITABLE_TYPES = DnsRecordWriterInterface::WRITABLE_TYPES;
 
     /**
+     * Subset of WRITABLE_TYPES a proxy toggle can ever apply to (Cloudflare
+     * itself reports this per-record via `proxiable`, but TXT is never
+     * proxiable there — checked as a cheap early filter before even looking
+     * at ImportedRecord/driver).
+     */
+    private const PROXIABLE_TYPES = ['A', 'AAAA', 'CNAME'];
+
+    /**
      * ZoneRecord created by pre_item_add's driver call, stashed for the
      * paired item_add (post) hook to attach ImportedRecord/ImportLock/
      * history once the local row has an id. Keyed by spl_object_id() of the
@@ -80,7 +92,7 @@ class DnsRecordWriteback
     private static array $pendingCreated = [];
 
     /**
-     * pre_item_add on DomainRecord: push createRecord() to IONOS before the
+     * pre_item_add on DomainRecord: push createRecord() to the provider before the
      * local row exists, aborting the local add on failure so there is never
      * a local row with no corresponding provider record.
      *
@@ -122,7 +134,7 @@ class DnsRecordWriteback
             return;
         }
 
-        $nsError = self::recheckNameservers($domain);
+        $nsError = self::recheckNameservers($domain, $state);
         if ($nsError !== null) {
             self::abort($item, $nsError);
             return;
@@ -151,10 +163,14 @@ class DnsRecordWriteback
             $absoluteName = ($name !== '' && $name !== '@') ? $name . '.' . $zoneName : $zoneName;
             $created = $driver->createRecord($zoneName, $type, $absoluteName, $data, $ttl);
             self::$pendingCreated[spl_object_id($item)] = $created;
+            DomainState::recordWriteOutcome($domains_id, true);
         } catch (Throwable $e) {
             $message = $e instanceof DriverException ? $e->getMessage() : __('An error occurred while creating the record at the provider', 'domainmanager');
+            if ($e instanceof DriverException && $e->isPermissionDenied) {
+                DomainState::recordWriteOutcome($domains_id, false, $message);
+            }
             PluginLogger::error("Failed to push new DNS record for domain #$domains_id", $e::class . ': ' . $e->getMessage());
-            self::abort($item, sprintf(__('Could not create this record at IONOS: %s', 'domainmanager'), $message));
+            self::abort($item, sprintf(__('Could not create this record at %s: %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state)), $message));
         }
     }
 
@@ -206,6 +222,59 @@ class DnsRecordWriteback
             (int) $item->fields['ttl'],
         ),
         ]);
+
+        self::pushInitialComment($item, $created->remoteId, $domains_id);
+    }
+
+    /**
+     * A comment typed on the native "New Domain record" form has nowhere to
+     * go via `createRecord()` itself (§9 Phase 49 addendum — that call has
+     * no comment parameter, kept minimal on purpose, see
+     * `DnsRecordCommentSyncInterface`'s own docblock), so it would otherwise
+     * sit local-only until the next scheduled sync's `RecordReconciler`
+     * push picked it up. Pushed here instead, right after the record (and
+     * its remote id) actually exist, so it's live immediately. Best-effort,
+     * same non-blocking convention as the other push helpers in this class
+     * — a failure here must never undo the creation that already succeeded.
+     *
+     * @param  DomainRecord $item
+     * @param  string       $remoteId
+     * @param  int          $domains_id
+     * @return void
+     */
+    private static function pushInitialComment(DomainRecord $item, string $remoteId, int $domains_id): void
+    {
+        $comment = trim((string) ($item->fields['comment'] ?? ''));
+        if ($comment === '' || $remoteId === '') {
+            return;
+        }
+
+        $state = DomainState::getForDomain($domains_id);
+        if ($state === null) {
+            return;
+        }
+
+        $domain = new Domain();
+        if (!$domain->getFromDB($domains_id)) {
+            return;
+        }
+
+        try {
+            $driver = self::getWritableDriver($state);
+            if (!$driver instanceof DnsRecordCommentSyncInterface) {
+                return;
+            }
+
+            $driver->pushComment($domain->fields['name'], $remoteId, $comment);
+        } catch (Throwable $e) {
+            $message = $e instanceof DriverException ? $e->getMessage() : __('an error occurred', 'domainmanager');
+            PluginLogger::error("Failed to push initial DNS record comment #{$item->getID()}", $e::class . ': ' . $e->getMessage());
+            Session::addMessageAfterRedirect(
+                '[Domain Manager] ' . sprintf(__('Could not set the comment at %s: %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state)), $message),
+                false,
+                WARNING,
+            );
+        }
     }
 
     /**
@@ -241,6 +310,14 @@ class DnsRecordWriteback
             return false;
         }
 
+        // Proxy status and comment are pushed independently of data/ttl
+        // (§9 Phase 49): neither is a native DomainRecord field write-back
+        // otherwise knows how to handle, and either can change without the
+        // other, so both are best-effort side pushes here rather than
+        // folded into the data/ttl diff-and-conflict machinery below.
+        self::pushProxiedIfRequested($item, $type, $state);
+        self::pushCommentIfChanged($item, $state);
+
         // Only a data/ttl change is actually pushed; a no-op update (e.g.
         // only unrelated fields submitted) shouldn't hit the provider.
         if (
@@ -261,7 +338,7 @@ class DnsRecordWriteback
             return true;
         }
 
-        $nsError = self::recheckNameservers($domain);
+        $nsError = self::recheckNameservers($domain, $state);
         if ($nsError !== null) {
             self::abort($item, $nsError);
             return true;
@@ -278,30 +355,23 @@ class DnsRecordWriteback
 
         $imported = ImportedRecord::getForDomainRecord((int) $item->getID());
         if ($imported === null || $imported->fields['remote_id'] === '') {
-            self::abort($item, __('Record has no remote ID; cannot push to IONOS', 'domainmanager'));
+            self::abort($item, sprintf(__('Record has no remote ID; cannot push to %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state))));
             return true;
         }
 
         try {
             $driver = self::getWritableDriver($state);
 
-            // Live re-fetch-and-diff before update (§11.10): the local
-            // mirror is only as fresh as the last sync.
-            try {
-                $live = $driver->fetchRecord($domain->fields['name'], $imported->fields['remote_id']);
-                if ($live->data !== $item->fields['data'] || $live->ttl !== (int) $item->fields['ttl']) {
-                    self::abort($item, __('The record at IONOS has changed since the last sync; refusing to overwrite with stale data. Re-sync and try again.', 'domainmanager'));
-                    return true;
-                }
-            } catch (Throwable) {
-                Session::addMessageAfterRedirect(
-                    '[Domain Manager] ' . __('Could not verify the current value at IONOS before this update; proceeding with local values.', 'domainmanager'),
-                    false,
-                    WARNING,
-                );
-            }
-
+            // A managed, write-back record's GLPI value is always
+            // authoritative — this push overwrites whatever is live at the
+            // provider unconditionally, same as name/proxy-toggle/comment
+            // edits already do. (Previously did a live re-fetch-and-diff
+            // here and refused the edit on drift; removed — for a record
+            // GLPI actively manages there's no genuine ambiguity to
+            // reconcile, and gating a legitimate edit on a stale/failed
+            // fetch was pure downside.)
             $driver->updateRecord($domain->fields['name'], $imported->fields['remote_id'], $type, $name, $data, $ttl);
+            DomainState::recordWriteOutcome($domains_id, true);
 
             ImportLock::replaceLocks(DomainRecord::class, (int) $item->getID(), [
                 'name'                 => $name,
@@ -310,21 +380,140 @@ class DnsRecordWriteback
                 'domainrecordtypes_id' => (int) $item->fields['domainrecordtypes_id'],
             ]);
 
-            Log::history($domains_id, Domain::class, [0, '', '[Domain Manager] ' . sprintf(
-                __('Record updated from GLPI: %s %s — data %s → %s', 'domainmanager'),
-                $type,
-                $name,
-                $item->fields['data'],
-                $data,
-            ),
+            Log::history($domains_id, Domain::class, [0, '', '[Domain Manager] '
+                . sprintf(__('Record updated from GLPI: %s %s — data %s → %s', 'domainmanager'), $type, $name, $item->fields['data'], $data),
             ]);
 
             return true;
         } catch (Throwable $e) {
             $message = $e instanceof DriverException ? $e->getMessage() : __('An error occurred while updating the record at the provider', 'domainmanager');
+            if ($e instanceof DriverException && $e->isPermissionDenied) {
+                DomainState::recordWriteOutcome($domains_id, false, $message);
+            }
             PluginLogger::error("Failed to push updated DNS record #{$item->getID()} for domain #$domains_id", $e::class . ': ' . $e->getMessage());
-            self::abort($item, sprintf(__('Could not update this record at IONOS: %s', 'domainmanager'), $message));
+            self::abort($item, sprintf(__('Could not update this record at %s: %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state)), $message));
             return true;
+        }
+    }
+
+    /**
+     * `_domainmanager_proxied` (§9 Phase 49) is a synthetic field, injected
+     * as a plain checkbox by `domainrecord_edit_panel.html.twig`'s own JS —
+     * never a real DomainRecord column, so there is nothing for
+     * LockEnforcer/native save to strip or persist; this is the only place
+     * it's ever read. Best-effort: a failure here warns but never aborts
+     * the underlying record save (data/ttl may be unrelated to this toggle).
+     *
+     * @param  DomainRecord $item
+     * @param  string       $type
+     * @param  DomainState  $state
+     * @return void
+     */
+    private static function pushProxiedIfRequested(DomainRecord $item, string $type, DomainState $state): void
+    {
+        if (!is_array($item->input) || !array_key_exists('_domainmanager_proxied', $item->input)) {
+            return;
+        }
+
+        if (!in_array($type, self::PROXIABLE_TYPES, true)) {
+            return;
+        }
+
+        $imported = ImportedRecord::getForDomainRecord((int) $item->getID());
+        if ($imported === null || $imported->fields['remote_id'] === '') {
+            return;
+        }
+
+        $desired = (bool) $item->input['_domainmanager_proxied'];
+        $current = $imported->fields['is_proxied'] === null ? null : (bool) $imported->fields['is_proxied'];
+        if ($current === $desired) {
+            return;
+        }
+
+        $domain = new Domain();
+        if (!$domain->getFromDB((int) $item->fields['domains_id'])) {
+            return;
+        }
+
+        try {
+            $driver = self::getWritableDriver($state);
+            if (!$driver instanceof DnsRecordProxyToggleInterface) {
+                return;
+            }
+
+            $updated = $driver->setProxied($domain->fields['name'], $imported->fields['remote_id'], $desired);
+            $imported->update([
+                'id'         => $imported->getID(),
+                'is_proxied' => $updated->isProxied !== null ? (int) $updated->isProxied : null,
+            ]);
+
+            $message = '[Domain Manager] ' . sprintf(
+                __('Proxy status changed from GLPI: %s %s → %s', 'domainmanager'),
+                $type,
+                $item->fields['name'] ?: '@',
+                $desired ? __('Proxied', 'domainmanager') : __('DNS only', 'domainmanager'),
+            );
+            Log::history((int) $item->fields['domains_id'], Domain::class, [0, '', $message]);
+        } catch (Throwable $e) {
+            $message = $e instanceof DriverException ? $e->getMessage() : __('an error occurred', 'domainmanager');
+            PluginLogger::error("Failed to push proxy status for DNS record #{$item->getID()}", $e::class . ': ' . $e->getMessage());
+            Session::addMessageAfterRedirect(
+                '[Domain Manager] ' . sprintf(__('Could not update proxy status at %s: %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state)), $message),
+                false,
+                WARNING,
+            );
+        }
+    }
+
+    /**
+     * GLPI's own `comment` field is always the SSOT (§9 Phase 49, per user
+     * request): this only ever pushes a local edit up to the provider, never
+     * pulls the provider's value down over a local change — the download
+     * direction (seeding an empty local comment from the provider) lives
+     * entirely in RecordReconciler, driven by ZoneRecord::$comment. Scoped to
+     * WRITABLE_TYPES, same as every other write-back path — best-effort,
+     * same non-blocking convention as pushProxiedIfRequested() above.
+     *
+     * @param  DomainRecord $item
+     * @param  DomainState  $state
+     * @return void
+     */
+    private static function pushCommentIfChanged(DomainRecord $item, DomainState $state): void
+    {
+        if (!is_array($item->input) || !array_key_exists('comment', $item->input)) {
+            return;
+        }
+
+        $imported = ImportedRecord::getForDomainRecord((int) $item->getID());
+        if ($imported === null || $imported->fields['remote_id'] === '') {
+            return;
+        }
+
+        $comment = trim((string) $item->input['comment']);
+        if ($comment === trim((string) ($item->fields['comment'] ?? ''))) {
+            return;
+        }
+
+        $domain = new Domain();
+        if (!$domain->getFromDB((int) $item->fields['domains_id'])) {
+            return;
+        }
+
+        try {
+            $driver = self::getWritableDriver($state);
+            if (!$driver instanceof DnsRecordCommentSyncInterface) {
+                return;
+            }
+
+            $driver->pushComment($domain->fields['name'], $imported->fields['remote_id'], $comment);
+        } catch (Throwable $e) {
+            $message = $e instanceof DriverException ? $e->getMessage() : __('an error occurred', 'domainmanager');
+            PluginLogger::error("Failed to push DNS record comment #{$item->getID()}", $e::class . ': ' . $e->getMessage());
+            Session::addMessageAfterRedirect(
+                '[Domain Manager] ' . sprintf(__('Could not update the comment at %s: %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state)), $message),
+                false,
+                WARNING,
+            );
         }
     }
 
@@ -358,7 +547,7 @@ class DnsRecordWriteback
             return false;
         }
 
-        $nsError = self::recheckNameservers($domain);
+        $nsError = self::recheckNameservers($domain, $state);
         if ($nsError !== null) {
             self::abort($item, $nsError);
             return true;
@@ -374,6 +563,7 @@ class DnsRecordWriteback
         try {
             $driver = self::getWritableDriver($state);
             $driver->deleteRecord($domain->fields['name'], $imported->fields['remote_id']);
+            DomainState::recordWriteOutcome($domains_id, true);
 
             Log::history($domains_id, Domain::class, [0, '', '[Domain Manager] ' . sprintf(
                 __('Record deleted from GLPI: %s %s', 'domainmanager'),
@@ -385,8 +575,103 @@ class DnsRecordWriteback
             return true;
         } catch (Throwable $e) {
             $message = $e instanceof DriverException ? $e->getMessage() : __('An error occurred while deleting the record at the provider', 'domainmanager');
+            if ($e instanceof DriverException && $e->isPermissionDenied) {
+                DomainState::recordWriteOutcome($domains_id, false, $message);
+            }
             PluginLogger::error("Failed to push deletion of DNS record #{$item->getID()} for domain #$domains_id", $e::class . ': ' . $e->getMessage());
-            self::abort($item, sprintf(__('Could not delete this record at IONOS: %s', 'domainmanager'), $message));
+            self::abort($item, sprintf(__('Could not delete this record at %s: %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state)), $message));
+            return true;
+        }
+    }
+
+    /**
+     * pre_item_restore on DomainRecord (§14.3/Phase 48 bug fix): the paired
+     * counterpart to onPreDelete() above — trashing a write-back-managed
+     * record pushes a real deleteRecord() upstream, so simply flipping
+     * is_deleted back to 0 locally (GLPI's native restore) leaves the
+     * provider still missing the record; the next sync then reads that as
+     * "vanished upstream" and re-trashes it, which is what made restore look
+     * like a no-op. Recreates the record upstream and refreshes the
+     * ownership row's remote_id/hash (the old remote_id is gone once
+     * deleted, so it cannot simply be reused). Same return-value convention
+     * as onPreUpdate()/onPreDelete(): true = handled here (whether it let
+     * the restore proceed or aborted it), false = not eligible, caller falls
+     * through to native restore unmodified.
+     *
+     * @param  DomainRecord $item
+     * @return bool
+     */
+    public static function onPreRestore(DomainRecord $item): bool
+    {
+        $type = self::typeName((int) $item->fields['domainrecordtypes_id']);
+        if ($type === null || !in_array($type, self::WRITABLE_TYPES, true)) {
+            return false;
+        }
+
+        $domains_id = (int) $item->fields['domains_id'];
+        $state = DomainState::getForDomain($domains_id);
+        if ($state === null || !self::isDnsEditable($state)) {
+            return false;
+        }
+
+        if (!self::hasRight($type, CREATE) || Session::isCron()) {
+            return false;
+        }
+
+        $imported = ImportedRecord::getForDomainRecord((int) $item->getID());
+        if ($imported === null) {
+            // Never plugin-owned — let the native restore proceed unmodified.
+            return false;
+        }
+
+        $domain = new Domain();
+        if (!$domain->getFromDB($domains_id)) {
+            return false;
+        }
+
+        $nsError = self::recheckNameservers($domain, $state);
+        if ($nsError !== null) {
+            self::abort($item, $nsError);
+            return true;
+        }
+
+        $name = (string) $item->fields['name'];
+        $data = (string) $item->fields['data'];
+        $ttl  = (int) $item->fields['ttl'];
+        self::sanitizeInputs($name, $data, $ttl);
+
+        try {
+            $driver = self::getWritableDriver($state);
+            $zoneName = $domain->fields['name'];
+            $absoluteName = ($name !== '' && $name !== '@') ? $name . '.' . $zoneName : $zoneName;
+            $created = $driver->createRecord($zoneName, $type, $absoluteName, $data, $ttl);
+            DomainState::recordWriteOutcome($domains_id, true);
+
+            $imported->update([
+                'id'          => $imported->getID(),
+                'remote_id'   => $created->remoteId,
+                'record_hash' => $created->getHash(),
+                'last_seen'   => date('Y-m-d H:i:s'),
+            ]);
+
+            Log::history($domains_id, Domain::class, [0, '', '[Domain Manager] ' . sprintf(
+                __('Record restored from GLPI trash and recreated at %s: %s %s → %s (TTL %d)', 'domainmanager'),
+                self::driverLabel(self::configuredDriverName($state)),
+                $type,
+                $name ?: '@',
+                $data,
+                $ttl,
+            ),
+            ]);
+
+            return true;
+        } catch (Throwable $e) {
+            $message = $e instanceof DriverException ? $e->getMessage() : __('An error occurred while recreating the record at the provider', 'domainmanager');
+            if ($e instanceof DriverException && $e->isPermissionDenied) {
+                DomainState::recordWriteOutcome($domains_id, false, $message);
+            }
+            PluginLogger::error("Failed to recreate restored DNS record #{$item->getID()} for domain #$domains_id", $e::class . ': ' . $e->getMessage());
+            self::abort($item, sprintf(__('Could not recreate this record at %s: %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state)), $message));
             return true;
         }
     }
@@ -424,7 +709,7 @@ class DnsRecordWriteback
      * per-type DNS write-back right (§11.6/§11.7) — used by
      * `DomainForm::onShowTab()` to decide whether the native "Link a
      * record"/"New Domain record for this item" controls are worth
-     * showing on an IONOS-managed domain's Records tab: a user who can't
+     * showing on a write-back-managed domain's Records tab: a user who can't
      * create any type via write-back would only get a confusing local-only
      * add that `DnsRecordWriteback::onPreAdd()` may reject outright.
      *
@@ -442,9 +727,30 @@ class DnsRecordWriteback
     }
 
     /**
+     * Whether the current user holds the PURGE bit on the per-type DNS
+     * write-back right matching this record's type — used by
+     * `LockEnforcer::blockRecordRemoval()` to gate hard-purging a
+     * DomainRecord, one right per type rather than a single flat right
+     * (ARCHITECTURE.md §11.6 addendum, matching native GLPI's own
+     * DELETE/PURGE distinction).
+     *
+     * @param  DomainRecord $item
+     * @return bool
+     */
+    public static function hasPurgeRight(DomainRecord $item): bool
+    {
+        $type = self::typeName((int) ($item->fields['type'] ?? 0));
+        if ($type === null) {
+            return false;
+        }
+
+        return self::hasRight($type, PURGE);
+    }
+
+    /**
      * Public wrapper around `isDnsEditable()` for callers outside this
      * class (§11.6 addendum) — e.g. `DomainForm::onShowTab()`, deciding
-     * whether the domain's DNS is under IONOS write-back at all before
+     * whether the domain's DNS is under write-back at all before
      * even considering hiding the native add controls.
      *
      * @param  DomainState $state
@@ -471,6 +777,38 @@ class DnsRecordWriteback
     }
 
     /**
+     * Whether this domain's configured DNS driver can toggle a record's
+     * proxy status at all (§9 Phase 49) — used by `DomainForm` to decide
+     * whether the edit-panel checkbox is worth injecting; independent of
+     * any specific record's type (callers still check PROXIABLE_TYPES
+     * themselves via `isProxiableType()`).
+     *
+     * @param  DomainState $state
+     * @return bool
+     */
+    public static function supportsProxyToggle(DomainState $state): bool
+    {
+        if (!self::isDnsEditable($state)) {
+            return false;
+        }
+
+        try {
+            return self::getWritableDriver($state) instanceof DnsRecordProxyToggleInterface;
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    /**
+     * @param  string $type
+     * @return bool
+     */
+    public static function isProxiableType(string $type): bool
+    {
+        return in_array($type, self::PROXIABLE_TYPES, true);
+    }
+
+    /**
      * Public accessor for `WRITABLE_TYPES` (§9 Phase 37) — the set of
      * `DomainRecordType` names write-back may ever touch, independent of any
      * particular domain/user's rights.
@@ -485,7 +823,7 @@ class DnsRecordWriteback
     /**
      * Record types the current user may create via write-back on this
      * domain (§9 Phase 37) — empty whenever the domain's DNS isn't under
-     * IONOS write-back at all, or the user holds none of the four per-type
+     * write-back at all, or the user holds none of the four per-type
      * CREATE rights. Backs the custom add panel's type dropdown
      * (`DomainForm::renderRecordWritePanel()`): only ever offering types
      * that will actually succeed, instead of the native form's full
@@ -623,24 +961,73 @@ class DnsRecordWriteback
     }
 
     /**
-     * Ported from the removed controller's recheckNameservers().
+     * Ported from the removed controller's recheckNameservers(). Compares
+     * against the domain's own currently-configured DNS driver (via $state),
+     * not a hardcoded provider — a re-resolved NS match against any *other*
+     * driver than the one actually configured for this domain still means
+     * "no longer authoritative" for write-back purposes, whichever driver
+     * that configured one happens to be (found live, Phase 41: this
+     * previously hardcoded DRIVER_IONOS, which would have wrongly rejected
+     * every Cloudflare-managed write).
      *
-     * @param  Domain $domain
+     * @param  Domain      $domain
+     * @param  DomainState $state
      * @return string|null
      */
-    private static function recheckNameservers(Domain $domain): ?string
+    private static function recheckNameservers(Domain $domain, DomainState $state): ?string
     {
+        $configuredDriver = self::configuredDriverName($state);
         try {
             $resolver = new NsResolver();
             $hosts = $resolver->getNameservers($domain->fields['name']);
             $provider = NsProviderRegistry::match($hosts);
-            if ($provider === null || ($provider['driver'] ?? null) !== DriverRegistry::DRIVER_IONOS) {
-                return __('Domain nameservers have changed since last sync; cannot verify IONOS is still authoritative', 'domainmanager');
+            if ($provider === null || ($provider['driver'] ?? null) !== $configuredDriver) {
+                return sprintf(
+                    __('Domain nameservers have changed since last sync; cannot verify %s is still authoritative', 'domainmanager'),
+                    self::driverLabel($configuredDriver),
+                );
             }
         } catch (Throwable) {
             return __('Unable to re-check domain nameservers', 'domainmanager');
         }
         return null;
+    }
+
+    /**
+     * Driver key currently configured for this domain's DNS supplier, or
+     * null if it can't be resolved (§0.4-adjacent — mirrors isDnsEditable()'s
+     * own supplier lookup so the two never disagree).
+     *
+     * @param  DomainState $state
+     * @return string|null
+     */
+    private static function configuredDriverName(DomainState $state): ?string
+    {
+        $supplier_id = $state->fields['dns_suppliers_id'] ?? 0;
+        if ($supplier_id <= 0) {
+            return null;
+        }
+        try {
+            $config = SupplierConfig::getForSupplier($supplier_id);
+            return $config->fields['api_driver'] ?? null;
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Human-readable driver label for user-facing messages (§9 Phase 41) —
+     * replaces every message that previously hardcoded "IONOS" literally.
+     *
+     * @param  string|null $driver
+     * @return string
+     */
+    private static function driverLabel(?string $driver): string
+    {
+        if ($driver === null) {
+            return __('the configured provider', 'domainmanager');
+        }
+        return DriverRegistry::getDriverLabels()[$driver] ?? $driver;
     }
 
     /**

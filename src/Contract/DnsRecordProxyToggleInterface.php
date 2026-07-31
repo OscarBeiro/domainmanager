@@ -29,29 +29,25 @@
  * -------------------------------------------------------------------------
  */
 
-namespace GlpiPlugin\Domainmanager\Exception;
+namespace GlpiPlugin\Domainmanager\Contract;
 
-use RuntimeException;
+use GlpiPlugin\Domainmanager\Dto\ZoneRecord;
+use GlpiPlugin\Domainmanager\Exception\DriverException;
 
 /**
- * Driver failure whose message is safe to persist and display
- * (payload/technical detail belongs in the plugin log file, never here)
+ * Optional capability, separate from DnsRecordWriterInterface: a driver
+ * whose provider has no per-record CDN-proxy concept (IONOS, Dinahosting)
+ * simply doesn't implement this, rather than growing a no-op method on the
+ * base write interface every driver would have to carry.
  */
-class DriverException extends RuntimeException
+interface DnsRecordProxyToggleInterface
 {
     /**
-     * Whether this failure is a genuine write-permission denial (e.g.
-     * Cloudflare's zone-scoped-token 403, ARCHITECTURE.md §12.3) — as
-     * opposed to a transient, validation, or idempotent-already-satisfied
-     * failure. `DnsRecordWriteback` uses this flag to decide whether to call
-     * `DomainState::recordWriteOutcome()`, instead of any shared layer ever
-     * inspecting a status code or provider error body itself (§12.6).
+     * @param  string $domain   FQDN, e.g. "example.com"
+     * @param  string $remoteId provider-assigned record id
+     * @param  bool   $proxied  desired proxy state
+     * @return ZoneRecord the record as the provider reports it after the change
+     * @throws DriverException on any failure (message safe to persist)
      */
-    public readonly bool $isPermissionDenied;
-
-    public function __construct(string $message, bool $isPermissionDenied = false, ?\Throwable $previous = null)
-    {
-        parent::__construct($message, 0, $previous);
-        $this->isPermissionDenied = $isPermissionDenied;
-    }
+    public function setProxied(string $domain, string $remoteId, bool $proxied): ZoneRecord;
 }
