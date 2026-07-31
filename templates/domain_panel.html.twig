@@ -397,7 +397,17 @@
                         }
                     }
 
-                    const label = form.querySelector('label[for="' + input.id + '"]');
+                    // A date/datetime field (e.g. date_domaincreation,
+                    // date_expiration) is built by fields_macros.html.twig's
+                    // dateField()/datetimeField(), which generates the
+                    // flatpickr wrapper's own random id independently of the
+                    // outer field() macro's label `for` — the two never
+                    // match, so label[for=input.id] misses. Fall back to the
+                    // enclosing `.form-field` row, which always has exactly
+                    // one label regardless of id/for matching.
+                    const fieldRow = input.closest('.form-field');
+                    const label = form.querySelector('label[for="' + input.id + '"]')
+                        || (fieldRow ? fieldRow.querySelector('label') : null);
                     if (label && !label.querySelector('.domainmanager-lock')) {
                         const icon = document.createElement('i');
                         icon.className = 'ti ti-cloud-lock ms-1 domainmanager-lock';

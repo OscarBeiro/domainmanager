@@ -97,7 +97,14 @@
                 lockedFields.forEach(function (field) {
                     form.querySelectorAll('[name="' + field + '"]').forEach(function (input) {
                         input.disabled = true;
-                        var label = form.querySelector('label[for="' + input.id + '"]');
+                        // date_creation is built by dateField()/datetimeField()
+                        // (fields_macros.html.twig), whose flatpickr wrapper
+                        // gets its own random id independently of the outer
+                        // field() macro's label `for` — the two never match.
+                        // Fall back to the enclosing `.form-field` row, which
+                        // always has exactly one label regardless of it.
+                        var label = form.querySelector('label[for="' + input.id + '"]')
+                            || (input.closest('.form-field') ? input.closest('.form-field').querySelector('label') : null);
                         if (label && !label.querySelector('.domainmanager-lock')) {
                             var icon = document.createElement('i');
                             icon.className = 'ti ti-cloud-lock ms-1 domainmanager-lock';
