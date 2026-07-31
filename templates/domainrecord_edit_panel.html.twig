@@ -83,6 +83,13 @@
 {% endif %}
 <script>
     (function () {
+    // GLPI renders `.form-button-separator` (and its Save/Delete/Purge
+    // buttons) via `components/form/buttons.html.twig` *after* this
+    // POST_ITEM_FORM hook output in the document — so at parse time, when
+    // this inline <script> runs synchronously, that row doesn't exist in
+    // the DOM yet. Deferring to DOMContentLoaded lets the rest of the page
+    // finish parsing first.
+    function run() {
         var form = document.getElementById('main-form') || document.querySelector('form[name="asset_form"]');
         var lockedFields = {{ locked_fields|json_encode|raw }}.concat({{ structural_locked_fields|json_encode|raw }});
         if (lockedFields.length) {
@@ -125,23 +132,19 @@
         // `is_proxied` lives on ImportedRecord, not DomainRecord (§9 Phase
         // 49) — there is no real form field for it to occupy, so the
         // checkbox rendered above (hidden, outside the <form>) is moved
-        // into the native form here, as its own row directly below the
-        // Creation date row (and above TTL), and only then revealed — never
-        // left detached-but-visible even briefly.
+        // into the native form here. Earlier attempts anchored it to
+        // `date_creation`/`ttl` rows, which are unreliable across GLPI
+        // versions/layouts; anchoring to `.form-button-separator` (the
+        // submit/delete button row, always present) is stable, so it's
+        // placed directly above that row instead — and only then revealed,
+        // never left detached-but-visible even briefly.
         var proxyContainer = document.getElementById('domainmanager-proxy-toggle-container');
         if (proxyContainer && form) {
-            var dateInput = form.querySelector('[name="date_creation"]');
-            var dateRow = dateInput ? dateInput.closest('.row') : null;
-            if (dateRow && dateRow.parentNode) {
-                dateRow.parentNode.insertBefore(proxyContainer, dateRow.nextSibling);
+            var buttonSeparator = form.querySelector('.form-button-separator');
+            if (buttonSeparator && buttonSeparator.parentNode) {
+                buttonSeparator.parentNode.insertBefore(proxyContainer, buttonSeparator);
             } else {
-                var ttlInput = form.querySelector('[name="ttl"]');
-                var ttlCol = ttlInput ? ttlInput.closest('.form-field, .col') : null;
-                if (ttlCol && ttlCol.parentNode) {
-                    ttlCol.parentNode.insertBefore(proxyContainer, ttlCol.closest('.row') || ttlCol);
-                } else {
-                    form.appendChild(proxyContainer);
-                }
+                form.appendChild(proxyContainer);
             }
             proxyContainer.style.display = '';
         }
@@ -174,5 +177,12 @@
             }, true);
         });
         {% endif %}
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', run);
+    } else {
+        run();
+    }
     })();
 </script>
