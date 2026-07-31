@@ -212,7 +212,11 @@ class DomainForm
      * - a delete/purge confirmation requiring an explicit "yes" before
      *   submitting, whenever the user holds the per-type DELETE right (the
      *   record would otherwise just be silently blocked server-side by
-     *   `LockEnforcer::blockRecordRemoval()`, same authoritative check).
+     *   `LockEnforcer::blockRecordRemoval()`, same authoritative check);
+     * - the Purge button itself hidden (record is already in the trash)
+     *   whenever the user lacks the per-type PURGE right — GLPI renders it
+     *   unconditionally from the generic itemtype right, so without this it
+     *   silently no-ops server-side instead.
      *
      * @param  DomainRecord $item
      * @return void
@@ -253,6 +257,12 @@ class DomainForm
 
         $can_update = $dns_editable && $is_writable_type && DnsRecordWriteback::hasTypeRight($type, UPDATE);
         $can_delete = $dns_editable && $is_writable_type && DnsRecordWriteback::hasTypeRight($type, DELETE);
+        // Purge (emptying the trash) is gated purely on the per-type PURGE
+        // bit, independent of $dns_editable/$is_writable_type — mirrors
+        // LockEnforcer::blockRecordRemoval()'s own unconditional check, so
+        // the button is hidden exactly when a submit would otherwise be
+        // silently rejected server-side.
+        $can_purge = DnsRecordWriteback::hasPurgeRight($item);
 
         // §9 Phase 49: the proxy-status checkbox is only worth injecting
         // when this specific record could ever be proxied (A/AAAA/CNAME —
@@ -269,6 +279,7 @@ class DomainForm
         TemplateRenderer::getInstance()->display('@domainmanager/domainrecord_edit_panel.html.twig', [
             'can_update'       => $can_update,
             'can_delete'       => $can_delete,
+            'can_purge'        => $can_purge,
             'can_toggle_proxy' => $can_toggle_proxy,
             'current_proxied'  => $current_proxied,
             'supplier_name' => $dns_editable ? DnsRecordWriteback::writableSupplierName($domains_id) : null,

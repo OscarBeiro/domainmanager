@@ -184,6 +184,18 @@
             }, true);
         });
         {% endif %}
+
+        {% if not can_purge %}
+        // GLPI renders the Purge button from the generic itemtype right,
+        // unaware of Domain Manager's own per-type PURGE bit — without this
+        // it's shown but silently rejected server-side by
+        // LockEnforcer::blockRecordRemoval() (kept there, authoritative, in
+        // case some other path — e.g. an automatic action — still reaches it).
+        var purgeButtons = document.querySelectorAll('.form-button-separator button[name="purge"]');
+        purgeButtons.forEach(function (btn) {
+            btn.style.display = 'none';
+        });
+        {% endif %}
     }
 
     if (document.readyState === 'loading') {
