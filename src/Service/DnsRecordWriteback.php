@@ -46,7 +46,6 @@ use GlpiPlugin\Domainmanager\ImportedRecord;
 use GlpiPlugin\Domainmanager\ImportLock;
 use GlpiPlugin\Domainmanager\NsProviderRegistry;
 use GlpiPlugin\Domainmanager\Profile;
-use GlpiPlugin\Domainmanager\RecordConflict;
 use GlpiPlugin\Domainmanager\SupplierConfig;
 use Log;
 use Session;
@@ -360,69 +359,17 @@ class DnsRecordWriteback
             return true;
         }
 
-        // §13 (Phase 44): a bypass carries the id of an already-displayed
-        // conflict row the user just resolved with "Keep my GLPI value" —
-        // scoped to that one row (§13.6 item 3), never a generic
-        // skip-the-diff-check flag, so a crafted submission cannot bypass
-        // drift-checking on an edit nobody has reviewed.
-        $conflictId = (int) ($item->input['_domainmanager_conflict_id'] ?? 0);
-
         try {
             $driver = self::getWritableDriver($state);
 
-            if ($conflictId > 0) {
-                $conflict = RecordConflict::getForDomainRecord((int) $item->getID());
-                if ($conflict === null || (int) $conflict->getID() !== $conflictId) {
-                    self::abort($item, __('This conflict no longer exists; it may already have been resolved or cancelled. Please retry your edit.', 'domainmanager'));
-                    return true;
-                }
-
-                // §13.6 item 1: re-verify at resolution time, not just at
-                // detection time — the live value can drift again in the
-                // window between the conflict being shown and this click.
-                try {
-                    $live = $driver->fetchRecord($domain->fields['name'], $imported->fields['remote_id']);
-                } catch (Throwable) {
-                    self::abort($item, sprintf(__('Could not verify the current value at %s before resolving this conflict; please retry.', 'domainmanager'), self::driverLabel(self::configuredDriverName($state))));
-                    return true;
-                }
-
-                if ($live->data !== $conflict->fields['live_data'] || $live->ttl !== (int) $conflict->fields['live_ttl']) {
-                    $conflict->update([
-                        'id'        => $conflict->getID(),
-                        'live_data' => $live->data,
-                        'live_ttl'  => $live->ttl,
-                    ]);
-                    self::abort($item, sprintf(__('The value at %s has changed again since this conflict was detected; review the updated value before retrying.', 'domainmanager'), self::driverLabel(self::configuredDriverName($state))));
-                    return true;
-                }
-
-                // Confirmed unchanged since detection: consume the conflict
-                // row and proceed with the push below.
-                $conflict->delete(['id' => $conflict->getID()], true);
-            } else {
-                // Live re-fetch-and-diff before update (§11.10): the local
-                // mirror is only as fresh as the last sync.
-                try {
-                    $live = $driver->fetchRecord($domain->fields['name'], $imported->fields['remote_id']);
-                    if ($live->data !== $item->fields['data'] || $live->ttl !== (int) $item->fields['ttl']) {
-                        $conflict = RecordConflict::replaceForDomainRecord((int) $item->getID(), $data, $ttl, $live->data, $live->ttl);
-                        self::abort($item, sprintf(
-                            __('The record at %1$s has changed since the last sync. Review the conflict and choose which value to keep: %2$s', 'domainmanager'),
-                            self::driverLabel(self::configuredDriverName($state)),
-                            self::conflictUrl($conflict),
-                        ));
-                        return true;
-                    }
-                } catch (Throwable) {
-                    Session::addMessageAfterRedirect(
-                        '[Domain Manager] ' . sprintf(__('Could not verify the current value at %s before this update; proceeding with local values.', 'domainmanager'), self::driverLabel(self::configuredDriverName($state))),
-                        false,
-                        WARNING,
-                    );
-                }
-            }
-
+            // A managed, write-back record's GLPI value is always
+            // authoritative — this push overwrites whatever is live at the
+            // provider unconditionally, same as name/proxy-toggle/comment
+            // edits already do. (Previously did a live re-fetch-and-diff
+            // here and refused the edit on drift; removed — for a record
+            // GLPI actively manages there's no genuine ambiguity to
+            // reconcile, and gating a legitimate edit on a stale/failed
+            // fetch was pure downside.)
             $driver->updateRecord($domain->fields['name'], $imported->fields['remote_id'], $type, $name, $data, $ttl);
             DomainState::recordWriteOutcome($domains_id, true);
 
@@ -433,9 +380,8 @@ class DnsRecordWriteback
                 'domainrecordtypes_id' => (int) $item->fields['domainrecordtypes_id'],
             ]);
 
-            Log::history($domains_id, Domain::class, [0, '', '[Domain Manager] ' . ($conflictId > 0
-                ? sprintf(__('Record update conflict resolved: kept the GLPI value for %s %s — data %s → %s', 'domainmanager'), $type, $name, $item->fields['data'], $data)
-                : sprintf(__('Record updated from GLPI: %s %s — data %s → %s', 'domainmanager'), $type, $name, $item->fields['data'], $data)),
+            Log::history($domains_id, Domain::class, [0, '', '[Domain Manager] '
+                . sprintf(__('Record updated from GLPI: %s %s — data %s → %s', 'domainmanager'), $type, $name, $item->fields['data'], $data),
             ]);
 
             return true;
@@ -1082,21 +1028,6 @@ class DnsRecordWriteback
             return __('the configured provider', 'domainmanager');
         }
         return DriverRegistry::getDriverLabels()[$driver] ?? $driver;
-    }
-
-    /**
-     * URL of the conflict-resolution screen for a just-detected conflict
-     * (§13.3 item 2's "aborts with a message directing the user to the
-     * conflict-resolution screen") — rendered as a clickable link rather
-     * than a bare path the user would have to copy/paste.
-     *
-     * @param  RecordConflict $conflict
-     * @return string
-     */
-    private static function conflictUrl(RecordConflict $conflict): string
-    {
-        $url = '/plugins/domainmanager/recordconflict/' . $conflict->getID();
-        return '<a href="' . htmlspecialchars($url, ENT_QUOTES) . '">' . htmlspecialchars($url, ENT_QUOTES) . '</a>';
     }
 
     /**

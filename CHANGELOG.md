@@ -6,9 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-Working version: `1.3.0-beta7` (see `setup.php`'s `PLUGIN_DOMAINMANAGER_VERSION`). Per-pre-release
+Working version: `1.3.0-beta8` (see `setup.php`'s `PLUGIN_DOMAINMANAGER_VERSION`). Per-pre-release
 headers are no longer added here for every alpha/beta bump — entries accumulate under this section
 and get one real version header only at final release.
+
+### Removed
+- **The "record update conflict" resolution feature (Phase 44) is gone — editing a managed record's data/TTL now always pushes straight to the provider.** Previously, `DnsRecordWriteback::onPreUpdate()` did a live re-fetch before every write-back edit and, if the provider's value had drifted from GLPI's last-known copy, refused the save and sent the user to a `/recordconflict/{id}` resolution screen to pick "keep GLPI" or "keep provider." Design clarification: once a record is under Domain Manager management, GLPI's value is always authoritative — editing it and pushing to the provider is the normal workflow, not a conflict. A genuine conflict (ambiguous source of truth) can only exist for native records that predate management, never for one Domain Manager is actively managing. Removed the `RecordConflict` model, its controller/routes, its resolution template, and the `glpi_plugin_domainmanager_recordconflicts` table (dropped automatically on upgrade). Sync/"Update Now" behavior is unaffected — the provider still always wins on a pull; this only changes the push (GLPI → provider) direction.
 
 ### Changed
 - **Domain record edit form: visual cleanup of the "Managed by Domain Manager" banner and the Cloudflare proxy toggle.** The banner is now blue (matching the rest of the plugin's ribbons, was orange) and moved to the top of the form instead of appearing after all native fields. The proxy toggle now uses a solid cloud icon (was outline, easy to miss), a shorter "Proxied" label, and sits in its own row directly below Creation date instead of appended after TTL.

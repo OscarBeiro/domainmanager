@@ -50,7 +50,6 @@ class Installer
         'glpi_plugin_domainmanager_states',
         'glpi_plugin_domainmanager_records',
         'glpi_plugin_domainmanager_locks',
-        'glpi_plugin_domainmanager_recordconflicts',
     ];
 
     /**
@@ -80,6 +79,7 @@ class Installer
         self::registerRights($migration);
         self::migratePurgeRight();
         self::registerCronTasks();
+        self::dropRecordConflictsTable($migration);
 
         $migration->executeMigration();
 
@@ -242,21 +242,6 @@ class Installer
                     PRIMARY KEY (`id`),
                     UNIQUE KEY `unicity` (`itemtype`, `items_id`, `field`),
                     KEY `items_id` (`items_id`)
-                ) ENGINE=InnoDB DEFAULT CHARSET={$charset} COLLATE={$collation} ROW_FORMAT=DYNAMIC
-                SQL,
-            'glpi_plugin_domainmanager_recordconflicts' => <<<SQL
-                CREATE TABLE `glpi_plugin_domainmanager_recordconflicts` (
-                    `id` int {$key_sign} NOT NULL AUTO_INCREMENT,
-                    `domainrecords_id` int {$key_sign} NOT NULL DEFAULT '0',
-                    `submitted_data` varchar(255) NOT NULL DEFAULT '',
-                    `submitted_ttl` int NOT NULL DEFAULT '0',
-                    `live_data` varchar(255) NOT NULL DEFAULT '',
-                    `live_ttl` int NOT NULL DEFAULT '0',
-                    `date_mod` timestamp NULL DEFAULT NULL,
-                    `date_creation` timestamp NULL DEFAULT NULL,
-                    PRIMARY KEY (`id`),
-                    UNIQUE KEY `domainrecords_id` (`domainrecords_id`),
-                    KEY `date_creation` (`date_creation`)
                 ) ENGINE=InnoDB DEFAULT CHARSET={$charset} COLLATE={$collation} ROW_FORMAT=DYNAMIC
                 SQL,
         ];
@@ -953,6 +938,23 @@ class Installer
         }
         // Migration::addRight() inserts rows directly: reset the rights cache
         ProfileRight::cleanAllPossibleRights();
+    }
+
+    /**
+     * The RecordConflict update-conflict-resolution feature (was
+     * ARCHITECTURE.md §13, Phase 44) was removed: for a record Domain
+     * Manager actively manages, GLPI's value is always authoritative, so
+     * there was never a genuine conflict to reconcile. No longer created
+     * for fresh installs (dropped from `createTables()`'s schema); this
+     * drops the table for anyone upgrading from a version that still has
+     * it, leaving no residue, same as `uninstall()`'s own table cleanup.
+     *
+     * @param  Migration $migration
+     * @return void
+     */
+    private static function dropRecordConflictsTable(Migration $migration): void
+    {
+        $migration->dropTable('glpi_plugin_domainmanager_recordconflicts');
     }
 
     /**

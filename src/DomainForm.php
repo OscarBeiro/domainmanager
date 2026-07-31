@@ -254,11 +254,6 @@ class DomainForm
         $can_update = $dns_editable && $is_writable_type && DnsRecordWriteback::hasTypeRight($type, UPDATE);
         $can_delete = $dns_editable && $is_writable_type && DnsRecordWriteback::hasTypeRight($type, DELETE);
 
-        // §13 (Phase 44): a record's own edit page is one of the two places
-        // an unresolved conflict is reachable from, alongside the flash
-        // message shown at detection time.
-        $conflict = RecordConflict::getForDomainRecord($records_id);
-
         // §9 Phase 49: the proxy-status checkbox is only worth injecting
         // when this specific record could ever be proxied (A/AAAA/CNAME —
         // TXT/MX/NS never are) *and* the user can actually push a change
@@ -290,7 +285,6 @@ class DomainForm
             // touch either; the creation date is likewise never something
             // an edit should touch.
             'structural_locked_fields' => ['domains_id', 'domainrecordtypes_id', 'date_creation'],
-            'conflict_url'  => $conflict !== null ? '/plugins/domainmanager/recordconflict/' . $conflict->getID() : null,
         ]);
     }
 

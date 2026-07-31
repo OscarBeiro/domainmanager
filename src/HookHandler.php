@@ -269,9 +269,6 @@ class HookHandler
 
         $DB->delete(ImportedRecord::getTable(), ['domainrecords_id' => $records_id]);
         ImportLock::deleteForItem(DomainRecord::class, $records_id);
-        // §13.6 item 4 (Phase 44): an unresolved update-conflict row must not
-        // outlive the record it refers to.
-        RecordConflict::deleteForDomainRecord($records_id);
     }
 
     /**
