@@ -11,6 +11,15 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-07-31
+### Features
+- Dinahosting driver now supports manual DNS record write-back (A/AAAA/CNAME/TXT), matching IONOS and Cloudflare.
+- A DomainRecord's `name` field is now structurally locked on its edit form, since editing it never actually pushed a change upstream.
+
+### Bugs
+- The Purge button on a plugin-imported DomainRecord's trash view is now hidden for users lacking the per-type PURGE right, instead of appearing but silently bouncing back an error.
+- Fixed a missing lock icon on managed Domain/DomainRecord date fields.
+
 ## [1.3.1] - 2026-07-31
 ### Features
 - Installer's display-preference seeding now uses the native `countElementsInTable()` helper instead of a manual query for its existence check (no behavior change).

@@ -1,8 +1,14 @@
 # Changelog for Domain Manager
 
-All notable changes to this project will be documented in this file, one dated header per
-version bump (pre-release included) — the full development history. See `CHANGELOG.md` for the
-trimmed, real-releases-only changelog.
+All notable changes to this project will be documented in this file — the full development
+history, pre-release included. See `CHANGELOG.md` for the trimmed, real-releases-only changelog.
+
+A pre-release bump (any version with a `-alpha`/`-beta` suffix) does not mint its own dated
+header — it's appended under the running `## [Unreleased]` section, which names the current
+working pre-release version. Only a real release (no pre-release suffix) gets its own
+`## [x.y.z] - YYYY-MM-DD` header, at which point `[Unreleased]`'s accumulated content is
+collapsed into it and `[Unreleased]` resets to empty. Entries before this convention was
+adopted may still show one header per pre-release bump; that's earlier history, left as-is.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -11,6 +17,15 @@ Entries are grouped into **Features** (new capability, UI/UX change, refactor, d
 change) and **Bugs** (something that was actually broken, fixed) — one line each.
 
 ## [Unreleased]
+
+## [1.4.0] - 2026-07-31
+### Features
+- Dinahosting driver now implements `DnsRecordWriterInterface` (write mode for A/AAAA/CNAME/TXT), matching the same manual write-back UX already available for IONOS and Cloudflare. Synthesized against Dinahosting's real per-type add/delete-only API (no update command, no per-record id, no client-settable TTL): `updateRecord()` is a delete-then-add, `remoteId` is a synthetic `type|name` token, and any name already holding more than one record of the same type is refused as unsafe to edit individually (Dinahosting's A/AAAA/CNAME delete has no value filter and would remove every sibling). See `ARCHITECTURE.md` §3.8.1.
+- `DomainRecord`'s own edit form now structurally locks the record `name` field (moved out of the conditional write-back lock, always disabled like `domains_id`/`domainrecordtypes_id`/`date_creation`), since `DnsRecordWriteback::onPreUpdate()` never actually pushes a name change upstream — it always pushes the record's current DB name. Editing it previously looked possible but silently did nothing; the field-lock icon now covers `name`, `date_creation`, and `domains_id` consistently.
+
+### Bugs
+- A plugin-imported `DomainRecord`'s edit form kept showing the Purge button while it sat in the trash even when the user lacked the per-type PURGE right, so submitting it just bounced back with "Purging this record requires the 'Purge' right for its DNS record type." The button is now hidden client-side whenever `DnsRecordWriteback::hasPurgeRight()` is false; the server-side block in `LockEnforcer::blockRecordRemoval()` is unchanged (authoritative, still covers e.g. automatic actions).
+- The lock icon on a managed Domain's registration/expiration date fields (and a locked DomainRecord's creation date) was silently missing: `fields_macros.html.twig`'s `dateField()`/`datetimeField()` builds its flatpickr wrapper with its own independently-random id, which never matches the outer `field()` macro's `label[for=...]` — so the icon-injection JS's `label[for=input.id]` lookup missed every date field. Both `domain_panel.html.twig` and `domainrecord_edit_panel.html.twig` now fall back to the enclosing `.form-field` row's label when the id-based lookup misses.
 
 ## [1.3.1] - 2026-07-31
 ### Features

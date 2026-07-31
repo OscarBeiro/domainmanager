@@ -212,7 +212,11 @@ class DomainForm
      * - a delete/purge confirmation requiring an explicit "yes" before
      *   submitting, whenever the user holds the per-type DELETE right (the
      *   record would otherwise just be silently blocked server-side by
-     *   `LockEnforcer::blockRecordRemoval()`, same authoritative check).
+     *   `LockEnforcer::blockRecordRemoval()`, same authoritative check);
+     * - the Purge button itself hidden (record is already in the trash)
+     *   whenever the user lacks the per-type PURGE right — GLPI renders it
+     *   unconditionally from the generic itemtype right, so without this it
+     *   silently no-ops server-side instead.
      *
      * @param  DomainRecord $item
      * @return void
@@ -253,6 +257,12 @@ class DomainForm
 
         $can_update = $dns_editable && $is_writable_type && DnsRecordWriteback::hasTypeRight($type, UPDATE);
         $can_delete = $dns_editable && $is_writable_type && DnsRecordWriteback::hasTypeRight($type, DELETE);
+        // Purge (emptying the trash) is gated purely on the per-type PURGE
+        // bit, independent of $dns_editable/$is_writable_type — mirrors
+        // LockEnforcer::blockRecordRemoval()'s own unconditional check, so
+        // the button is hidden exactly when a submit would otherwise be
+        // silently rejected server-side.
+        $can_purge = DnsRecordWriteback::hasPurgeRight($item);
 
         // §9 Phase 49: the proxy-status checkbox is only worth injecting
         // when this specific record could ever be proxied (A/AAAA/CNAME —
@@ -269,22 +279,26 @@ class DomainForm
         TemplateRenderer::getInstance()->display('@domainmanager/domainrecord_edit_panel.html.twig', [
             'can_update'       => $can_update,
             'can_delete'       => $can_delete,
+            'can_purge'        => $can_purge,
             'can_toggle_proxy' => $can_toggle_proxy,
             'current_proxied'  => $current_proxied,
             'supplier_name' => $dns_editable ? DnsRecordWriteback::writableSupplierName($domains_id) : null,
             // Cosmetic-only (server-side is authoritative, see docblock
             // above): every editable field disabled unless the user can
             // actually write this record back.
-            'locked_fields' => $can_update ? [] : ['name', 'data', 'ttl'],
-            // Always locked, even for a user with write-back rights: these
-            // three are structural, mirroring LockEnforcer's own
+            'locked_fields' => $can_update ? [] : ['data', 'ttl'],
+            // Always locked, even for a user with write-back rights.
+            // domains_id/domainrecordtypes_id mirror LockEnforcer's own
             // STRUCTURAL_RECORD_FIELD (domains_id) server-side — changing
             // the domain link or the record type re-parents/retypes a
-            // record the plugin is tracking by (domains_id, remote_id),
-            // and there is no legitimate write-back edit that needs to
-            // touch either; the creation date is likewise never something
-            // an edit should touch.
-            'structural_locked_fields' => ['domains_id', 'domainrecordtypes_id', 'date_creation'],
+            // record the plugin is tracking by (domains_id, remote_id).
+            // name is cosmetic-only here (DnsRecordWriteback::onPreUpdate()
+            // never pushes a name change upstream — it always pushes the
+            // record's current DB name, never $item->input['name']), so
+            // editing it in the form would silently do nothing; locking it
+            // makes that explicit instead of surprising. date_creation is
+            // likewise never something an edit should touch.
+            'structural_locked_fields' => ['domains_id', 'domainrecordtypes_id', 'name', 'date_creation'],
         ]);
     }
 
