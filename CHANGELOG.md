@@ -6,10 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-Working version: `1.3.0-beta11` (see `setup.php`'s `PLUGIN_DOMAINMANAGER_VERSION`). Per-pre-release
-headers are no longer added here for every alpha/beta bump — entries accumulate under this section
-and get one real version header only at final release.
 
+## [1.3.0] - 2026-07-31
 ### Added
 - **The Domain type dropdown (`domaintypes_id`) is now locked on a managed domain, joining `name`/registration date/expiration date.** Previously only those three registrar-sourced fields were shielded; the type applied at import time (`DomainImportController`, from the configured "domain type to apply to imported domains" setting) stayed freely editable even though it's just as plugin-owned. Locked the moment a domain becomes managed (either leg) and the field was actually set, unlocked again if the domain stops being managed — same cosmetic disable + `ti-lock` icon convention as the existing fields, enforced server-side by `LockEnforcer::domainPreUpdate()` (unchanged, already generic over whatever `ImportLock` reports). The dropdown's Select2 widget needed an extra nudge (`jQuery(...).prop('disabled', true)`) to actually grey out — disabling the underlying `<select>` alone locked it functionally but left the visible widget looking enabled.
 - **Registration/expiration date locking now also covers a registrar driver that never reports one of those fields itself (e.g. IONOS has no such API field at all) and relies entirely on RDAP's gap-fill.** Previously only `SyncEngine`'s own registrar-leg sync locked these two dates, so an IONOS-managed domain's registration date — filled by the separate RDAP enrichment cron — stayed completely unlocked. A one-time backfill (`Installer::backfillManagedFieldLocks()`, runs on every install/upgrade) locks it retroactively for every already-managed domain; new domains get it locked going forward from their first RDAP enrichment.
