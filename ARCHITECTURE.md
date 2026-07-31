@@ -861,19 +861,17 @@ Every phase leaves install → uninstall residue-free.
 
 ## 10. Versioning & changelog policy
 
-`PLUGIN_DOMAINMANAGER_VERSION` in `setup.php` is the single source of truth for the plugin's version (no `composer.json` version field is used). **Every bump of that constant must land in the same commit as a matching `CHANGELOG.md` entry** — a new `## [x.y.z] - YYYY-MM-DD` section (Keep a Changelog format) containing whatever `### Added`/`### Changed`/`### Fixed` bullets accumulated under `[Unreleased]` since the previous version section, moved (not duplicated) out of `[Unreleased]` into the new version's section. A bump with no shipped content yet (e.g. a bare version-number increment immediately superseded by a later bump before anything else changed) still gets its own one-line section noting "version bump only — no functional changes", so the version history stays honest and every constant value that ever existed is traceable in the changelog. `[Unreleased]` itself is kept present but empty between releases, ready to accumulate the next round of bullets.
+`PLUGIN_DOMAINMANAGER_VERSION` in `setup.php` is the single source of truth for the plugin's version (no `composer.json` version field is used). **Every bump of that constant must land in the same commit as a matching changelog entry** — never bump the version constant without touching a changelog file in the same change. What that entry looks like depends on whether the bump is a pre-release or a real release, and the two-file split below (added 2026-07-31).
 
-**Pre-release amendment (resolved 2026-07-29, for §11.15's five-phase `-alphaN`/`-betaN` sequence):**
-each pre-release bump (`1.2.0-alpha1`, `-alpha2`, `-alpha3`, `-beta1`) still gets its own dated
-`## [1.2.0-alphaN] - YYYY-MM-DD` section at the time it lands, same as any other bump — nothing
-changes about *when* changelog entries are written. The amendment is about the eventual `1.2.0`
-release section: **it consolidates.** When the plain `## [1.2.0] - YYYY-MM-DD` section is written
-at release, its `### Added`/`### Changed`/`### Fixed` bullets are a clean rewrite of everything
-that shipped across `-alpha1` through `-beta1` — not a duplicate list, not a bare "see above"
-pointer. The four pre-release sections themselves are **not deleted**; they stay in the file as
-the honest historical record of how the feature actually landed session-by-session, but a reader
-who only cares about released versions gets one coherent `1.2.0` entry without needing to read
-the pre-release trail.
+**Two changelog files, split by audience (added 2026-07-31):**
+- **`CHANGELOG-dev.md`** — the full, unabridged history. Every version this constant has ever held, pre-release included, each with its own dated header and the complete verbose entry describing exactly what changed and why (investigation detail, root causes, code paths touched). This is the file to read for "how did this feature actually land" archaeology.
+- **`CHANGELOG.md`** — user-facing, one header per **real release only** (no `-alphaN`/`-betaN` suffix), each entry trimmed to a short 1-3 sentence summary. No pre-release detail lives here at all.
+
+**Where a bump's entry goes:**
+- **Pre-release bump** (`-alphaN`/`-betaN`): entry goes under `CHANGELOG-dev.md`'s running `## [Unreleased]` section — **not** a new dated header of its own. (This reverses this section's own earlier "Pre-release amendment," which had each pre-release bump minting its own header; reversed 2026-07-30 per direct user feedback that a wall of near-identical per-bump headers for one continuous line of work reads as noisy churn, not useful history. `CHANGELOG.md` is untouched by a pre-release bump — nothing to add there yet.)
+- **Real release** (no suffix, e.g. `1.3.0`): this is the point `CHANGELOG-dev.md`'s accumulated `[Unreleased]` content gets promoted into one new dated `## [x.y.z] - YYYY-MM-DD` section there, and `CHANGELOG.md` gets its own new dated header with a short trimmed summary of the same release. `[Unreleased]` resets to present-but-empty in `CHANGELOG-dev.md` afterward. A release with no shipped content yet still gets a one-line section ("version bump only — no functional changes") in both files, so every real version number is traceable in both.
+
+**Known gap, not to be silently "fixed":** `1.2.0` itself was never actually cut as a real release — only `1.2.0-alpha1`..`-alpha4` and `1.2.0-beta1`..`-beta3` exist in the history, then the version line jumped straight to `1.3.0-alpha1`. `CHANGELOG.md` correctly has no `[1.2.0]` entry (jumps `1.3.0` → `1.1.0`) — don't retroactively invent one; that gap is real project history, not a doc bug.
 
 ---
 
