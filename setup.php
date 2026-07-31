@@ -40,7 +40,7 @@ use GlpiPlugin\Domainmanager\Profile as DomainmanagerProfile;
 use GlpiPlugin\Domainmanager\Service\DnsRecordWriteback;
 use GlpiPlugin\Domainmanager\SupplierTab;
 
-define('PLUGIN_DOMAINMANAGER_VERSION', '1.3.0-beta8');
+define('PLUGIN_DOMAINMANAGER_VERSION', '1.3.0-beta9');
 define('PLUGIN_DOMAINMANAGER_MIN_GLPI', '11.0.0');
 define('PLUGIN_DOMAINMANAGER_MAX_GLPI', '11.0.99');
 define('PLUGIN_DOMAINMANAGER_REPOSITORY_URL', 'https://github.com/TICGAL-GLPI-Plugins/domainmanager');
@@ -85,7 +85,6 @@ define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_STATUS', 9409);
 define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_LAST_SYNC', 9410);
 // Real, filterable search options on Supplier (§9 Phase 16 "Supplier-side
 // searchable fields") — see their own registration below.
-define('PLUGIN_DOMAINMANAGER_SO_SUPPLIER_DOMAINS', 9411);
 define('PLUGIN_DOMAINMANAGER_SO_SUPPLIER_REGISTRAR', 9412);
 define('PLUGIN_DOMAINMANAGER_SO_SUPPLIER_NS_PROVIDER', 9413);
 define('PLUGIN_DOMAINMANAGER_SO_SUPPLIER_REGISTRAR_COUNT', 9414);
@@ -593,36 +592,6 @@ function plugin_domainmanager_getAddSearchOptionsNew($itemtype): array
         // reverse-list options do (e.g. Software's "Number of
         // installations", Ticket's "Parent tickets"/id 50).
         //
-        // "Domains" (total, union of both roles) stays count-only: it
-        // reuses DomainState's own registrar_suppliers_id mirror column
-        // (§0.1, kept in sync with the live Infocom link by
-        // HookHandler::infocomSaved()) to OR both roles in one join, since
-        // a single search-option join can only encode one OR'd pair of
-        // columns on one table — there is no single table that could carry
-        // an actual combined domain-name *list* the same way (that would
-        // need two different tables' rows unioned, which the search
-        // framework's one-join-per-option/beforejoin-chain model can't
-        // express). Good enough for "is this supplier worth a closer look"
-        // filtering; it is not the authoritative per-domain view that's on
-        // the Supplier's own Domain Manager tab
-        // (DomainState::getDomainsForSupplier(), which cross-checks the
-        // mirror against the live Infocom value row by row).
-        $options[] = [
-            'id'            => PLUGIN_DOMAINMANAGER_SO_SUPPLIER_DOMAINS,
-            'table'         => DomainState::getTable(),
-            'field'         => 'id',
-            'name'          => __('Domains', 'domainmanager'),
-            'datatype'      => 'count',
-            'forcegroupby'  => true,
-            'usehaving'     => true,
-            'massiveaction' => false,
-            'joinparams'    => [
-                'jointype'  => 'child',
-                'linkfield' => 'registrar_suppliers_id',
-                'condition' => 'OR NEWTABLE.`dns_suppliers_id` = REFTABLE.`id`',
-            ],
-        ];
-
         // "Registrar": the actual domain names (clickable, 'itemlink'),
         // reading the live, authoritative link (glpi_infocoms, the same
         // one that puts a Domain on this Supplier's native "Items" tab)
@@ -665,7 +634,7 @@ function plugin_domainmanager_getAddSearchOptionsNew($itemtype): array
             'id'            => PLUGIN_DOMAINMANAGER_SO_SUPPLIER_REGISTRAR_COUNT,
             'table'         => 'glpi_infocoms',
             'field'         => 'id',
-            'name'          => __('Number of domains (Registrar)', 'domainmanager'),
+            'name'          => __('Registrar Count', 'domainmanager'),
             'datatype'      => 'count',
             'forcegroupby'  => true,
             'usehaving'     => true,
@@ -716,7 +685,7 @@ function plugin_domainmanager_getAddSearchOptionsNew($itemtype): array
             'id'            => PLUGIN_DOMAINMANAGER_SO_SUPPLIER_NS_PROVIDER_COUNT,
             'table'         => DomainState::getTable(),
             'field'         => 'id',
-            'name'          => __('Number of domains (NS Provider)', 'domainmanager'),
+            'name'          => __('Provider Count', 'domainmanager'),
             'datatype'      => 'count',
             'forcegroupby'  => true,
             'usehaving'     => true,
