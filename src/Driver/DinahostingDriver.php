@@ -34,6 +34,7 @@ namespace GlpiPlugin\Domainmanager\Driver;
 use DateTimeImmutable;
 use GlpiPlugin\Domainmanager\Contract\ConnectionTestableInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsPipelineInterface;
+use GlpiPlugin\Domainmanager\Contract\DnsRecordWriterInterface;
 use GlpiPlugin\Domainmanager\Contract\DomainDiscoveryInterface;
 use GlpiPlugin\Domainmanager\Contract\RegistrarDriverInterface;
 use GlpiPlugin\Domainmanager\Dto\ConnectionTestResult;
@@ -92,7 +93,7 @@ use Toolbox;
  * `count`/`limit`/`offset` fields present at all, unlike IONOS's discovery
  * endpoint). See listAccountDomains().
  */
-class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterface, ConnectionTestableInterface, DomainDiscoveryInterface
+class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterface, ConnectionTestableInterface, DomainDiscoveryInterface, DnsRecordWriterInterface
 {
     private const BASE_URI = 'https://dinahosting.com/special/';
 
@@ -368,7 +369,7 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
                     $name,
                     $content,
                     (int) ($row['ttl'] ?? 0),
-                    (string) ($row['id'] ?? ''),
+                    self::encodeRemoteId($type, $name),
                 );
             } catch (InvalidArgumentException $e) {
                 PluginLogger::activity("Dinahosting record skipped for $domain: " . $e->getMessage());
@@ -376,6 +377,279 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
         }
 
         return $records;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * §11-dinahosting: Dinahosting's write API has no update command and no
+     * per-record id — see class docblock addendum below assertSingleRecordAtName()
+     * for the full rationale. Creation refuses to add a second record at a
+     * `type`+`name` that already has one, since Dinahosting's delete
+     * commands for A/AAAA/CNAME act on hostname alone (no value filter),
+     * making a second record at the same name unsafe to ever clean up
+     * individually afterwards.
+     */
+    public function createRecord(string $domain, string $type, string $name, string $data, int $ttl): ZoneRecord
+    {
+        $type   = self::assertWritableType($type);
+        $domain = self::normalizeDomain($domain);
+
+        $this->assertSingleRecordAtName($domain, $type, $name);
+
+        return $this->createRecordRaw($domain, $type, $name, $data);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * §11-dinahosting: synthesized as delete-then-add, the only shape
+     * Dinahosting's API supports. Not atomic — if the add fails after the
+     * delete succeeds, the record is left deleted with no automatic
+     * rollback (Dinahosting has no transaction to roll back). Both the
+     * source and (if different) destination `type`+`name` are checked for
+     * siblings first, so this never fires the delete half of the update
+     * against a name it can't safely also recreate.
+     */
+    public function updateRecord(string $domain, string $remoteId, string $type, string $name, string $data, int $ttl): ZoneRecord
+    {
+        $old    = self::decodeRemoteId($remoteId);
+        $type   = self::assertWritableType($type);
+        $domain = self::normalizeDomain($domain);
+
+        $this->assertSingleRecordAtName($domain, $old['type'], $old['name'], $remoteId);
+        if ($old['type'] !== $type || $old['name'] !== $name) {
+            $this->assertSingleRecordAtName($domain, $type, $name);
+        }
+
+        $this->deleteByIdentity($domain, $old['type'], $old['name']);
+
+        return $this->createRecordRaw($domain, $type, $name, $data);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function deleteRecord(string $domain, string $remoteId): void
+    {
+        $id     = self::decodeRemoteId($remoteId);
+        $domain = self::normalizeDomain($domain);
+
+        $this->deleteByIdentity($domain, $id['type'], $id['name']);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * §11-dinahosting: no single-record read command exists — this always
+     * re-scans the whole zone via fetchZoneRecords() and filters, same as
+     * assertSingleRecordAtName().
+     */
+    public function fetchRecord(string $domain, string $remoteId): ZoneRecord
+    {
+        $id     = self::decodeRemoteId($remoteId);
+        $domain = self::normalizeDomain($domain);
+
+        $found = $this->findByIdentity($domain, $id['type'], $id['name']);
+        if ($found === null) {
+            throw new DriverException(__('Dinahosting no longer reports this record', 'domainmanager'));
+        }
+
+        return $found;
+    }
+
+    /**
+     * Shared create body for createRecord()/updateRecord(), used by the
+     * latter without re-running the collision guard a second time (it
+     * already ran it against both the source and destination identity).
+     *
+     * Command/param names verified against github.com/libdns/dinahosting;
+     * `hostname` is passed as the record's absolute name exactly as read
+     * back from Domain_Zone_GetAll (§ fetchZoneRecords()), matching the
+     * relative-vs-absolute form Dinahosting itself reports — unconfirmed
+     * against a real write call, verify against a live account before
+     * relying on it (same caveat class as the MX/NS field gap).
+     *
+     * @param  string $domain already-normalized FQDN
+     * @param  string $type   one of self::WRITABLE_TYPES, already validated
+     * @param  string $name   absolute record name
+     * @param  string $data   see DnsRecordWriterInterface docblock
+     * @return ZoneRecord
+     * @throws DriverException
+     */
+    private function createRecordRaw(string $domain, string $type, string $name, string $data): ZoneRecord
+    {
+        $command = match ($type) {
+            'A'     => 'Domain_Zone_AddTypeA',
+            'AAAA'  => 'Domain_Zone_AddTypeAAAA',
+            'CNAME' => 'Domain_Zone_AddTypeCname',
+            'TXT'   => 'Domain_Zone_AddTypeTXT',
+            default => throw new DriverException(sprintf(__('Record type %s is not writable through Domain Manager', 'domainmanager'), $type)),
+        };
+
+        $params = ['domain' => $domain, 'hostname' => $name] + match ($type) {
+            'A', 'AAAA' => ['ip' => $data],
+            'CNAME'     => ['destinationHostname' => $data],
+            'TXT'       => ['text' => $data],
+            default     => throw new DriverException(sprintf(__('Record type %s is not writable through Domain Manager', 'domainmanager'), $type)),
+        };
+
+        $this->request($command, $params);
+
+        $found = $this->findByIdentity($domain, $type, $name);
+        if ($found === null) {
+            throw new DriverException(__('Dinahosting did not report the newly created record', 'domainmanager'));
+        }
+
+        return $found;
+    }
+
+    /**
+     * Deletes every record at `type`+`hostname`. Dinahosting's delete
+     * commands for A/AAAA/CNAME take hostname alone — no value filter, so
+     * this necessarily removes *all* records of that type at that name.
+     * Callers must have already confirmed (via assertSingleRecordAtName())
+     * that at most one such record exists. TXT is the one type Dinahosting
+     * lets us also scope by value; that's passed here as defense in depth,
+     * even though the caller-side guard already limits us to a single
+     * record at the name.
+     *
+     * A "record not found" result is treated as success (§ Cloudflare's
+     * identical 404-is-success stance in CloudflareDriver::deleteRecord()):
+     * the desired end state — no such record — already holds.
+     *
+     * @param  string $domain   already-normalized FQDN
+     * @param  string $type     one of self::WRITABLE_TYPES
+     * @param  string $hostname absolute record name
+     * @throws DriverException
+     */
+    private function deleteByIdentity(string $domain, string $type, string $hostname): void
+    {
+        $command = match ($type) {
+            'A'     => 'Domain_Zone_DeleteTypeA',
+            'AAAA'  => 'Domain_Zone_DeleteTypeAAAA',
+            'CNAME' => 'Domain_Zone_DeleteTypeCname',
+            'TXT'   => 'Domain_Zone_DeleteTypeTXT',
+            default => throw new DriverException(sprintf(__('Record type %s is not writable through Domain Manager', 'domainmanager'), $type)),
+        };
+
+        $params = ['domain' => $domain, 'hostname' => $hostname];
+        if ($type === 'TXT') {
+            $existing = $this->findByIdentity($domain, $type, $hostname);
+            if ($existing !== null) {
+                $params['value'] = $existing->data;
+            }
+        }
+
+        // Unlike Cloudflare's deleteRecord() (404-is-success), no documented
+        // Dinahosting responseCode distinguishes "record not found" from any
+        // other failure, so that case cannot be special-cased here yet — a
+        // delete against an already-absent record surfaces as a generic API
+        // error instead of a silent success. Revisit once such a response
+        // has been observed against a live account.
+        $this->request($command, $params);
+    }
+
+    /**
+     * Guards every write path against Dinahosting's lack of a scoped
+     * delete/update: if more than one record shares `type`+`name` (case-
+     * insensitive), there is no way to touch exactly one of them, since
+     * A/AAAA/CNAME deletes act on hostname alone and would remove every
+     * sibling. Refusing the write here is a deliberate data-loss guard,
+     * not a placeholder limitation to be lifted later — see the
+     * DnsRecordWriterInterface implementation notes in ARCHITECTURE.md.
+     *
+     * @param  string      $domain            already-normalized FQDN
+     * @param  string      $type
+     * @param  string      $name
+     * @param  string|null $excludeRemoteId   the record being updated/deleted
+     *                                        itself, excluded from the count
+     * @throws DriverException
+     */
+    private function assertSingleRecordAtName(string $domain, string $type, string $name, ?string $excludeRemoteId = null): void
+    {
+        $matches = array_filter(
+            $this->fetchZoneRecords($domain),
+            static fn(ZoneRecord $record): bool => $record->type === $type
+                && strcasecmp($record->name, $name) === 0
+                && $record->remoteId !== $excludeRemoteId,
+        );
+
+        if (count($matches) > 0) {
+            throw new DriverException(
+                sprintf(
+                    __('Domain Manager cannot safely edit this record: Dinahosting already has one or more %s records at %s, and its API can only delete all of them at once, not a single one', 'domainmanager'),
+                    $type,
+                    $name,
+                ),
+            );
+        }
+    }
+
+    /**
+     * @param  string $domain already-normalized FQDN
+     * @param  string $type
+     * @param  string $name
+     * @return ZoneRecord|null
+     */
+    private function findByIdentity(string $domain, string $type, string $name): ?ZoneRecord
+    {
+        foreach ($this->fetchZoneRecords($domain) as $record) {
+            if ($record->type === $type && strcasecmp($record->name, $name) === 0) {
+                return $record;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  string $type
+     * @return string upper-cased, validated $type
+     * @throws DriverException when $type is outside self::WRITABLE_TYPES
+     */
+    private static function assertWritableType(string $type): string
+    {
+        $type = strtoupper(trim($type));
+        if (!in_array($type, self::WRITABLE_TYPES, true)) {
+            throw new DriverException(
+                sprintf(__('Record type %s is not writable through Domain Manager', 'domainmanager'), $type),
+            );
+        }
+
+        return $type;
+    }
+
+    /**
+     * Synthetic remoteId: Dinahosting's zone API returns no per-record id,
+     * so identity is encoded as `type|name` instead. Not meant to be
+     * opaque/secret — just a stable, round-trippable token that this
+     * driver's own read/write paths agree on (§11-dinahosting).
+     *
+     * @param  string $type
+     * @param  string $name
+     * @return string
+     */
+    private static function encodeRemoteId(string $type, string $name): string
+    {
+        return base64_encode($type . '|' . $name);
+    }
+
+    /**
+     * @param  string $remoteId
+     * @return array{type: string, name: string}
+     * @throws DriverException on malformed input
+     */
+    private static function decodeRemoteId(string $remoteId): array
+    {
+        $decoded = base64_decode($remoteId, true);
+        if ($decoded === false || !str_contains($decoded, '|')) {
+            throw new DriverException(__('This record reference is no longer valid', 'domainmanager'));
+        }
+
+        [$type, $name] = explode('|', $decoded, 2);
+
+        return ['type' => strtoupper($type), 'name' => $name];
     }
 
     /**

@@ -11,6 +11,10 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-07-31
+### Features
+- Dinahosting DNS records (A/AAAA/CNAME/TXT) can now be created, edited, and deleted from GLPI with the change pushed live to Dinahosting, matching the existing IONOS/Cloudflare write-back UX. A name already holding more than one record of the same type is left read-only, since Dinahosting's delete API has no way to remove just one of them.
+
 ## [1.3.1] - 2026-07-31
 ### Features
 - Installer's display-preference seeding now uses the native `countElementsInTable()` helper instead of a manual query for its existence check (no behavior change).

@@ -12,6 +12,10 @@ change) and **Bugs** (something that was actually broken, fixed) — one line ea
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-07-31
+### Features
+- Dinahosting driver now implements `DnsRecordWriterInterface` (write mode for A/AAAA/CNAME/TXT), matching the same manual write-back UX already available for IONOS and Cloudflare. Synthesized against Dinahosting's real per-type add/delete-only API (no update command, no per-record id, no client-settable TTL): `updateRecord()` is a delete-then-add, `remoteId` is a synthetic `type|name` token, and any name already holding more than one record of the same type is refused as unsafe to edit individually (Dinahosting's A/AAAA/CNAME delete has no value filter and would remove every sibling). See `ARCHITECTURE.md` §3.8.1.
+
 ## [1.3.1] - 2026-07-31
 ### Features
 - Raw-DB audit: confirmed no raw SQL exists outside the justified `CREATE TABLE` bootstrap in `Installer.php` (Migration has no schema-creation builder); replaced one manual existence-check query with the native `countElementsInTable()` helper.
