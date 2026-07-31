@@ -88,6 +88,15 @@ class SyncEngine
         $fqdn  = (string) $domain->fields['name'];
         $now   = $_SESSION['glpi_currenttime'] ?? date('Y-m-d H:i:s');
 
+        // §9: snapshot taken before syncRegistrarLeg()'s own replaceLocks()
+        // call below can run — that call wipes and rewrites the Domain's
+        // *entire* lock set with whatever this run's registrar leg itself
+        // supplies, which would otherwise silently erase a
+        // `date_domaincreation`/`date_expiration` lock that Cron's RDAP
+        // gap-fill had set on a prior run for a driver that never reports
+        // one of those itself (e.g. IONOS — see IonosDriver.php).
+        $previously_locked = ImportLock::getLockedFieldNames(Domain::class, (int) $domain->getID());
+
         // Read live, not from the state row's own (possibly stale) mirror:
         // Infocom's "Supplier" field (§0.1) is the single source of truth
         // for the registrar, and every sync corrects the mirror to match
@@ -219,6 +228,34 @@ class SyncEngine
         $resolved_statuses = [DomainState::STATUS_OK, DomainState::STATUS_ERROR];
         $is_managed = in_array($result['registrar_status'], $resolved_statuses, true)
             || in_array($result['dns_status'], $resolved_statuses, true);
+
+        // §9: `domaintypes_id` is set once by `DomainImportController` (only
+        // when the admin configured a "domain type to apply to imported
+        // domains"), independent of either sync leg — locked via `setLock()`
+        // rather than folded into `syncRegistrarLeg()`'s own `replaceLocks()`
+        // call, since that call wipes and rewrites the *entire* Domain lock
+        // set and only runs when the registrar leg succeeds (a DNS-only
+        // managed domain would never see it otherwise). Cleared the moment
+        // the domain stops being managed or the field is left unset, so a
+        // once-imported domain that later loses its provider isn't left
+        // permanently locked out of hand-editing its type.
+        $domaintypes_id = (int) ($domain->fields['domaintypes_id'] ?? 0);
+        if ($is_managed && $domaintypes_id > 0) {
+            ImportLock::setLock(Domain::class, (int) $domain->getID(), 'domaintypes_id', $domaintypes_id);
+        } else {
+            ImportLock::clearLock(Domain::class, (int) $domain->getID(), 'domaintypes_id');
+        }
+
+        // §9: restore an RDAP-set date lock this run's registrar leg wiped
+        // (see $previously_locked's docblock above) — a no-op whenever the
+        // registrar leg itself already relocked the field with the same
+        // value, since setLock() is idempotent.
+        foreach (['date_domaincreation', 'date_expiration'] as $date_field) {
+            $value = $domain->fields[$date_field] ?? null;
+            if ($is_managed && !empty($value) && in_array($date_field, $previously_locked, true)) {
+                ImportLock::setLock(Domain::class, (int) $domain->getID(), $date_field, $value);
+            }
+        }
 
         $state_input = [
             'registrar_suppliers_id' => $registrar_id,

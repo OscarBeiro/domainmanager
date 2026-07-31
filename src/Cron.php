@@ -327,29 +327,21 @@ class Cron
 
         $gaps = RdapGapChecker::getGaps($domains_id);
 
-        if (
-            in_array(RdapGapChecker::GAP_REGISTRATION_DATE, $gaps, true)
-            && $result->registrationDate !== null
-        ) {
-            $domain = new Domain();
-            if ($domain->getFromDB($domains_id)) {
-                $domain->update([
-                    'id'                   => $domains_id,
-                    'date_domaincreation'  => $result->registrationDate->format('Y-m-d H:i:s'),
-                ]);
-            }
+        if ($result->registrationDate !== null) {
+            self::fillAndLockRdapDate(
+                $domains_id,
+                'date_domaincreation',
+                $result->registrationDate->format('Y-m-d H:i:s'),
+                in_array(RdapGapChecker::GAP_REGISTRATION_DATE, $gaps, true),
+            );
         }
-        if (
-            in_array(RdapGapChecker::GAP_EXPIRATION_DATE, $gaps, true)
-            && $result->expirationDate !== null
-        ) {
-            $domain = new Domain();
-            if ($domain->getFromDB($domains_id)) {
-                $domain->update([
-                    'id'              => $domains_id,
-                    'date_expiration' => $result->expirationDate->format('Y-m-d H:i:s'),
-                ]);
-            }
+        if ($result->expirationDate !== null) {
+            self::fillAndLockRdapDate(
+                $domains_id,
+                'date_expiration',
+                $result->expirationDate->format('Y-m-d H:i:s'),
+                in_array(RdapGapChecker::GAP_EXPIRATION_DATE, $gaps, true),
+            );
         }
 
         $state_input = ['last_rdap_check_date' => $now];
@@ -424,5 +416,41 @@ class Cron
         } else {
             (new DomainState())->add(['domains_id' => $domains_id] + $input);
         }
+    }
+
+    /**
+     * Writes an RDAP-sourced `date_domaincreation`/`date_expiration` value
+     * only when it's actually filling a gap (unchanged from before), but
+     * locks it (§9) whenever the domain's *current* value already matches
+     * what RDAP just reported — not only on the run that first fills it.
+     * Needed because a domain enriched before this locking existed (or one
+     * whose registrar driver never reports the field at all, so RDAP is its
+     * only source — see IonosDriver.php) would otherwise never see
+     * `$is_gap` true again, and so never get locked.
+     *
+     * @param  int    $domains_id
+     * @param  string $field       'date_domaincreation' or 'date_expiration'
+     * @param  string $rdap_value  `Y-m-d H:i:s`, from RdapLookupResult
+     * @param  bool   $is_gap      RdapGapChecker's verdict for this field
+     * @return void
+     */
+    private static function fillAndLockRdapDate(int $domains_id, string $field, string $rdap_value, bool $is_gap): void
+    {
+        $domain = new Domain();
+        if (!$domain->getFromDB($domains_id)) {
+            return;
+        }
+
+        if ($is_gap) {
+            $domain->update(['id' => $domains_id, $field => $rdap_value]);
+        } elseif ((string) ($domain->fields[$field] ?? '') !== $rdap_value) {
+            // Not a gap, but also doesn't match RDAP's report — some other
+            // source (registrar driver, manual edit) owns this value;
+            // leave it alone rather than lock a value RDAP didn't actually
+            // provide.
+            return;
+        }
+
+        ImportLock::setLock(Domain::class, $domains_id, $field, $rdap_value);
     }
 }

@@ -376,10 +376,31 @@
             lockedFields.forEach(function (field) {
                 form.querySelectorAll('[name="' + field + '"]').forEach(function (input) {
                     input.disabled = true;
+
+                    // A Dropdown::show() field (e.g. domaintypes_id) is a
+                    // <select> re-rendered by select2 into its own sibling
+                    // widget — disabling the original (hidden) <select>
+                    // locks it functionally, but select2's visible box is
+                    // left looking fully enabled since it never re-reads the
+                    // underlying element's state on its own. Greying it out
+                    // needs jQuery's `disabled` triggering select2's own
+                    // update path (plain `input.disabled = true` above alone
+                    // isn't picked up by it), falling back to a manual style
+                    // tweak if jQuery/select2 aren't present for some reason.
+                    if (typeof window.jQuery === 'function' && window.jQuery(input).data('select2')) {
+                        window.jQuery(input).prop('disabled', true).trigger('change.select2');
+                    } else {
+                        const container = input.nextElementSibling;
+                        if (container && container.classList.contains('select2')) {
+                            container.style.opacity = '0.65';
+                            container.style.pointerEvents = 'none';
+                        }
+                    }
+
                     const label = form.querySelector('label[for="' + input.id + '"]');
                     if (label && !label.querySelector('.domainmanager-lock')) {
                         const icon = document.createElement('i');
-                        icon.className = 'ti ti-lock ms-1 domainmanager-lock';
+                        icon.className = 'ti ti-cloud-lock ms-1 domainmanager-lock';
                         icon.title = {{ __('Locked by Domain Manager synchronization', 'domainmanager')|json_encode|raw }};
                         label.appendChild(icon);
                     }

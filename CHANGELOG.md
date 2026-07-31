@@ -6,9 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-Working version: `1.3.0-beta10` (see `setup.php`'s `PLUGIN_DOMAINMANAGER_VERSION`). Per-pre-release
+Working version: `1.3.0-beta11` (see `setup.php`'s `PLUGIN_DOMAINMANAGER_VERSION`). Per-pre-release
 headers are no longer added here for every alpha/beta bump — entries accumulate under this section
 and get one real version header only at final release.
+
+### Added
+- **The Domain type dropdown (`domaintypes_id`) is now locked on a managed domain, joining `name`/registration date/expiration date.** Previously only those three registrar-sourced fields were shielded; the type applied at import time (`DomainImportController`, from the configured "domain type to apply to imported domains" setting) stayed freely editable even though it's just as plugin-owned. Locked the moment a domain becomes managed (either leg) and the field was actually set, unlocked again if the domain stops being managed — same cosmetic disable + `ti-lock` icon convention as the existing fields, enforced server-side by `LockEnforcer::domainPreUpdate()` (unchanged, already generic over whatever `ImportLock` reports). The dropdown's Select2 widget needed an extra nudge (`jQuery(...).prop('disabled', true)`) to actually grey out — disabling the underlying `<select>` alone locked it functionally but left the visible widget looking enabled.
+- **Registration/expiration date locking now also covers a registrar driver that never reports one of those fields itself (e.g. IONOS has no such API field at all) and relies entirely on RDAP's gap-fill.** Previously only `SyncEngine`'s own registrar-leg sync locked these two dates, so an IONOS-managed domain's registration date — filled by the separate RDAP enrichment cron — stayed completely unlocked. A one-time backfill (`Installer::backfillManagedFieldLocks()`, runs on every install/upgrade) locks it retroactively for every already-managed domain; new domains get it locked going forward from their first RDAP enrichment.
+
+### Changed
+- **The "locked by Domain Manager synchronization" icon is now `ti-cloud-lock` instead of the plain `ti-lock`**, on both the Domain form and a DomainRecord's own edit form — the bare lock icon read as identical to GLPI's own native field-lock icon (used for entity/template locking elsewhere in core), which made the two easy to conflate at a glance. The unrelated "auth info on file" badge (Domain form, transfer-lock column) keeps its own plain `ti-lock`, since that one really is about a stored auth code, not this plugin's field-locking.
 
 ### Added
 - **Confirmation prompts on "+ New record", edit, and delete for write-back-managed DNS records.** All three actions push live to the DNS provider with no undo, but only the delete button warned about that. Adding a record (`domainrecord_add_panel.html.twig`'s form) and saving an edit (`domainrecord_edit_panel.html.twig`'s "update" button) now show the same kind of `window.confirm()` prompt the delete button already used, naming the live, irreversible nature of the write before it happens.

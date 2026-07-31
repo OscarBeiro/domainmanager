@@ -80,6 +80,7 @@ class Installer
         self::migratePurgeRight();
         self::registerCronTasks();
         self::dropRecordConflictsTable($migration);
+        self::backfillManagedFieldLocks();
 
         $migration->executeMigration();
 
@@ -955,6 +956,63 @@ class Installer
     private static function dropRecordConflictsTable(Migration $migration): void
     {
         $migration->dropTable('glpi_plugin_domainmanager_recordconflicts');
+    }
+
+    /**
+     * §9: one-time (per-install/upgrade, idempotent) backfill locking
+     * `domaintypes_id`/`date_domaincreation`/`date_expiration` on every
+     * already-managed domain that has a value for them but no lock yet.
+     * Needed because both are otherwise only ever locked as a *side effect*
+     * of a live sync/RDAP-enrichment run actually touching that field —
+     * `SyncEngine`/`Cron` only relock what a run itself just wrote or had
+     * previously locked, so a domain that was already fully enriched
+     * before this locking existed (RDAP's own `hasGap()` pre-check means
+     * such a domain may never run its enrichment again at all) would
+     * otherwise stay unlocked forever.
+     *
+     * @return void
+     */
+    private static function backfillManagedFieldLocks(): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $iterator = $DB->request([
+            'SELECT' => [
+                'glpi_domains.id',
+                'glpi_domains.domaintypes_id',
+                'glpi_domains.date_domaincreation',
+                'glpi_domains.date_expiration',
+            ],
+            'FROM'      => 'glpi_domains',
+            'INNER JOIN' => [
+                'glpi_plugin_domainmanager_states' => [
+                    'ON' => [
+                        'glpi_plugin_domainmanager_states' => 'domains_id',
+                        'glpi_domains'                      => 'id',
+                    ],
+                ],
+            ],
+            'WHERE' => [
+                'glpi_domains.is_deleted'                       => 0,
+                'glpi_plugin_domainmanager_states.is_managed'   => 1,
+            ],
+        ]);
+
+        foreach ($iterator as $row) {
+            $domains_id = (int) $row['id'];
+            $locked     = ImportLock::getLockedFieldNames(\Domain::class, $domains_id);
+
+            if ((int) $row['domaintypes_id'] > 0 && !in_array('domaintypes_id', $locked, true)) {
+                ImportLock::setLock(\Domain::class, $domains_id, 'domaintypes_id', $row['domaintypes_id']);
+            }
+            if (!empty($row['date_domaincreation']) && !in_array('date_domaincreation', $locked, true)) {
+                ImportLock::setLock(\Domain::class, $domains_id, 'date_domaincreation', $row['date_domaincreation']);
+            }
+            if (!empty($row['date_expiration']) && !in_array('date_expiration', $locked, true)) {
+                ImportLock::setLock(\Domain::class, $domains_id, 'date_expiration', $row['date_expiration']);
+            }
+        }
     }
 
     /**
