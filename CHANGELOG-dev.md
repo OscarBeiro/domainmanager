@@ -17,8 +17,8 @@ Entries are grouped into **Features** (new capability, UI/UX change, refactor, d
 change) and **Bugs** (something that was actually broken, fixed) — one line each.
 
 ## [Unreleased]
-Working pre-release version: `1.4.0-beta4`.
 
+## [1.4.0] - 2026-07-31
 ### Features
 - Dinahosting driver now implements `DnsRecordWriterInterface` (write mode for A/AAAA/CNAME/TXT), matching the same manual write-back UX already available for IONOS and Cloudflare. Synthesized against Dinahosting's real per-type add/delete-only API (no update command, no per-record id, no client-settable TTL): `updateRecord()` is a delete-then-add, `remoteId` is a synthetic `type|name` token, and any name already holding more than one record of the same type is refused as unsafe to edit individually (Dinahosting's A/AAAA/CNAME delete has no value filter and would remove every sibling). See `ARCHITECTURE.md` §3.8.1.
 - `DomainRecord`'s own edit form now structurally locks the record `name` field (moved out of the conditional write-back lock, always disabled like `domains_id`/`domainrecordtypes_id`/`date_creation`), since `DnsRecordWriteback::onPreUpdate()` never actually pushes a name change upstream — it always pushes the record's current DB name. Editing it previously looked possible but silently did nothing; the field-lock icon now covers `name`, `date_creation`, and `domains_id` consistently.
