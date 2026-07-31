@@ -147,6 +147,20 @@
         }
         {% endif %}
 
+        {% if can_update %}
+        var updateButtons = document.querySelectorAll(
+            '.form-button-separator button[name="update"]'
+        );
+        updateButtons.forEach(function (btn) {
+            btn.addEventListener('click', function (event) {
+                if (!window.confirm({{ __('This updates the record live at the DNS provider. Continue?', 'domainmanager')|json_encode|raw }})) {
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                }
+            }, true);
+        });
+        {% endif %}
+
         {% if can_delete %}
         var deleteButtons = document.querySelectorAll(
             '.form-button-separator button[name="delete"], .form-button-separator button[name="purge"]'

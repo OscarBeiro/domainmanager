@@ -6,9 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-Working version: `1.3.0-beta9` (see `setup.php`'s `PLUGIN_DOMAINMANAGER_VERSION`). Per-pre-release
+Working version: `1.3.0-beta10` (see `setup.php`'s `PLUGIN_DOMAINMANAGER_VERSION`). Per-pre-release
 headers are no longer added here for every alpha/beta bump — entries accumulate under this section
 and get one real version header only at final release.
+
+### Added
+- **Confirmation prompts on "+ New record", edit, and delete for write-back-managed DNS records.** All three actions push live to the DNS provider with no undo, but only the delete button warned about that. Adding a record (`domainrecord_add_panel.html.twig`'s form) and saving an edit (`domainrecord_edit_panel.html.twig`'s "update" button) now show the same kind of `window.confirm()` prompt the delete button already used, naming the live, irreversible nature of the write before it happens.
 
 ### Removed
 - **Supplier list's "Domains" count column.** It summed both registrar and DNS-provider roles into one number, which read as misleading next to the separate per-role "Registrar"/"NS Provider" domain lists (e.g. a supplier acting as registrar for 10 domains and DNS provider for 9 of the same ones showed as 10, not the expected 9+9). Removed the search option (id `9411`) entirely rather than fix its arithmetic, since the two per-role counts already cover the same information without the ambiguity.
