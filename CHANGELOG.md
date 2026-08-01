@@ -11,6 +11,10 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-08-01
+### Features
+- Shortened the supplier tab's "Check Connection" and "Import Domains" button labels to "Test" and "Import" for a more compact toolbar on smaller screens.
+
 ## [1.4.0] - 2026-07-31
 ### Features
 - Dinahosting driver now supports manual DNS record write-back (A/AAAA/CNAME/TXT), matching IONOS and Cloudflare.
