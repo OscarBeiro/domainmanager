@@ -252,6 +252,21 @@ class DomainForm
         $domains_id = (int) $item->fields['domains_id'];
         $type       = self::recordTypeName((int) $item->fields['domainrecordtypes_id']);
         $state      = DomainState::getForDomain($domains_id);
+
+        // The stored `name` is always the absolute FQDN (matching every
+        // driver's own ZoneRecord.name and DnsRecordWriterInterface's
+        // contract) — GLPI core's own DomainRecord::getDisplayName() is the
+        // sanctioned way to show just the relative label against the
+        // linked domain, already used by core's own "link a record"
+        // dropdown. The plain generic form was never running the locked
+        // `name` field's displayed value through it (found live 2026-08-03:
+        // a "www" record under zzz.gal showed "www.zzz.gal" in its own
+        // disabled field). Cosmetic only — the field is locked either way,
+        // so nothing here can post a different value back.
+        $recordDomain = new Domain();
+        $displayName  = $recordDomain->getFromDB($domains_id)
+            ? DomainRecord::getDisplayName($recordDomain, (string) $item->fields['name'])
+            : null;
         $dns_editable = $state !== null && DnsRecordWriteback::isDomainDnsEditable($state);
         $is_writable_type = $type !== null && in_array($type, DnsRecordWriteback::writableTypes(), true);
 
@@ -282,6 +297,7 @@ class DomainForm
             'can_purge'        => $can_purge,
             'can_toggle_proxy' => $can_toggle_proxy,
             'current_proxied'  => $current_proxied,
+            'display_name'  => $displayName,
             'supplier_name' => $dns_editable ? DnsRecordWriteback::writableSupplierName($domains_id) : null,
             // Cosmetic-only (server-side is authoritative, see docblock
             // above): every editable field disabled unless the user can
