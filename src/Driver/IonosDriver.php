@@ -454,6 +454,20 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Dns
      * @param  array  $row
      * @return string
      */
+    /**
+     * Phase 58's explicit-name-form-boundary rule: no name transform anywhere
+     * implicit, even a one-liner. `absoluteRecordName()` in `DnsRecordWriteback`
+     * guarantees `$name` arrives here as an absolute FQDN; IONOS's own
+     * `record` schema (§11.9 point 4) wants that same absolute form but with
+     * no trailing dot, so this is the sole, named outbound transform this
+     * driver needs. No inbound counterpart exists because `fetchZoneRecords()`
+     * already receives absolute names from IONOS as-is.
+     */
+    private static function wireHostname(string $name): string
+    {
+        return rtrim($name, '.');
+    }
+
     private static function extractContent(string $type, array $row): string
     {
         $content = (string) ($row['content'] ?? '');
@@ -489,7 +503,7 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Dns
 
         $response = $this->request('POST', 'zones/' . rawurlencode($zoneId) . '/records', [
             [
-                'name'     => rtrim($name, '.'),
+                'name'     => self::wireHostname($name),
                 'type'     => $type,
                 'content'  => self::toWireContent($type, $data),
                 'ttl'      => $ttl,

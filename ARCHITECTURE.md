@@ -1282,8 +1282,11 @@ Create payload (`record` schema): `{name, type, content, ttl, prio, disabled}`. 
 3. **`disabled` must be sent explicitly as `false`.** The schema defaults it to `false`, but the
    reference client's own comments raised doubt about the server-side default; sending it
    explicitly removes the ambiguity regardless of which is correct.
-4. **Names are absolute at IONOS and carry no trailing dot.** The read path relativises against
-   the zone name; the write path must re-absolutise and strip any trailing dot.
+4. **Names are absolute at IONOS and carry no trailing dot.** Corrected 2026-08-03 (Phase 58 audit):
+   the read path does **not** relativise — `fetchZoneRecords()` passes `$row['name']` straight
+   through, and this is correct, not a gap, since Phase 58 settled the absolute FQDN as the
+   internal canonical form regardless of provider. The only wire-level transform IONOS needs is on
+   write: strip a trailing dot before sending, via `IonosDriver::wireHostname()`.
 5. **The create response carries the provider id**, so `remote_id` is captured at push time from
    the response itself — no follow-up read, no reliance on the next sync. (This is all that
    remains of an earlier "store the provider id" work item: the `remote_id` column already
@@ -2604,6 +2607,25 @@ Must land before Phases 59–62 and before Phase 63.
    safe to test-delete against a live zone). The current code assumes the `@` convention observed for
    A/AAAA/CNAME apex. Confirm against a disposable zone rather than a production one.
 
+**Audited 2026-08-03 (code audit only, no live account access):**
+- **Dinahosting already conforms.** `qualifyHostname()`/`relativeHostname()` are exactly the
+  inbound-normalizer/outbound-denormalizer pair this phase asks for: `fetchZoneRecords()` calls the
+  former, `deleteByIdentity()` the latter, `createRecordRaw()` sends the absolute form untouched
+  (matching the add/delete asymmetry). No inline name concatenation remains outside them.
+- **Cloudflare already conforms**, trivially — the wire form is absolute FQDN on both read and write,
+  so no transform is needed anywhere, and none exists.
+- **IONOS had one inline transform**, `rtrim($name, '.')` at the `createRecord()` call site, which
+  violated the "named, not implicit" rule even though it's a single line. Extracted into
+  `IonosDriver::wireHostname()`. No inbound transform was needed or added — IONOS already returns
+  absolute names as-is in `fetchZoneRecords()`, and that's correct, not a gap (see corrected §11.9
+  point 4: the read-path "relativises" claim there was stale, predating this phase's canonical-form
+  decision, and has been fixed to describe the actual, correct behaviour).
+- **`absoluteRecordName()` in `DnsRecordWriteback` remains the single construction point** feeding
+  all three drivers — `onPreAdd()`, `onPreUpdate()`, `onPreRestore()` all route through it, no bypass
+  found.
+- Item 2 above (Dinahosting TXT/MX apex delete) remains unconfirmed; still needs a disposable-zone
+  test before it can be treated as settled.
+
 ### Phase 59 — A / AAAA validation and canonicalization
 
 `filter_var($v, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4|FILTER_FLAG_IPV6)` covers standard, compressed
@@ -2614,6 +2636,10 @@ indefinitely.
 Warn (not block) on an A/AAAA value in RFC1918, `127/8`, `0.0.0.0`, `169.254/16` or IPv4-mapped IPv6
 space on a public zone. Legitimate in split-horizon setups, so this cannot be a hard refusal.
 
+**Implemented 2026-08-03** as `RecordValidator::validateAddress()` (`src/Service/RecordValidator.php`),
+covering both the strict validation and the canonicalization/warning behaviour above. Not yet wired
+into `DnsRecordWriteback` — that's Phase 62's job, once Phases 60-61 exist too.
+
 ### Phase 60 — CNAME validation, including the relational rule
 
 Block: not a valid FQDN, self-reference, label >63 octets, name >253 octets, and — the rule that
@@ -2622,6 +2648,13 @@ matters — **a CNAME may not coexist with any other record type at the same own
 name passes it today and produces a broken zone.
 
 Apex CNAME is refused unless the driver declares support (Phase 66).
+
+**Implemented 2026-08-03**: FQDN shape, self-reference and apex-refusal live in
+`RecordValidator::validateCnameTarget()` (pure, no DB access). The relational rule itself — the
+part this phase is actually named for — needs a DB query across all types at a name, which that
+class deliberately has none of, so it's `DnsRecordWriteback::cnameCoexistenceError()` instead,
+alongside the existing `duplicateNameError()`. Neither is wired into `onPreAdd()`/`onPreUpdate()`
+yet — Phase 62, same as Phase 59.
 
 ### Phase 61 — TXT validation: block mechanics, warn semantics
 
