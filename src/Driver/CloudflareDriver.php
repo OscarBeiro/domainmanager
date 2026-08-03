@@ -429,6 +429,15 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
                     continue; // read-only scope: unknown types skipped
                 }
 
+                // Phase 50 (doc-verified 2026-08-03 against Cloudflare's current DNS Records
+                // API reference, not a live call): SRV and CAA records carry both a
+                // structured `data` object (SRV: priority/weight/port/target; CAA:
+                // flags/tag/value) *and* a fully pre-serialized `content` string built from
+                // the same fields — same shape MX already gets below — so the flat
+                // pass-through here is correct as-is, no per-type parsing needed. SOA is not
+                // a Cloudflare DNS *record* type at all (it's zone-level, not exposed via this
+                // records endpoint), so no SOA row can ever reach this loop — the
+                // `ZoneRecord::TYPES` filter above would simply never match one.
                 $content = (string) ($row['content'] ?? '');
                 if ($type === 'MX' && isset($row['priority'])) {
                     $content = (int) $row['priority'] . ' ' . $content;

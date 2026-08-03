@@ -442,6 +442,13 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Dns
      * and Dinahosting were NOT verified the same way and may need
      * per-type handling of their own before relying on this pattern.
      *
+     * Phase 50 (re-checked 2026-08-03, no live account access): Cloudflare's
+     * and Dinahosting's own extraction methods have since been doc-verified
+     * too (see their docblocks) — Cloudflare's SRV/CAA already carry a
+     * pre-serialized `content` same as here, and Dinahosting has no
+     * documented structured shape for SRV/SOA/CAA either. This conclusion
+     * for IONOS itself still stands unchanged.
+     *
      * @param  string $type
      * @param  array  $row
      * @return string

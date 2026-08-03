@@ -3290,3 +3290,34 @@ amendment.
   `domainmanager:purge_records` row (bit 1) for a test profile, re-ran `bin/console
   glpi:plugin:install`, confirmed `migratePurgeRight()` set rights=16 (PURGE) on all four
   per-type rows for that profile and removed the old row, exactly as designed)
+
+### Phase 50 SRV/SOA/CAA per-type data handling (read-path only, doc-verified, ARCHITECTURE.md §11.17)
+- **Requirement:** Confirm that reading SRV/SOA/CAA zone records through each of the three
+  drivers produces a correctly-formatted, fully-serialized display string, since `ZoneRecord`
+  has no typed sub-fields for these types.
+- **Note:** This phase was explicitly scoped to documentation-only research (no live provider
+  account access), per request. The items below are marked accordingly — this is a
+  doc-verified conclusion, not a live-tested guarantee, and should be re-verified against a
+  real account if one becomes available.
+- **IONOS:** re-checked `IonosDriver::extractContent()`'s existing 2026-07-29 conclusion
+  (flat `content`, no split sub-fields for ALIAS/PTR/SOA/SRV/CAA) against IONOS's current
+  DNS API documentation.
+  - [ ] Not yet verified live (doc-only re-check performed 2026-08-03; no change from the
+    existing verified conclusion)
+- **Cloudflare:** checked `CloudflareDriver::fetchZoneRecords()`'s SRV/CAA/SOA handling
+  against Cloudflare's current DNS Records API reference. Found SRV/CAA responses carry both
+  a structured `data` object and a pre-serialized `content` string; SOA is not a Cloudflare
+  DNS record type at all (zone-level, not exposed by the records endpoint).
+  - [ ] Not yet verified live (doc-verified 2026-08-03: existing flat pass-through in
+    `fetchZoneRecords()` is correct as-is for SRV/CAA; no SOA row can ever occur for this
+    driver)
+- **Dinahosting:** checked `DinahostingDriver::extractContent()`'s generic fallback against
+  Dinahosting's own API docs and the `libdns/dinahosting` reference client. Found no
+  documented structured sub-fields for SRV/SOA/CAA; the reference client treats SRV as an
+  opaque flat value and doesn't model SOA/CAA at all.
+  - [ ] Not yet verified live (doc-verified 2026-08-03: existing generic `default` fallback
+    in `extractContent()` is the correct best-effort handling; no structured shape found to
+    parse)
+- **Expected (all three):** no code changes to `WRITABLE_TYPES` or any create/update path —
+  SRV/SOA/CAA remain write-disabled by design (§11.4/§11.8); this phase only touched the
+  read/display path.

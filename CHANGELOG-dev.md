@@ -16,7 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Entries are grouped into **Features** (new capability, UI/UX change, refactor, doc/config
 change) and **Bugs** (something that was actually broken, fixed) — one line each.
 
-## [Unreleased] (1.5.0-beta1)
+## [Unreleased] (1.5.0-beta2)
+### Features
+- Phase 50 (ARCHITECTURE.md §11.17): doc-verified (no live provider account access, per explicit request) how each of the three drivers handles reading SRV/SOA/CAA zone records, since `ZoneRecord` has no typed sub-fields for them. IONOS's existing 2026-07-29 conclusion re-checked and unchanged. Cloudflare's SRV/CAA responses confirmed (via its current API reference) to carry a pre-serialized `content` string alongside the structured `data` object, so `CloudflareDriver`'s existing flat pass-through needed no change; SOA isn't a Cloudflare record type at all, so no SOA row can reach that driver's read loop. Dinahosting has no documented structured shape for SRV/SOA/CAA, and its reference client (`libdns/dinahosting`) treats SRV as an opaque flat value — `DinahostingDriver`'s existing generic fallback needed no change either. Read-path only; SRV/SOA/CAA remain write-disabled by design.
+
 ### Bugs
 - `DnsRecordWriteback::duplicateNameError()`'s message read "A %1$s record named..." — for type A specifically, that's "A A record named...", an awkward double-article. Reworded to "A record of type %1$s named...". Verified live (per explicit user request to confirm this guard actually blocks and warns on a real duplicate, not just a synthetic unit check): attempting to add a 2nd "demo" A record on dev.gal, where an active one already exists, returned `add() === false` and queued the session message `[Domain Manager] A record of type A named "demo.dev.gal" already exists for this domain; Domain Manager does not allow duplicate records` — confirming the plugin-wide guard added in 1.4.2 already satisfies "block in advance, or at least warn" for genuine duplicates (an earlier same-session check against a *trashed* record found nothing, which is correct: the guard only compares against active, non-trashed rows).
 
