@@ -3344,3 +3344,74 @@ amendment.
   regex is broader; the finding above is documented in `PluginLogger::redact()`'s own docblock.
 - [x] Verified (doc/code audit, 2026-08-03 — grep-based, no live provider account access
   needed; this phase's deliverable is the audit finding, not a live test)
+
+### Phase 52 Audit of the per-type write-right helpers (ARCHITECTURE.md §15.2)
+- **Requirement:** every field lookup, type resolution and right check in
+  `DnsRecordWriteback::hasTypeRight()`, `hasPurgeRight()`, `writableTypes()`,
+  `creatableTypesForDomain()` and `writableSupplierName()` reads `domainrecordtypes_id` (never a
+  `type` field) and is entity-aware against the target `Domain`, per §11.6/§8.
+- **Findings:**
+  - `writableTypes()` returns the `WRITABLE_TYPES` constant directly — no field lookup, no right
+    check, nothing to fix.
+  - `writableSupplierName()` only reads `DomainState`/`SupplierConfig`/`Supplier` for display
+    purposes; it never checks a per-type right and was never in scope for the field-name bug
+    (§11.6 addendum's `type` vs `domainrecordtypes_id` confusion is specific to
+    `hasPurgeRight()`), so no change.
+  - **Bug found:** `hasTypeRight()`, `hasPurgeRight()` and `creatableTypesForDomain()` all route
+    through the private `hasRight()`, which checked only `Session::haveRight($rights[$type],
+    $bit)` — a bare profile-bit check with no notion of which `Domain` the caller is asking
+    about. A profile granted a per-type DNS write-back right (e.g. `domainmanager:dns_records_txt`
+    CREATE) for one entity held it over every entity's zones, contradicting §11.6's "every entry
+    point checks rights server-side, entity-aware" and the `Domain::can()` convention used
+    everywhere else in the plugin (§8). This is the silent-privilege-escalation counterpart the
+    `hasPurgeRight()` field-name bug (fixed in `1.4.2`) failed *closed* on — this one failed
+    *open*.
+- **Fix:** `hasRight()` now takes the target `$domains_id`, fetches the `Domain`, and additionally
+  requires `Session::haveAccessToEntity($domain->fields['entities_id'],
+  $domain->fields['is_recursive'])` — the same primitive `CommonDBTM::canViewItem()`/
+  `canUpdateItem()`/etc. use internally, mirrored here because these per-type rights aren't
+  itemtype-scoped GLPI rights that `Domain::can()` itself resolves. Threaded `$domains_id` through
+  every call site: `onPreAdd()`/`onPreUpdate()`/`onPreDelete()`/`onPreRestore()` (already had it
+  in scope), `hasPurgeRight(DomainRecord $item)` (from `$item->fields['domains_id']`),
+  `hasTypeRight()` and `creatableTypesForDomain()` (new required parameter, updated at both
+  `DomainForm.php` call sites).
+- **Expected:** no behavior change for a single-entity install (every domain and every profile
+  assignment share one entity, so `Session::haveAccessToEntity()` is always true there); a
+  multi-entity install now correctly refuses a per-type write-back right granted only for a
+  different entity than the target domain's.
+- [ ] Not yet verified live (code fix + doc/code audit, 2026-08-03; requires a multi-entity
+  install with a profile scoped to one entity to confirm cross-entity denial in practice)
+
+### Phase 53 Global write kill switch / read-only mode (ARCHITECTURE.md §15.3)
+- **Requirement:** one `config`-gated boolean hard-disables every outbound DNS record mutation
+  across every driver, independent of per-type rights, enforced at a single point in
+  `DnsRecordWriteback` and asserted again in each driver's writer methods; surfaced in the UI
+  wherever a write control appears, with an actionable message naming the setting.
+- **Implementation:** `Config::isReadOnlyMode()`/`setReadOnlyMode()`, new `read_only_mode` key on
+  the existing `plugin:domainmanager` config context (stored as explicit `1`/`0`, §0.10), editable
+  from the Domain Manager Setup tab (`config` UPDATE right, existing convention) via a slider
+  field. `DnsRecordWriteback::readOnlyModeError()` is checked in `onPreAdd()`/`onPreUpdate()`/
+  `onPreDelete()`/`onPreRestore()` right after the `isDnsEditable()` gate and before the per-type
+  right check, so it's never bypassed by a user's own rights — `abort()` surfaces the existing
+  session-message convention naming the setting and where to find it.
+  `Config::assertWritesAllowed()` (throws `DriverException`) is asserted again at the top of every
+  driver's `createRecord()`/`updateRecord()`/`deleteRecord()` (Cloudflare, IONOS, Dinahosting) and
+  `setProxied()`/`pushComment()` (Cloudflare only). `DomainForm::injectDomainRecord()`'s
+  Save/Delete/proxy-toggle gating and `renderRecordWritePanel()`'s add-form both check
+  `Config::isReadOnlyMode()` too, each showing a distinct message naming read-only mode instead of
+  their normal "no rights"/"synchronization-locked" copy when that's the actual reason a control is
+  hidden.
+- **Verified by code inspection, 2026-08-03:**
+  - Confirmed `RecordReconciler::reconcileComment()` calls `CloudflareDriver::pushComment()`
+    directly during a cron sync, entirely outside `DnsRecordWriteback`'s call path — this is the
+    concrete case the driver-level assertion (not just the `DnsRecordWriteback` choke point) is
+    needed for; it's caught there and logged as a best-effort failure, same as any other
+    `pushComment()` error.
+  - Confirmed every one of the three drivers' `createRecord()`/`updateRecord()`/`deleteRecord()`
+    now calls `Config::assertWritesAllowed()` as its first statement, and Cloudflare's
+    `setProxied()`/`pushComment()` do too.
+  - Confirmed a fresh install defaults to `read_only_mode = 0` (writes allowed) via
+    `Config::getDefaults()`, so upgrading or installing never silently goes read-only.
+- [ ] Not yet verified live (code audit only, 2026-08-03; requires enabling the setting against a
+  live-configured domain and confirming a create/update/delete/restore is refused with the
+  expected message, then confirming it resumes once turned back off)

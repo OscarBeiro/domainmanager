@@ -32,6 +32,7 @@
 namespace GlpiPlugin\Domainmanager\Driver;
 
 use DateTimeImmutable;
+use GlpiPlugin\Domainmanager\Config\Config;
 use GlpiPlugin\Domainmanager\Contract\ConnectionTestableInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsPipelineInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsRecordWriterInterface;
@@ -392,6 +393,7 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
      */
     public function createRecord(string $domain, string $type, string $name, string $data, int $ttl): ZoneRecord
     {
+        Config::assertWritesAllowed();
         $type   = self::assertWritableType($type);
         $domain = self::normalizeDomain($domain);
 
@@ -413,6 +415,7 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
      */
     public function updateRecord(string $domain, string $remoteId, string $type, string $name, string $data, int $ttl): ZoneRecord
     {
+        Config::assertWritesAllowed();
         $old    = self::decodeRemoteId($remoteId);
         $type   = self::assertWritableType($type);
         $domain = self::normalizeDomain($domain);
@@ -432,6 +435,7 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
      */
     public function deleteRecord(string $domain, string $remoteId): void
     {
+        Config::assertWritesAllowed();
         $id     = self::decodeRemoteId($remoteId);
         $domain = self::normalizeDomain($domain);
 

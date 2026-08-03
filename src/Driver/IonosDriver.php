@@ -32,6 +32,7 @@
 namespace GlpiPlugin\Domainmanager\Driver;
 
 use DateTimeImmutable;
+use GlpiPlugin\Domainmanager\Config\Config;
 use GlpiPlugin\Domainmanager\Contract\ConnectionTestableInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsPipelineInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsRecordWriterInterface;
@@ -481,6 +482,7 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Dns
      */
     public function createRecord(string $domain, string $type, string $name, string $data, int $ttl): ZoneRecord
     {
+        Config::assertWritesAllowed();
         $type   = self::assertWritableType($type);
         $domain = self::normalizeDomain($domain);
         $zoneId = $this->findZoneId($domain);
@@ -518,6 +520,7 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Dns
      */
     public function updateRecord(string $domain, string $remoteId, string $type, string $name, string $data, int $ttl): ZoneRecord
     {
+        Config::assertWritesAllowed();
         $type   = self::assertWritableType($type);
         $domain = self::normalizeDomain($domain);
         $zoneId = $this->findZoneId($domain);
@@ -540,6 +543,7 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Dns
      */
     public function deleteRecord(string $domain, string $remoteId): void
     {
+        Config::assertWritesAllowed();
         $domain = self::normalizeDomain($domain);
         $zoneId = $this->findZoneId($domain);
 

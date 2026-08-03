@@ -12,9 +12,11 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 ## [Unreleased]
 ### Features
 - Audited all plugin logging for accidental credential leaks (none found) and hardened the log scrubber further as a precaution.
+- Added a "Read-only mode" setting (Setup > General > Domain Manager) that, when enabled, refuses to push any DNS record change (create/update/delete/restore) to any provider until turned back off. Read/sync are unaffected.
 
 ### Bugs
 - Fixed the wording of the message shown when Domain Manager blocks a duplicate DNS record ("A A record named..." for A records).
+- Fixed a multi-entity install where a profile's per-record-type DNS write permission (e.g. TXT), granted for one entity, was wrongly honored for every entity's domains instead of only the entity it was granted for.
 
 ## [1.4.2] - 2026-08-03
 ### Features

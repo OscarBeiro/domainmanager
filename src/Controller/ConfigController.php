@@ -74,6 +74,16 @@ final class ConfigController extends AbstractController
                 : 'Configuration changed: domain type to apply to imported domains cleared (imported domains will get no type)',
         );
 
+        $read_only_mode = (int) $request->request->get('read_only_mode', 0) === 1;
+        if ($read_only_mode !== Config::isReadOnlyMode()) {
+            Config::setReadOnlyMode($read_only_mode);
+            PluginLogger::activity(
+                $read_only_mode
+                    ? 'Configuration changed: read-only mode enabled — all outbound DNS write-back is now refused'
+                    : 'Configuration changed: read-only mode disabled — outbound DNS write-back resumes per normal rights',
+            );
+        }
+
         Session::addMessageAfterRedirect(__s('Configuration saved', 'domainmanager'));
 
         return new RedirectResponse(self::configTabUrl());

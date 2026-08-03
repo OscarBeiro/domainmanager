@@ -2360,6 +2360,16 @@ reads `domainrecordtypes_id` (never a `type` field), and whether the target doma
 consulted. If both are already correct, the phase concludes with `TESTING.md` regression checks and no
 code change — but per the `hasPurgeRight()` precedent, "looks right" is not sufficient here.
 
+**Outcome, 2026-08-03 (TESTING.md Phase 52):** `writableTypes()`/`writableSupplierName()` had
+nothing to fix (no field lookup and no right check respectively). `hasTypeRight()`,
+`hasPurgeRight()` and `creatableTypesForDomain()` all route through the private `hasRight()`,
+which had exactly the asymmetric bug this phase's docblock predicted: a bare
+`Session::haveRight()` with no entity check at all, so a per-type right granted for one entity
+held over every entity's zones — failing *open*, the mirror image of the `hasPurgeRight()`
+field-name bug that failed *closed*. Fixed by threading `$domains_id` through `hasRight()` and
+gating on `Session::haveAccessToEntity()` in addition to the existing profile-bit check, matching
+the primitive `Domain::can()` uses internally elsewhere in the plugin (§8).
+
 ---
 
 ## 15.3 Phases 53–57b — Group B, write safety rails and History gaps
@@ -2372,6 +2382,22 @@ single point in `DnsRecordWriteback` and asserted again in each driver's writer 
 call path cannot bypass it. Deactivating a supplier is not a substitute — that also kills reads.
 
 Surfaced in the UI wherever a write control appears, with an actionable message naming the setting.
+
+**Outcome, 2026-08-03 (TESTING.md Phase 53):** Implemented as `Config::isReadOnlyMode()`/
+`setReadOnlyMode()`, stored as the existing `plugin:domainmanager` config context's `read_only_mode`
+key (explicit `1`/`0` int, §0.10). Single choke point: `DnsRecordWriteback::readOnlyModeError()`,
+checked in `onPreAdd()`/`onPreUpdate()`/`onPreDelete()`/`onPreRestore()` before the per-type right
+check, so it is never second-guessed by a user's own rights, with `abort()`'s existing session-message
+convention naming the setting and its location. Defense in depth: `Config::assertWritesAllowed()`
+(throws `DriverException`) asserted again at the top of every driver's `createRecord()`/
+`updateRecord()`/`deleteRecord()` (all three drivers) and `setProxied()`/`pushComment()`
+(Cloudflare only, the sole implementer of those interfaces) — this actually matters, not just
+belt-and-braces: `RecordReconciler::reconcileComment()` calls `pushComment()` directly during a cron
+sync, entirely outside `DnsRecordWriteback`'s call path, so only the driver-level assertion catches
+that one. UI surfaced in both write-control entry points: `DomainForm::injectDomainRecord()`'s
+Save/Delete gating and `renderRecordWritePanel()`'s add-form, each replacing its normal
+rights/type-based empty-state message with one naming read-only mode specifically when that's the
+actual reason.
 
 ### Phase 54 — Per-supplier write rate limit and circuit breaker
 

@@ -21,6 +21,21 @@
             }
         ) }}
 
+        {# §15.3 Phase 53: global write kill switch — hard-disables every
+           outbound DNS record mutation across every driver, independent of
+           per-type write-back rights. Deactivating a supplier is not a
+           substitute, since that also kills reads/sync. #}
+        {{ fields.sliderField(
+            'read_only_mode',
+            read_only_mode ? 1 : 0,
+            __('Read-only mode', 'domainmanager'),
+            {
+                'full_width': true,
+                'disabled': not can_edit,
+                'helper': __('When enabled, Domain Manager refuses to push any DNS record change (create/update/delete/restore) to any provider. Reads and sync are unaffected.', 'domainmanager'),
+            }
+        ) }}
+
         {% if can_edit %}
             <div class="d-flex justify-content-end">
                 <button type="submit" name="update" class="btn btn-primary">

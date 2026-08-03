@@ -73,6 +73,9 @@ final class Config extends CommonGLPI
         return [
             // 0 = unset ("-----"), same convention as the native dropdown.
             'domaintypes_id' => 0,
+            // §0.10: explicit int, never a raw PHP bool. 0 = writes allowed
+            // (default) — a fresh install must never come up read-only.
+            'read_only_mode' => 0,
         ];
     }
 
@@ -95,6 +98,46 @@ final class Config extends CommonGLPI
     public static function setDomainTypeId(int $domaintypes_id): void
     {
         CoreConfig::setConfigurationValues(self::CONTEXT, ['domaintypes_id' => $domaintypes_id]);
+    }
+
+    /**
+     * Global write kill switch (ARCHITECTURE.md §15.3 Phase 53): when
+     * enabled, every outbound DNS record mutation is refused, independent of
+     * any per-type write-back right (§11.6) — checked at a single point in
+     * `DnsRecordWriteback` and asserted again in each driver's own writer
+     * methods, so a future call path into a driver can never bypass it.
+     * Deactivating a supplier is not a substitute for this — that also kills
+     * reads/sync, not just writes.
+     *
+     * @return bool
+     */
+    public static function isReadOnlyMode(): bool
+    {
+        return (bool) (int) self::getConfig()['read_only_mode'];
+    }
+
+    public static function setReadOnlyMode(bool $enabled): void
+    {
+        CoreConfig::setConfigurationValues(self::CONTEXT, ['read_only_mode' => $enabled ? 1 : 0]);
+    }
+
+    /**
+     * Defense in depth for Phase 53's kill switch: every driver's own
+     * createRecord()/updateRecord()/deleteRecord()/setProxied()/
+     * pushComment() calls this first, so a future call path into a driver
+     * that bypasses `DnsRecordWriteback`'s own check entirely (e.g. a new
+     * controller) still can't push a live mutation while read-only mode is
+     * on.
+     *
+     * @throws \GlpiPlugin\Domainmanager\Exception\DriverException
+     */
+    public static function assertWritesAllowed(): void
+    {
+        if (self::isReadOnlyMode()) {
+            throw new \GlpiPlugin\Domainmanager\Exception\DriverException(
+                __('Domain Manager is in read-only mode (Setup > General > Domain Manager); no DNS record change can be pushed to the provider', 'domainmanager'),
+            );
+        }
     }
 
     /**
@@ -167,6 +210,7 @@ final class Config extends CommonGLPI
     {
         TemplateRenderer::getInstance()->display('@domainmanager/config.html.twig', [
             'domaintypes_id'       => self::getDomainTypeId(),
+            'read_only_mode'       => self::isReadOnlyMode(),
             'can_edit'             => Session::haveRight(self::$rightname, UPDATE),
             'rdap_enrichment'      => DomainState::getRdapEnrichmentStatus(),
         ]);

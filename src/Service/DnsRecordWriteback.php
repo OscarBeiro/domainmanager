@@ -34,6 +34,7 @@ namespace GlpiPlugin\Domainmanager\Service;
 use Domain;
 use DomainRecord;
 use DomainRecordType;
+use GlpiPlugin\Domainmanager\Config\Config;
 use GlpiPlugin\Domainmanager\Contract\DnsRecordCommentSyncInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsRecordProxyToggleInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsRecordWriterInterface;
@@ -165,7 +166,13 @@ class DnsRecordWriteback
             return;
         }
 
-        if (!self::hasRight($type, CREATE) || Session::isCron()) {
+        $readOnlyError = self::readOnlyModeError();
+        if ($readOnlyError !== null) {
+            self::abort($item, $readOnlyError);
+            return;
+        }
+
+        if (!self::hasRight($type, CREATE, $domains_id) || Session::isCron()) {
             // Not eligible for write-back: either the profile lacks the
             // per-type right, or this is a cron-driven/sync add, which is
             // never a manual write-back push. Native add proceeds untouched.
@@ -382,7 +389,13 @@ class DnsRecordWriteback
             return false;
         }
 
-        if (!self::hasRight($type, UPDATE) || Session::isCron()) {
+        $readOnlyError = self::readOnlyModeError();
+        if ($readOnlyError !== null) {
+            self::abort($item, $readOnlyError);
+            return true;
+        }
+
+        if (!self::hasRight($type, UPDATE, $domains_id) || Session::isCron()) {
             return false;
         }
 
@@ -621,7 +634,13 @@ class DnsRecordWriteback
             return false;
         }
 
-        if (!self::hasRight($type, DELETE) || Session::isCron()) {
+        $readOnlyError = self::readOnlyModeError();
+        if ($readOnlyError !== null) {
+            self::abort($item, $readOnlyError);
+            return true;
+        }
+
+        if (!self::hasRight($type, DELETE, $domains_id) || Session::isCron()) {
             return false;
         }
 
@@ -725,7 +744,13 @@ class DnsRecordWriteback
             return false;
         }
 
-        if (!self::hasRight($type, CREATE) || Session::isCron()) {
+        $readOnlyError = self::readOnlyModeError();
+        if ($readOnlyError !== null) {
+            self::abort($item, $readOnlyError);
+            return true;
+        }
+
+        if (!self::hasRight($type, CREATE, $domains_id) || Session::isCron()) {
             return false;
         }
 
@@ -887,34 +912,76 @@ class DnsRecordWriteback
     }
 
     /**
+     * ARCHITECTURE.md §15.3 Phase 53: the single choke point for the global
+     * write kill switch — checked independently of, and before, any
+     * per-type right, so an admin flipping it off is never second-guessed
+     * by a user's own rights. Each driver's own writer methods assert the
+     * same setting again (§ each Driver's createRecord()/updateRecord()/
+     * deleteRecord()), so a future call path into a driver directly (e.g.
+     * a new controller) can't bypass this by skipping this class.
+     *
+     * @return string|null a user-facing abort message naming the setting,
+     *                      or null when writes are allowed
+     */
+    private static function readOnlyModeError(): ?string
+    {
+        if (!Config::isReadOnlyMode()) {
+            return null;
+        }
+
+        return __('Domain Manager is in read-only mode (Setup > General > Domain Manager); no DNS record change can be pushed to the provider', 'domainmanager');
+    }
+
+    /**
+     * §11.6/§8, Phase 52: these per-type rights are plain profile bits, so a
+     * bare `Session::haveRight()` alone would hold them over every entity's
+     * zones once granted anywhere — a profile granted `Domain Record: TXT`
+     * for one entity would otherwise write TXT records on a Domain in any
+     * other entity too. `Domain::can()` already enforces entity-awareness
+     * for every other action in this plugin (§8's convention); mirrored
+     * here directly via `Session::haveAccessToEntity()` since these rights
+     * aren't itemtype-scoped GLPI rights that `Domain::can()` itself checks.
+     *
      * @param  string $type
-     * @param  int    $bit CREATE|UPDATE|DELETE
+     * @param  int    $bit        CREATE|UPDATE|DELETE|PURGE
+     * @param  int    $domains_id target Domain whose entity gates this right
      * @return bool
      */
-    private static function hasRight(string $type, int $bit): bool
+    private static function hasRight(string $type, int $bit, int $domains_id): bool
     {
         $rights = Profile::getDnsRecordRights();
-        if (!isset($rights[$type])) {
+        if (!isset($rights[$type]) || !Session::haveRight($rights[$type], $bit)) {
             return false;
         }
-        return Session::haveRight($rights[$type], $bit);
+
+        $domain = new Domain();
+        if (!$domain->getFromDB($domains_id)) {
+            return false;
+        }
+
+        return Session::haveAccessToEntity(
+            (int) $domain->fields['entities_id'],
+            (bool) ($domain->fields['is_recursive'] ?? false),
+        );
     }
 
     /**
      * Whether the current user holds the CREATE bit on at least one
-     * per-type DNS write-back right (§11.6/§11.7) — used by
-     * `DomainForm::onShowTab()` to decide whether the native "Link a
-     * record"/"New Domain record for this item" controls are worth
-     * showing on a write-back-managed domain's Records tab: a user who can't
-     * create any type via write-back would only get a confusing local-only
-     * add that `DnsRecordWriteback::onPreAdd()` may reject outright.
+     * per-type DNS write-back right for this domain's entity (§11.6/§11.7,
+     * entity-awareness added Phase 52) — used by `DomainForm::onShowTab()`
+     * to decide whether the native "Link a record"/"New Domain record for
+     * this item" controls are worth showing on a write-back-managed
+     * domain's Records tab: a user who can't create any type via write-back
+     * would only get a confusing local-only add that
+     * `DnsRecordWriteback::onPreAdd()` may reject outright.
      *
+     * @param  int $domains_id
      * @return bool
      */
-    public static function userMayCreateAnyType(): bool
+    public static function userMayCreateAnyType(int $domains_id): bool
     {
         foreach (Profile::getDnsRecordRights() as $type => $right) {
-            if (self::hasRight($type, CREATE)) {
+            if (self::hasRight($type, CREATE, $domains_id)) {
                 return true;
             }
         }
@@ -945,7 +1012,7 @@ class DnsRecordWriteback
             return false;
         }
 
-        return self::hasRight($type, PURGE);
+        return self::hasRight($type, PURGE, (int) ($item->fields['domains_id'] ?? 0));
     }
 
     /**
@@ -969,12 +1036,14 @@ class DnsRecordWriteback
      * the edit-page banner/lock (per-type UPDATE/DELETE for one known type).
      *
      * @param  string $type
-     * @param  int    $bit CREATE|UPDATE|DELETE
+     * @param  int    $bit        CREATE|UPDATE|DELETE
+     * @param  int    $domains_id target Domain whose entity gates this right
+     *                            (Phase 52)
      * @return bool
      */
-    public static function hasTypeRight(string $type, int $bit): bool
+    public static function hasTypeRight(string $type, int $bit, int $domains_id): bool
     {
-        return self::hasRight($type, $bit);
+        return self::hasRight($type, $bit, $domains_id);
     }
 
     /**
@@ -1042,7 +1111,7 @@ class DnsRecordWriteback
 
         $types = [];
         foreach (self::WRITABLE_TYPES as $type) {
-            if (self::hasRight($type, CREATE)) {
+            if (self::hasRight($type, CREATE, $domains_id)) {
                 $types[] = $type;
             }
         }
