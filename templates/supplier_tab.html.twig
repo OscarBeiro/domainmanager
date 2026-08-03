@@ -125,7 +125,7 @@
                                 title="{{ __('This supplier is inactive. Activate it to test its Domain Manager credentials.', 'domainmanager') }}"
                             {% endif %}>
                         <i class="ti ti-plug-connected"></i>
-                        <span>{{ __('Check Connection', 'domainmanager') }}</span>
+                        <span>{{ __('Test', 'domainmanager') }}</span>
                     </button>
                 {% endif %}
                 {% if discovery_supported|default(false) %}
@@ -137,7 +137,7 @@
                                 title="{{ __('This supplier is inactive. Activate it to import its domains.', 'domainmanager') }}"
                             {% endif %}>
                         <i class="ti ti-cloud-download"></i>
-                        <span>{{ __('Import Domains', 'domainmanager') }}</span>
+                        <span>{{ __('Import', 'domainmanager') }}</span>
                     </button>
                 {% endif %}
                 {% if config_id > 0 %}

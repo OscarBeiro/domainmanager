@@ -105,12 +105,61 @@ class DnsRecordWriteback
             return;
         }
 
-        $type = self::typeName((int) ($item->input['domainrecordtypes_id'] ?? 0));
+        $domains_id = (int) ($item->input['domains_id'] ?? 0);
+        $type_id    = (int) ($item->input['domainrecordtypes_id'] ?? 0);
+        $rawName    = trim((string) ($item->input['name'] ?? '@'));
+
+        // Plugin-wide, driver-independent: refuse a second non-trashed
+        // record with the same type+name on a Domain Manager-tracked
+        // domain, regardless of which (if any) driver is configured, and
+        // regardless of write-back eligibility — this is a data-integrity
+        // rule, not a provider-push feature (§ live bug, 2026-08-03: a
+        // retry storm caused by a since-fixed Dinahosting bug created real
+        // duplicate "manel" A records both upstream and locally; per user
+        // request, this is deliberately NOT scoped to Dinahosting only —
+        // round-robin multi-record setups some providers could otherwise
+        // support are out of scope for Domain Manager). Applied before the
+        // `_domainmanager_sync` check below so it also catches a duplicate
+        // a reconciler sync would otherwise mirror in locally.
+        //
+        // `$rawName` alone is NOT what's compared: every stored
+        // DomainRecord.name is an absolute FQDN (§ absoluteRecordName()),
+        // while `$item->input['name']` here is the raw, still-unqualified
+        // label a user types in the add form — comparing them directly
+        // never matched (found live 2026-08-03: creating a 2nd "manel"
+        // while "manel.dev.gal" already existed sailed straight past this
+        // guard, only to be rejected deeper in, by Dinahosting's own
+        // driver-specific check, with a less helpful message). Qualify
+        // against the domain's own zone name first, same as the actual
+        // push below does.
+        $checkDomain = new Domain();
+        if ($domains_id > 0 && $checkDomain->getFromDB($domains_id) && DomainState::getForDomain($domains_id) !== null) {
+            $qualifiedName = self::absoluteRecordName($rawName, $checkDomain->fields['name']);
+            $duplicateError = self::duplicateNameError($domains_id, $type_id, $qualifiedName);
+            if ($duplicateError !== null) {
+                self::abort($item, $duplicateError);
+                return;
+            }
+        }
+
+        if (!empty($item->input['_domainmanager_sync'])) {
+            // RecordReconciler creating a local mirror of a record it just
+            // read FROM the provider (§ live bug, 2026-08-03: with no such
+            // guard, this fired for every reconciler-driven add — outside
+            // Session::isCron(), since a manual "Update now" sync isn't a
+            // cron run — and tried to push the record straight back to the
+            // provider it came from, using its already-absolute name as if
+            // it were a raw user-typed label and doubling the zone: e.g.
+            // "manel.dev.gal" became "manel.dev.gal.dev.gal"). Never a
+            // genuine user-initiated create; nothing to push.
+            return;
+        }
+
+        $type = self::typeName($type_id);
         if ($type === null || !in_array($type, self::WRITABLE_TYPES, true)) {
             return;
         }
 
-        $domains_id = (int) ($item->input['domains_id'] ?? 0);
         $state = DomainState::getForDomain($domains_id);
         if ($state === null || !self::isDnsEditable($state)) {
             return;
@@ -152,15 +201,7 @@ class DnsRecordWriteback
         try {
             $driver = self::getWritableDriver($state);
             $zoneName = $domain->fields['name'];
-            // §9 Phase 37 addendum (found live, 2026-07-29): this was
-            // building "$zoneName.$name" (e.g. "beiro.net.dnss") — backwards.
-            // `DnsRecordWriterInterface::createRecord()`'s own docblock
-            // already specified the correct convention ("record name,
-            // absolute, e.g. www.example.com" — subdomain first); only this
-            // call site's construction disagreed with it. A non-apex name is
-            // "$name.$zoneName"; an apex record ('@' or empty `name`) is
-            // just the zone itself, no label prepended.
-            $absoluteName = ($name !== '' && $name !== '@') ? $name . '.' . $zoneName : $zoneName;
+            $absoluteName = self::absoluteRecordName($name, $zoneName);
             $created = $driver->createRecord($zoneName, $type, $absoluteName, $data, $ttl);
             self::$pendingCreated[spl_object_id($item)] = $created;
             DomainState::recordWriteOutcome($domains_id, true);
@@ -292,6 +333,41 @@ class DnsRecordWriteback
     public static function onPreUpdate(DomainRecord $item): bool
     {
         if (!is_array($item->input)) {
+            return false;
+        }
+
+        if (!empty($item->fields['is_deleted'])) {
+            // Trashing a write-back-managed record already pushed a real
+            // deleteRecord() upstream (§ onPreDelete()) — its remote copy is
+            // gone. Saving an edit while still trashed must never attempt
+            // to push it (found live 2026-08-03: doing so tried to update a
+            // record that no longer exists at the provider). The only
+            // write-back action a trashed record can still trigger is
+            // onPreRestore() recreating it; a plain edit here is local-only,
+            // same as any other native field change on a non-managed item.
+            return false;
+        }
+
+        // Plugin-wide, driver-independent duplicate guard — see onPreAdd()'s
+        // identical check for the full rationale. Effective values fall
+        // back to the record's current stored fields for whichever of
+        // domain/type/name isn't part of this particular update, since a
+        // typical data/ttl-only update touches neither.
+        $effectiveDomainsId = (int) ($item->input['domains_id'] ?? $item->fields['domains_id']);
+        $effectiveTypeId    = (int) ($item->input['domainrecordtypes_id'] ?? $item->fields['domainrecordtypes_id']);
+        $effectiveName      = trim((string) ($item->input['name'] ?? $item->fields['name']));
+        if (DomainState::getForDomain($effectiveDomainsId) !== null) {
+            $duplicateError = self::duplicateNameError($effectiveDomainsId, $effectiveTypeId, $effectiveName, (int) $item->getID());
+            if ($duplicateError !== null) {
+                self::abort($item, $duplicateError);
+                return true;
+            }
+        }
+
+        if (!empty($item->input['_domainmanager_sync'])) {
+            // RecordReconciler reconciling a local row to match the
+            // provider — see onPreAdd()'s identical guard. Never a genuine
+            // user-initiated update; nothing to push.
             return false;
         }
 
@@ -527,6 +603,13 @@ class DnsRecordWriteback
      */
     public static function onPreDelete(DomainRecord $item): bool
     {
+        if (is_array($item->input) && !empty($item->input['_domainmanager_sync'])) {
+            // RecordReconciler trashing a local row because the provider no
+            // longer reports it — see onPreAdd()'s identical guard. The
+            // record is already gone upstream; nothing to push.
+            return false;
+        }
+
         $type = self::typeName((int) $item->fields['domainrecordtypes_id']);
         if ($type === null || !in_array($type, self::WRITABLE_TYPES, true)) {
             return false;
@@ -603,6 +686,34 @@ class DnsRecordWriteback
      */
     public static function onPreRestore(DomainRecord $item): bool
     {
+        // Plugin-wide, driver-independent duplicate guard — see onPreAdd()'s
+        // identical check for the full rationale. Checked before the
+        // `_domainmanager_sync` bail below too: restoring a trashed record
+        // whose type+name another active record already claims (e.g. a
+        // second copy that was left active while this one was trashed)
+        // would recreate exactly the duplicate situation this guard exists
+        // to prevent.
+        $domains_id = (int) $item->fields['domains_id'];
+        if (DomainState::getForDomain($domains_id) !== null) {
+            $duplicateError = self::duplicateNameError(
+                $domains_id,
+                (int) $item->fields['domainrecordtypes_id'],
+                trim((string) $item->fields['name']),
+                (int) $item->getID(),
+            );
+            if ($duplicateError !== null) {
+                self::abort($item, $duplicateError);
+                return true;
+            }
+        }
+
+        if (is_array($item->input) && !empty($item->input['_domainmanager_sync'])) {
+            // RecordReconciler restoring a local row because the provider
+            // still reports it — see onPreAdd()'s identical guard. Never a
+            // genuine user-initiated restore; nothing to recreate upstream.
+            return false;
+        }
+
         $type = self::typeName((int) $item->fields['domainrecordtypes_id']);
         if ($type === null || !in_array($type, self::WRITABLE_TYPES, true)) {
             return false;
@@ -643,8 +754,14 @@ class DnsRecordWriteback
         try {
             $driver = self::getWritableDriver($state);
             $zoneName = $domain->fields['name'];
-            $absoluteName = ($name !== '' && $name !== '@') ? $name . '.' . $zoneName : $zoneName;
-            $created = $driver->createRecord($zoneName, $type, $absoluteName, $data, $ttl);
+            // Unlike onPreAdd()'s raw user-typed label, `$item->fields['name']`
+            // is a previously-stored record's name — already an absolute FQDN
+            // (same convention onPreUpdate() relies on, passing it to
+            // updateRecord() unmodified). Running it through
+            // absoluteRecordName() here would append the zone a second time
+            // (found live 2026-08-03: restoring an already-absolute non-apex
+            // name produced "$name.$zoneName.$zoneName").
+            $created = $driver->createRecord($zoneName, $type, $name, $data, $ttl);
             DomainState::recordWriteOutcome($domains_id, true);
 
             $imported->update([
@@ -674,6 +791,82 @@ class DnsRecordWriteback
             self::abort($item, sprintf(__('Could not recreate this record at %s: %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state)), $message));
             return true;
         }
+    }
+
+    /**
+     * `DnsRecordWriterInterface::createRecord()`'s docblock specifies the
+     * absolute-name convention ("record name, absolute, e.g.
+     * www.example.com" — subdomain first); an apex record is just the zone
+     * itself, no label prepended (§9 Phase 37 addendum, found live
+     * 2026-07-29, fixed a backwards "$zoneName.$name" construction here).
+     *
+     * `$name` is only treated as already-apex when it's empty, `@`, or
+     * already equal to `$zoneName` — the last case matters because a
+     * driver's own record-name normalization (e.g. DinahostingDriver's
+     * `qualifyHostname()`) can itself report an apex record's stored `name`
+     * as the bare zone name rather than `@`. Missing that case doubled the
+     * zone name on restore (found live 2026-08-03: a trashed apex TXT
+     * record's name was already "dev.gal", so the old `$name !== '@'`-only
+     * check appended the zone again, producing "dev.gal.dev.gal" and a
+     * hard Dinahosting rejection).
+     *
+     * @param  string $name     stored DomainRecord name (absolute, or an
+     *                          apex form: '', '@', or the zone itself)
+     * @param  string $zoneName the domain's own zone name
+     * @return string absolute FQDN
+     */
+    private static function absoluteRecordName(string $name, string $zoneName): string
+    {
+        if ($name === '' || $name === '@' || strcasecmp($name, $zoneName) === 0) {
+            return $zoneName;
+        }
+
+        return $name . '.' . $zoneName;
+    }
+
+    /**
+     * Plugin-wide, driver-independent duplicate guard: refuses a second
+     * non-trashed record sharing `$domains_id`+`$type_id`+`$name` (case-
+     * insensitive, matching how every driver's own identity matching
+     * already treats names). Deliberately not scoped to any single
+     * driver's own limitations (contrast `DinahostingDriver::
+     * assertSingleRecordAtName()`, which exists only because that specific
+     * API can't target one record among same-name siblings) — a real
+     * duplicate is just as meaningless on a driver that could technically
+     * store it.
+     *
+     * @param  int         $domains_id
+     * @param  int         $type_id
+     * @param  string      $name       already-trimmed
+     * @param  int|null    $excludeId  the record itself, when checking an
+     *                                 update rather than a fresh create
+     * @return string|null a user-facing abort message, or null if clear
+     */
+    private static function duplicateNameError(int $domains_id, int $type_id, string $name, ?int $excludeId = null): ?string
+    {
+        if ($domains_id <= 0 || $type_id <= 0 || $name === '') {
+            return null;
+        }
+
+        $where = [
+            'domains_id'           => $domains_id,
+            'domainrecordtypes_id' => $type_id,
+            'name'                 => $name,
+            'is_deleted'           => 0,
+        ];
+        if ($excludeId !== null) {
+            $where['id'] = ['<>', $excludeId];
+        }
+
+        if (countElementsInTable(DomainRecord::getTable(), $where) === 0) {
+            return null;
+        }
+
+        return sprintf(
+            __('A %1$s record named "%2$s" already exists for this domain; Domain Manager does not allow duplicate records', 'domainmanager'),
+            self::typeName($type_id) ?? (string) $type_id,
+            $name,
+        );
     }
 
     /**
@@ -739,7 +932,12 @@ class DnsRecordWriteback
      */
     public static function hasPurgeRight(DomainRecord $item): bool
     {
-        $type = self::typeName((int) ($item->fields['type'] ?? 0));
+        // Was reading `$item->fields['type']` — not a DomainRecord field
+        // (every other type lookup in this class reads
+        // `domainrecordtypes_id`) — so this always resolved to no type and
+        // returned false unconditionally, hiding the Purge button even for
+        // a user holding the per-type PURGE right (found live 2026-08-03).
+        $type = self::typeName((int) ($item->fields['domainrecordtypes_id'] ?? 0));
         if ($type === null) {
             return false;
         }

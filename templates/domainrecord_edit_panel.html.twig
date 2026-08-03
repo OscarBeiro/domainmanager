@@ -92,6 +92,21 @@
     function run() {
         var form = document.getElementById('main-form') || document.querySelector('form[name="asset_form"]');
         var lockedFields = {{ locked_fields|json_encode|raw }}.concat({{ structural_locked_fields|json_encode|raw }});
+        {% if display_name is not null %}
+        // Stored `name` is always the absolute FQDN (matches every driver's
+        // own ZoneRecord.name); show just the relative label against the
+        // already-linked domain, same as core's own DomainRecord::
+        // getDisplayName() already does for the "link a record" dropdown.
+        // Cosmetic only — this field is locked either way (see
+        // structural_locked_fields below), so this can never post a
+        // different value back.
+        if (form) {
+            form.querySelectorAll('[name="name"]').forEach(function (input) {
+                input.value = {{ display_name|json_encode|raw }};
+            });
+        }
+        {% endif %}
+
         if (lockedFields.length) {
             if (form) {
                 lockedFields.forEach(function (field) {
@@ -155,20 +170,6 @@
             }
             proxyContainer.style.display = '';
         }
-        {% endif %}
-
-        {% if can_update %}
-        var updateButtons = document.querySelectorAll(
-            '.form-button-separator button[name="update"]'
-        );
-        updateButtons.forEach(function (btn) {
-            btn.addEventListener('click', function (event) {
-                if (!window.confirm({{ __('This updates the record live at the DNS provider. Continue?', 'domainmanager')|json_encode|raw }})) {
-                    event.preventDefault();
-                    event.stopImmediatePropagation();
-                }
-            }, true);
-        });
         {% endif %}
 
         {% if can_delete %}
