@@ -3321,3 +3321,26 @@ amendment.
 - **Expected (all three):** no code changes to `WRITABLE_TYPES` or any create/update path —
   SRV/SOA/CAA remain write-disabled by design (§11.4/§11.8); this phase only touched the
   read/display path.
+
+### Phase 51 Credential-leak audit and `PluginLogger` scrubber (ARCHITECTURE.md §15.2)
+- **Requirement:** No `PluginLogger::activity()`/`error()` call site, and no
+  `DriverException`/`GuzzleException` message that reaches one, should be able to write a
+  decrypted credential, `Authorization` header, or full request body to either log file.
+- **Steps:** Grepped all 55 `PluginLogger::activity()`/`error()` call sites across the three
+  drivers, `Cron.php`, the controllers and `DnsRecordWriteback`/`SyncLogger`; checked each
+  driver's Guzzle client construction and every `DriverException`-raising branch.
+- **Finding (doc-verified, no live account access needed):** no leak found. All three drivers
+  authenticate via a Guzzle `headers`/`auth` client option (`Authorization: Bearer` for
+  Cloudflare, `X-Api-Key` for IONOS, HTTP Basic Auth for Dinahosting) — never a request URI or
+  body param — and all three set `http_errors => false`, handling non-2xx responses manually
+  rather than via a thrown `GuzzleException` whose message could embed request detail.
+  `GuzzleException::getMessage()` (only reachable for genuine connection failures, e.g.
+  `ConnectException`) is, by Guzzle's own `RequestException::create()`, built solely from the
+  user-info-redacted request URI, the HTTP method, and a truncated response-body summary —
+  never the request headers or body. `PluginLogger::redact()` (§3.6) was widened regardless, as
+  the residual guard: now also matches `auth_code`/`credential(s)` keys and quoted JSON-style
+  values (`"password":"x"`).
+- **Expected:** No behavior change to any driver or controller; `PluginLogger::redact()`'s
+  regex is broader; the finding above is documented in `PluginLogger::redact()`'s own docblock.
+- [x] Verified (doc/code audit, 2026-08-03 — grep-based, no live provider account access
+  needed; this phase's deliverable is the audit finding, not a live test)

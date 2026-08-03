@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Entries are grouped into **Features** and **Bugs**, one line each.
 
 ## [Unreleased]
+### Features
+- Audited all plugin logging for accidental credential leaks (none found) and hardened the log scrubber further as a precaution.
+
 ### Bugs
 - Fixed the wording of the message shown when Domain Manager blocks a duplicate DNS record ("A A record named..." for A records).
 

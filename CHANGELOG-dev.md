@@ -16,8 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Entries are grouped into **Features** (new capability, UI/UX change, refactor, doc/config
 change) and **Bugs** (something that was actually broken, fixed) — one line each.
 
-## [Unreleased] (1.5.0-beta2)
+## [Unreleased] (1.5.0-beta3)
 ### Features
+- Phase 51 (ARCHITECTURE.md §15.2): credential-leak audit of `PluginLogger`'s two funnels. Grepped every `PluginLogger::activity()`/`error()` call site (55, across the three drivers, controllers and services) and every `DriverException`/`GuzzleException::getMessage()` path that reaches one. Finding: no live leak, by construction — all three drivers authenticate via a Guzzle `headers`/`auth` client option (never a request URI or body param), and Guzzle's own `RequestException::create()` builds its message only from the redacted request URI, method, and a truncated response-body summary, never the request headers or body. `PluginLogger::redact()` (added earlier, §3.6) is the residual guarantee, not the primary defense. Widened its regex to also catch `auth_code`/`credential(s)` keys and quoted JSON-style values (`"password":"x"`), documented the audit's conclusion in the method's own docblock so the next call site addition doesn't have to re-derive it.
+
 - Phase 50 (ARCHITECTURE.md §11.17): doc-verified (no live provider account access, per explicit request) how each of the three drivers handles reading SRV/SOA/CAA zone records, since `ZoneRecord` has no typed sub-fields for them. IONOS's existing 2026-07-29 conclusion re-checked and unchanged. Cloudflare's SRV/CAA responses confirmed (via its current API reference) to carry a pre-serialized `content` string alongside the structured `data` object, so `CloudflareDriver`'s existing flat pass-through needed no change; SOA isn't a Cloudflare record type at all, so no SOA row can reach that driver's read loop. Dinahosting has no documented structured shape for SRV/SOA/CAA, and its reference client (`libdns/dinahosting`) treats SRV as an opaque flat value — `DinahostingDriver`'s existing generic fallback needed no change either. Read-path only; SRV/SOA/CAA remain write-disabled by design.
 
 ### Bugs

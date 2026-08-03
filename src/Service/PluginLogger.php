@@ -84,8 +84,16 @@ class PluginLogger
 
     /**
      * Defensive belt-and-suspenders redaction: callers should never pass raw
-     * secrets in the first place, this only guards against accidental leaks
-     * (e.g. a token embedded in an upstream error message/header dump)
+     * secrets in the first place (audited 2026-08-03, ARCHITECTURE.md §15.2
+     * Phase 51 — every `PluginLogger` call site and driver `DriverException`/
+     * `GuzzleException::getMessage()` path funnels through here; none of them
+     * currently carry a decrypted credential, since all three drivers send
+     * auth via a Guzzle `headers`/`auth` client option rather than the
+     * request URI or body, and Guzzle's own `RequestException::create()`
+     * message is built only from the redacted URI, method and a truncated
+     * response-body summary — never the request headers or body). This only
+     * guards against accidental future leaks (e.g. a token embedded in an
+     * upstream error message/body dump).
      *
      * @param  string $text
      * @return string
@@ -94,7 +102,7 @@ class PluginLogger
     {
         $text = preg_replace('/Bearer\s+\S+/i', 'Bearer [REDACTED]', $text) ?? $text;
         $text = preg_replace(
-            '/((?:token|secret|password|pwd|api[_-]?key)\s*[=:]\s*)\S+/i',
+            '/((?:token|secret|password|pwd|api[_-]?key|auth[_-]?code|credential)s?\s*[=:]\s*"?)([^"\s,}]+)/i',
             '$1[REDACTED]',
             $text,
         ) ?? $text;
