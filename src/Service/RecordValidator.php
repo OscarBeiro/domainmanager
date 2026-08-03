@@ -191,4 +191,100 @@ class RecordValidator
             $fqdn,
         ) === 1;
     }
+
+    /**
+     * Validates a TXT record's `data`, on the two things unambiguous enough
+     * to block, and warns on SPF/DMARC/DKIM semantics. `$name` is the
+     * already-absolute owner name (§15 Phase 58) — needed only for the
+     * DMARC `_dmarc` label check below, not for either block condition.
+     *
+     * **Block 1 — length.** A single character-string over 255 octets. Per
+     * this phase's own verification note (ARCHITECTURE.md §15.4 Phase 61),
+     * whether a provider pre-chunks a long TXT value server-side or requires
+     * the caller to pre-split it into multiple character-strings is
+     * unconfirmed for Cloudflare/Dinahosting (IONOS is confirmed to agree
+     * with core); since this plugin has no multi-string chunking of its
+     * own, a value over the limit would either be rejected upstream or
+     * silently truncated, so it's blocked here rather than guessed at.
+     *
+     * **Block 2 — quoting conflict with core's own convention.** Per §11.5,
+     * this plugin's internal `data` convention is always the bare, unquoted
+     * content — `IonosDriver::toWireContent()`/`extractContent()` are the
+     * only place quoting/unquoting happens, at the wire boundary. Core's
+     * *own* generic per-type-field composer (§15.4's "core's `quote_value`
+     * convention", ARCHITECTURE.md §11.5) wraps a TXT value in double quotes
+     * when built through that path, so a value already wrapped in a
+     * matching, balanced outer quote pair most likely arrived via that other
+     * convention rather than as literal content the user meant to store —
+     * pushing it through would double-quote on the wire. Blocked rather than
+     * silently unwrapped, since a genuinely quote-wrapped literal (rare, but
+     * legal) would be silently mangled by guessing wrong.
+     *
+     * **Duplicate `v=spf1` at one name** (RFC 7208) needs a DB query across
+     * every TXT record at `$name`, which this class deliberately has no DB
+     * access for — see `DnsRecordWriteback::spfDuplicateError()`.
+     *
+     * @param  string $name  already-absolute owner name
+     * @param  string $value raw TXT content as typed/imported (unquoted,
+     *                       per this plugin's own convention)
+     * @return array{value: string, error: ?string, warning: ?string}
+     */
+    public static function validateTxtContent(string $name, string $value): array
+    {
+        if (strlen($value) > 255) {
+            return self::result($value, sprintf(
+                __('TXT content is %d octets, over the 255-octet character-string limit', 'domainmanager'),
+                strlen($value),
+            ), null);
+        }
+
+        if (strlen($value) >= 2 && $value[0] === '"' && str_ends_with($value, '"')) {
+            return self::result($value, __(
+                'This TXT value is already wrapped in double quotes; enter the content itself — quoting for the provider is applied automatically',
+                'domainmanager',
+            ), null);
+        }
+
+        return self::result($value, null, self::txtSemanticsWarning($name, $value));
+    }
+
+    /**
+     * @param  string $name  already-absolute owner name
+     * @param  string $value raw, unquoted TXT content
+     * @return string|null
+     */
+    private static function txtSemanticsWarning(string $name, string $value): ?string
+    {
+        if (stripos($value, 'v=spf1') === 0) {
+            $lookups = preg_match_all(
+                '/(?:^|\s)[+\-~?]?(?:include:|a(?::|\s|$)|mx(?::|\s|$)|ptr(?::|\s|$)|exists:|redirect=)/i',
+                $value,
+            );
+            if ($lookups !== false && $lookups > 10) {
+                return sprintf(
+                    __('This SPF record needs %d DNS lookups; RFC 7208 caps evaluation at 10 and a resolver will treat the whole record as a permanent error past that', 'domainmanager'),
+                    $lookups,
+                );
+            }
+            return null;
+        }
+
+        if (stripos($value, 'v=DMARC1') === 0) {
+            $firstLabel = strtolower(explode('.', rtrim($name, '.'))[0] ?? '');
+            if ($firstLabel !== '_dmarc') {
+                return __('This looks like a DMARC record but its name is not "_dmarc"; DMARC is only honoured there', 'domainmanager');
+            }
+            if (!preg_match('/(?:^|;)\s*p=/i', $value)) {
+                return __('This DMARC record has no "p=" tag; without one no policy is applied', 'domainmanager');
+            }
+            return null;
+        }
+
+        if (stripos($name, '._domainkey.') !== false && stripos($value, 'v=DKIM1') !== false
+            && !preg_match('/(?:^|;)\s*p=/i', $value)) {
+            return __('This DKIM record has no "p=" tag; without one the key cannot be validated', 'domainmanager');
+        }
+
+        return null;
+    }
 }

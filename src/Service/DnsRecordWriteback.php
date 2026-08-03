@@ -994,6 +994,54 @@ class DnsRecordWriteback
     }
 
     /**
+     * Phase 61 (ARCHITECTURE.md §15.4): RFC 7208 forbids more than one
+     * `v=spf1` TXT record at a single owner name — a resolver that finds
+     * two must treat SPF as a permanent error for that name, so this is a
+     * block, not a warning. Needs a DB query across every TXT record at
+     * `$name`, which `RecordValidator` deliberately has no access to (see
+     * `RecordValidator::validateTxtContent()`'s docblock) — same shape as
+     * `cnameCoexistenceError()` above.
+     *
+     * @param  int      $domains_id
+     * @param  string   $name      already-absolute (§ absoluteRecordName())
+     * @param  string   $value     raw, unquoted TXT content being written
+     * @param  int|null $excludeId the record itself, when checking an
+     *                             update rather than a fresh create
+     * @return string|null a user-facing abort message, or null if clear
+     */
+    private static function spfDuplicateError(int $domains_id, string $name, string $value, ?int $excludeId = null): ?string
+    {
+        if ($domains_id <= 0 || $name === '' || stripos(trim($value), 'v=spf1') !== 0) {
+            return null;
+        }
+
+        $txtTypeId = self::typeIdByName('TXT');
+        if ($txtTypeId === null) {
+            return null;
+        }
+
+        $where = [
+            'domains_id'           => $domains_id,
+            'name'                 => $name,
+            'domainrecordtypes_id' => $txtTypeId,
+            'is_deleted'           => 0,
+            'data'                 => ['LIKE', 'v=spf1%'],
+        ];
+        if ($excludeId !== null) {
+            $where['id'] = ['<>', $excludeId];
+        }
+
+        if (countElementsInTable(DomainRecord::getTable(), $where) === 0) {
+            return null;
+        }
+
+        return sprintf(
+            __('"%s" already has an SPF (v=spf1) TXT record; RFC 7208 forbids more than one per name', 'domainmanager'),
+            $name,
+        );
+    }
+
+    /**
      * ARCHITECTURE.md §15 Phase 57: one `Log::history()` line per *attempted*
      * provider write (success or failure), on the Domain, following
      * §3.7.1's convention exactly (`id_search_option = 0`, `"[Domain

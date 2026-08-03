@@ -2671,6 +2671,17 @@ parser.
 chunks it server-side, or requires pre-chunked strings. §11.5 records that IONOS returns TXT quoted
 and agrees with core; the other two are unverified on this specific point.
 
+**Implemented 2026-08-03** as `RecordValidator::validateTxtContent()` (blocks: >255-octet content,
+since this plugin has no chunking of its own so the pre-chunking verification above stays open but
+doesn't block landing this; and a value already wrapped in a matching quote pair, which conflicts
+with this plugin's own always-unquoted internal convention — see §11.5 — rather than being unwrapped
+by guesswork) plus `DnsRecordWriteback::spfDuplicateError()` (blocks a second `v=spf1` TXT at one
+name — needs a DB query across all TXT records at the name, same reason `cnameCoexistenceError()`
+lives outside `RecordValidator`). Warns: SPF over 10 DNS-lookup mechanisms (regex-counted, not a full
+parser), DMARC content not at a `_dmarc` label or missing `p=`, DKIM content missing `p=`. Not yet
+wired into `DnsRecordWriteback::onPreAdd()`/`onPreUpdate()` — Phase 62, same as Phases 59-60. Not yet
+verified live.
+
 ### Phase 62 — Wire-up and TTL guardrails
 
 Register the validators at the hook layer, echo them client-side, and add a TTL floor per provider
