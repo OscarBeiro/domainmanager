@@ -86,6 +86,7 @@ class Installer
         self::renormalizeDinahostingRemoteIds();
         self::renormalizeMxTrailingDot();
         self::clearRdapEnrichmentComment();
+        self::clearDomainSyncComment();
 
         $migration->executeMigration();
 
@@ -1181,6 +1182,30 @@ class Installer
     }
 
     /**
+     * Phase 69 addendum: same fix as `clearRdapEnrichmentComment()` above,
+     * for the DomainSync task's identical pre-fill.
+     *
+     * @return void
+     */
+    private static function clearDomainSyncComment(): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $oldComment = __('Synchronize domain lifecycle and DNS zone records from provider APIs', 'domainmanager');
+
+        $DB->update(
+            CronTask::getTable(),
+            ['comment' => ''],
+            [
+                'itemtype' => Cron::class,
+                'name'     => 'DomainSync',
+                'comment'  => $oldComment,
+            ],
+        );
+    }
+
+    /**
      * Register the daily sync automatic action (idempotent, tunable in Setup > Automatic actions)
      *
      * @return void
@@ -1197,7 +1222,10 @@ class Installer
                 'hourmax'       => 24,
                 'param'         => 20,
                 'logs_lifetime' => 30,
-                'comment'       => __('Synchronize domain lifecycle and DNS zone records from provider APIs', 'domainmanager'),
+                // No 'comment' here — that field is the admin's own free-text
+                // note (Setup > Automatic actions), not this plugin's to
+                // pre-fill. The fixed, non-editable description is
+                // Cron::cronInfo()'s 'description' entry.
             ],
         );
 
