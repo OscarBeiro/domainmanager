@@ -199,16 +199,26 @@ class DnsRecordWriteback
         $name = (string) ($item->input['name'] ?? '@');
         $data = (string) ($item->input['data'] ?? '');
         $ttl  = (int) ($item->input['ttl'] ?? 3600);
-        self::sanitizeInputs($name, $data, $ttl);
+        self::sanitizeInputs($name, $data, $ttl, self::configuredDriverName($state));
         if (!self::validateInputs($data, $ttl)) {
             self::abort($item, __('Invalid record data', 'domainmanager'));
             return;
         }
 
+        $zoneName = $domain->fields['name'];
+        $absoluteName = self::absoluteRecordName($name, $zoneName);
+        $typedResult = self::runTypeValidators($type, $absoluteName, $data, $zoneName, $domains_id);
+        if ($typedResult['error'] !== null) {
+            self::abort($item, $typedResult['error']);
+            return;
+        }
+        $data = $typedResult['value'];
+        if ($typedResult['warning'] !== null) {
+            Session::addMessageAfterRedirect('[Domain Manager] ' . $typedResult['warning'], true, WARNING);
+        }
+
         try {
             $driver = self::getWritableDriver($state);
-            $zoneName = $domain->fields['name'];
-            $absoluteName = self::absoluteRecordName($name, $zoneName);
             $created = $driver->createRecord($zoneName, $type, $absoluteName, $data, $ttl);
             self::$pendingCreated[spl_object_id($item)] = $created;
             DomainState::recordWriteOutcome($domains_id, true);
@@ -439,10 +449,20 @@ class DnsRecordWriteback
         $data = (string) ($item->input['data'] ?? $item->fields['data']);
         $ttl  = (int) ($item->input['ttl'] ?? $item->fields['ttl']);
         $name = (string) $item->fields['name'];
-        self::sanitizeInputs($name, $data, $ttl);
+        self::sanitizeInputs($name, $data, $ttl, self::configuredDriverName($state));
         if (!self::validateInputs($data, $ttl)) {
             self::abort($item, __('Invalid record data', 'domainmanager'));
             return true;
+        }
+
+        $typedResult = self::runTypeValidators($type, $name, $data, $domain->fields['name'], $domains_id, (int) $item->getID());
+        if ($typedResult['error'] !== null) {
+            self::abort($item, $typedResult['error']);
+            return true;
+        }
+        $data = $typedResult['value'];
+        if ($typedResult['warning'] !== null) {
+            Session::addMessageAfterRedirect('[Domain Manager] ' . $typedResult['warning'], true, WARNING);
         }
 
         $imported = ImportedRecord::getForDomainRecord((int) $item->getID());
@@ -799,7 +819,7 @@ class DnsRecordWriteback
         $name = (string) $item->fields['name'];
         $data = (string) $item->fields['data'];
         $ttl  = (int) $item->fields['ttl'];
-        self::sanitizeInputs($name, $data, $ttl);
+        self::sanitizeInputs($name, $data, $ttl, self::configuredDriverName($state));
 
         try {
             $driver = self::getWritableDriver($state);
@@ -1039,6 +1059,56 @@ class DnsRecordWriteback
             __('"%s" already has an SPF (v=spf1) TXT record; RFC 7208 forbids more than one per name', 'domainmanager'),
             $name,
         );
+    }
+
+    /**
+     * Phase 62 (ARCHITECTURE.md §15.4): the single place `onPreAdd()`/
+     * `onPreUpdate()` both call to run Phases 59-61's per-type validators
+     * plus their DB-backed coexistence siblings, so the two hooks can't
+     * drift on which checks apply to which type. Every other record type
+     * (`NS`, `MX`, …) has no validator yet and passes through unchanged —
+     * `WRITABLE_TYPES` already gates this method to only ever see `A`,
+     * `AAAA`, `CNAME` or `TXT`.
+     *
+     * @param  string   $type       e.g. 'A', 'AAAA', 'CNAME', 'TXT'
+     * @param  string    $name      already-absolute owner name
+     * @param  string    $data      raw data as submitted (already
+     *                              sanitize/floor-passed by the caller)
+     * @param  string    $zoneName  the domain's own absolute zone name
+     * @param  int       $domains_id
+     * @param  int|null  $excludeId the record itself, on an update
+     * @return array{value: string, error: ?string, warning: ?string}
+     */
+    private static function runTypeValidators(
+        string $type,
+        string $name,
+        string $data,
+        string $zoneName,
+        int $domains_id,
+        ?int $excludeId = null,
+    ): array {
+        switch ($type) {
+            case 'A':
+            case 'AAAA':
+                return RecordValidator::validateAddress($type, $data);
+
+            case 'CNAME':
+                $result = RecordValidator::validateCnameTarget($name, $data, $zoneName);
+                if ($result['error'] === null) {
+                    $result['error'] = self::cnameCoexistenceError($domains_id, $type, $name, $excludeId);
+                }
+                return $result;
+
+            case 'TXT':
+                $result = RecordValidator::validateTxtContent($name, $data);
+                if ($result['error'] === null) {
+                    $result['error'] = self::spfDuplicateError($domains_id, $name, $data, $excludeId);
+                }
+                return $result;
+
+            default:
+                return ['value' => $data, 'error' => null, 'warning' => null];
+        }
     }
 
     /**
@@ -1480,18 +1550,25 @@ class DnsRecordWriteback
     }
 
     /**
-     * Ported from the removed controller's sanitizeInputs().
+     * Ported from the removed controller's sanitizeInputs(). Phase 62
+     * (ARCHITECTURE.md §15.4): the TTL floor is the configured driver's own
+     * minimum (`DriverRegistry::getMinTtl()`) rather than a bare literal;
+     * `$driver` is `null` when it can't be resolved yet (e.g. no supplier
+     * configured), which falls back to the same 60 every current driver
+     * happens to share.
      *
-     * @param  string $name
-     * @param  string $data
-     * @param  int    $ttl
+     * @param  string      $name
+     * @param  string      $data
+     * @param  int         $ttl
+     * @param  string|null $driver one of DriverRegistry's DRIVER_* keys
      * @return void
      */
-    private static function sanitizeInputs(string &$name, string &$data, int &$ttl): void
+    private static function sanitizeInputs(string &$name, string &$data, int &$ttl, ?string $driver = null): void
     {
         $name = trim($name);
         $data = trim($data);
-        $ttl = max(60, min($ttl, 2147483647));
+        $minTtl = $driver !== null ? DriverRegistry::getMinTtl($driver) : 60;
+        $ttl = max($minTtl, min($ttl, 2147483647));
     }
 
     /**

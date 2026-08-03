@@ -2690,6 +2690,30 @@ minimum rather than a hardcoded number.
 **Verifications required before code:** each provider's documented minimum TTL and its behaviour on
 TTL 0 (§11.9 notes the reference client omits the field entirely at 0).
 
+**Implemented 2026-08-03 (server-side half only — see gap below).** `DnsRecordWriteback::
+runTypeValidators()` is the single call site `onPreAdd()`/`onPreUpdate()` both use to run Phases
+59-61's validators (`RecordValidator::validateAddress()`/`validateCnameTarget()`/
+`validateTxtContent()`) plus their DB-backed coexistence siblings (`cnameCoexistenceError()`,
+`spfDuplicateError()`) against the type actually being written — a block aborts with the validator's
+message, a warning surfaces via `Session::addMessageAfterRedirect()` without blocking, and the
+canonicalized value (only A/AAAA change on this path, per `validateAddress()`) replaces `$data`
+before the driver push. `onPreRestore()` is deliberately **not** included — it recreates data that
+already passed these checks once, at the original create/update. TTL floor: `DriverRegistry::
+getMinTtl()` replaces `sanitizeInputs()`'s bare `60` literal — IONOS's 60 stays live-probe-confirmed
+(§11.9), Cloudflare's 60 is documentation-sourced only (not independently probed against this
+plugin's own account), Dinahosting has no `ttl` write parameter at all so its value is unused filler.
+All three currently agree at 60, so this is a structural change, not a behavioural one, until a
+driver with a genuinely different minimum is added.
+
+**Gap: "echo them client-side" is not done.** This plugin has no JavaScript layer of its own on the
+native `DomainRecord` add/edit form — it intercepts the native GLPI form entirely server-side via
+item hooks, and no existing pattern in this codebase attaches custom client-side validation to that
+form. Doing so is a separate, larger design question (which fields to watch, how to surface a
+warning without a full-page submit, whether to duplicate the regex/DB-lookup logic in JS or round-
+trip an AJAX call) that this pass deliberately left open rather than bolting on ad hoc. Today a
+blocked/warned record is only discovered on submit, server-side — a real UX gap this note tracks
+until it's picked up as its own follow-up.
+
 ---
 
 ## 15.5 Phases 63–66 — Group D, full record-type coverage

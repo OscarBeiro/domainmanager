@@ -15,6 +15,7 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 - Audited all plugin logging for accidental credential leaks (none found) and hardened the log scrubber further as a precaution.
 - Added a "Read-only mode" setting (Setup > General > Domain Manager) that, when enabled, refuses to push any DNS record change (create/update/delete/restore) to any provider until turned back off. Read/sync are unaffected.
 - A failed attempt to push a DNS record change (create/update/delete/restore/proxy toggle) to a provider now also shows up on the domain's Historical tab, alongside successful ones.
+- Creating or editing an A, AAAA, CNAME or TXT record now checks the value before pushing it to the provider: clearly invalid addresses/hostnames/TXT content are blocked with an explanation, an IPv6 address is normalized to one consistent form, and a CNAME record blocks (or is blocked by) any other record type already at the same name. Risky-but-legal cases (private-range addresses, an overloaded SPF record, a misplaced DMARC/DKIM record) are flagged with a warning instead of being blocked outright.
 
 ### Bugs
 - Fixed the wording of the message shown when Domain Manager blocks a duplicate DNS record ("A A record named..." for A records).
