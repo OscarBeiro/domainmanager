@@ -146,7 +146,7 @@ class DnsRecordWriteback
             $checkDomain = new Domain();
             if ($domains_id > 0 && $checkDomain->getFromDB($domains_id) && DomainState::getForDomain($domains_id) !== null) {
                 $qualifiedName = self::absoluteRecordName($rawName, $checkDomain->fields['name']);
-                $duplicateError = self::duplicateNameError($domains_id, $type_id, $qualifiedName);
+                $duplicateError = self::duplicateNameError($domains_id, $type_id, $qualifiedName, null, (string) ($item->input['data'] ?? ''));
                 if ($duplicateError !== null) {
                     self::abort($item, $duplicateError);
                     return;
@@ -389,9 +389,10 @@ class DnsRecordWriteback
         $effectiveDomainsId = (int) ($item->input['domains_id'] ?? $item->fields['domains_id']);
         $effectiveTypeId    = (int) ($item->input['domainrecordtypes_id'] ?? $item->fields['domainrecordtypes_id']);
         $effectiveName      = trim((string) ($item->input['name'] ?? $item->fields['name']));
+        $effectiveData      = (string) ($item->input['data'] ?? $item->fields['data']);
         $effectiveType      = self::typeName($effectiveTypeId);
         if ($effectiveType !== null && in_array($effectiveType, self::WRITABLE_TYPES, true) && DomainState::getForDomain($effectiveDomainsId) !== null) {
-            $duplicateError = self::duplicateNameError($effectiveDomainsId, $effectiveTypeId, $effectiveName, (int) $item->getID());
+            $duplicateError = self::duplicateNameError($effectiveDomainsId, $effectiveTypeId, $effectiveName, (int) $item->getID(), $effectiveData);
             if ($duplicateError !== null) {
                 self::abort($item, $duplicateError);
                 return true;
@@ -781,6 +782,7 @@ class DnsRecordWriteback
                 (int) $item->fields['domainrecordtypes_id'],
                 trim((string) $item->fields['name']),
                 (int) $item->getID(),
+                (string) $item->fields['data'],
             );
             if ($duplicateError !== null) {
                 self::abort($item, $duplicateError);
@@ -921,16 +923,27 @@ class DnsRecordWriteback
      * assertSingleRecordAtName()`, which exists only because that specific
      * API can't target one record among same-name siblings) — a real
      * duplicate is just as meaningless on a driver that could technically
-     * store it.
+     * store it. Callers only ever invoke this for `WRITABLE_TYPES` (NS/MX
+     * are excluded upstream — § design bug, 2026-08-03, they're structurally
+     * multi-valued and never pushed by this plugin).
+     *
+     * TXT is itself multi-valued at a name (SPF, site-verification, DKIM
+     * policy, … routinely coexist with different content) — passing `$data`
+     * narrows the match to type+name+data for TXT specifically, so only an
+     * exact content repeat counts as a duplicate; every other writable type
+     * (`A`/`AAAA`/`CNAME`) keeps the original type+name-only rule, since this
+     * plugin deliberately disallows round-robin multi-value setups there.
      *
      * @param  int         $domains_id
      * @param  int         $type_id
      * @param  string      $name       already-trimmed
      * @param  int|null    $excludeId  the record itself, when checking an
      *                                 update rather than a fresh create
+     * @param  string|null $data       raw record content; only consulted
+     *                                 when `$type_id` resolves to TXT
      * @return string|null a user-facing abort message, or null if clear
      */
-    private static function duplicateNameError(int $domains_id, int $type_id, string $name, ?int $excludeId = null): ?string
+    private static function duplicateNameError(int $domains_id, int $type_id, string $name, ?int $excludeId = null, ?string $data = null): ?string
     {
         if ($domains_id <= 0 || $type_id <= 0 || $name === '') {
             return null;
@@ -944,6 +957,18 @@ class DnsRecordWriteback
         ];
         if ($excludeId !== null) {
             $where['id'] = ['<>', $excludeId];
+        }
+
+        // TXT is structurally multi-valued at a single name (SPF, a site-
+        // verification string, a DKIM policy, … routinely coexist there
+        // with different content) — same design bug as NS/MX (§ 2026-08-03),
+        // except TXT genuinely is in WRITABLE_TYPES, so it can't just be
+        // excluded outright. Narrow the check to content instead: only an
+        // exact type+name+data repeat is a real duplicate; RFC 7208's
+        // "one SPF per name" rule is enforced separately by
+        // `spfDuplicateError()`, which already does its own content match.
+        if ($data !== null && self::typeName($type_id) === 'TXT') {
+            $where['data'] = $data;
         }
 
         if (countElementsInTable(DomainRecord::getTable(), $where) === 0) {
