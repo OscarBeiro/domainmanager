@@ -41,6 +41,14 @@
             "source": "https://dinahosting.com/ayuda/cuales-son-los-dns-de-dinahosting/ (ns.dinahosting.com, ns2-ns4.dinahosting.com); gestiondecuenta.com hostnames (ns/ns2/ns3/ns4.gestiondecuenta.com) confirmed live via real Dinahosting-hosted domain (2026-07-27) — Dinahosting's own customer control panel is branded/hosted at gestiondecuenta.com and it delegates NS there for at least some accounts, undocumented in the help article above."
         },
         {
+            "name": "Ascio",
+            "patterns": [
+                "*.ascio.com",
+                "*.ascio.net"
+            ],
+            "source": "Ascio is a wholesale registrar platform (https://www.ascio.com/). Multiple reseller brands delegate to Ascio's nameservers, including Ubilibet; NS-based detection therefore cannot identify resellers on Ascio — it can only identify Ascio as the DNS platform. Confirmed live via `dig NS` against ubilibet.com (ns1-ns4.ascio.com), and verified ns1-ns4.ascio.com and ns1-ns4.ascio.net all resolve. Detection-only: no driver implemented."
+        },
+        {
             "name": "AWS Route 53",
             "patterns": [
                 "ns-*.awsdns-*.com",
@@ -136,6 +144,13 @@
                 "robotns3.second-ns.com"
             ],
             "source": "https://docs.hetzner.com/dns-console/dns/general/authoritative-name-servers/ (DNS Console: hydrogen/oxygen.ns.hetzner.com + helium.ns.hetzner.de; Robot secondary DNS: ns1.first-ns.de, robotns2.second-ns.de, robotns3.second-ns.com)"
+        },
+        {
+            "name": "Hostalia",
+            "patterns": [
+                "ns[0-9]*.hostalia.com"
+            ],
+            "source": "Hostalia is a Spanish hosting/registrar service running on Acens/Telefónica infrastructure. Confirmed live via `dig NS` against hostalia.com (ns.hostalia.com, ns2.hostalia.com) and verification that ns1-ns5.hostalia.com all resolve in the 82.194.x range. Per §4 analysis, Hostalia is a single operator (not a reseller platform like Ascio), so the NS-based detection correctly identifies Hostalia. Detection-only: no driver implemented."
         },
         {
             "name": "Squarespace",

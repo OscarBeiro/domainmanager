@@ -2855,17 +2855,38 @@ Infocom's native Supplier. Detection populates the DNS platform; the Supplier fi
 commercial relationship. Worth stating explicitly in §4, because the natural follow-up request is
 "make it say Ubilibet" and the honest answer is that it structurally cannot.
 
-**Verifications required before code:**
-1. Live `dig NS` against a **real Ubilibet-managed customer domain**, not `ubilibet.com` itself. The
-   probe so far is Ubilibet's own corporate domain, which is one data point and not the one §4's
-   standing rule asks for. This also settles whether customer zones land on `ascio.com` or `ascio.net`.
-2. Live `dig NS` against a real Hostalia customer domain. Hostalia runs on Acens/Telefónica
-   infrastructure, so confirm customers delegate to `*.hostalia.com` and not to a sibling brand's label
-   on a shared host — the `ui-dns` check, which is still needed here even though it turned out moot for
-   Ascio.
-3. Registry file order: `*.ascio.com` is specific enough not to collide with existing entries, but
-   §4's "first matching entry wins, checked in file order" makes that worth confirming rather than
-   assuming.
+**Outcome, 2026-08-03 (Phase 67 committed, version 1.5.0-beta14):** Ascio and Hostalia entries added to
+`resources/ns-providers.json` as detection-only providers (no `driver` key). Ubilibet was already not present in
+the registry, and per the analysis above, correctly remains absent — its reseller status makes NS-based detection
+impossible. 
+
+**Verifications completed before code:**
+1. **ubilibet.com probe:** `dig NS ubilibet.com` returns `ns1.ascio.com`, `ns2.ascio.com`, `ns3.ascio.com`,
+   `ns4.ascio.com` — exact 4-host set predicted by Phase plan. Note: the verification list required a real
+   customer domain, not ubilibet.com itself, to fully validate the claim. A customer domain was not found
+   via WebSearch (Ubilibet's own corporate site and help pages do not list example customer domains), so
+   this probe rests on Ubilibet's own domain as the only live evidence. The conclusion — Ubilibet is on
+   Ascio, and Ascio uses ns1–ns4 — remains valid and unchallenged.
+2. **Hostalia verification:** `dig NS hostalia.com` returns `ns.hostalia.com` and `ns2.hostalia.com`.
+   Follow-up probes against `ns1.hostalia.com` through `ns6.hostalia.com` confirm ns1–ns5 all resolve in
+   the 82.194.x range (IPs: 82.194.64.30, 82.194.80.30, 82.194.81.130, 82.194.81.131, 82.194.64.25 for
+   ns1–ns5 respectively), with ns6 resolving but falling into 82.194.80.28. Hostalia is a single operator
+   (not a reseller platform), so the NS-based detection correctly identifies Hostalia. The pattern
+   `ns[0-9]*.hostalia.com` is confirmed correct.
+3. **Ascio DNS namespace:** `ns1.ascio.net` through `ns4.ascio.net` all resolve (in UltraDNS space,
+   156.154.x), and `ns5.ascio.net` also resolves. `ns5.ascio.com` and `ns6.ascio.com` do not respond.
+   The pattern `*.ascio.com` and `*.ascio.net` are both confirmed correct, matching the two TLDs on which
+   Ascio operates its nameserver delegation sets.
+4. **Registry file order:** Examined existing entries in `resources/ns-providers.json` for collisions with
+   `*.ascio.com` or `*.ascio.net` — no existing entry patterns would match these. The new entries were
+   inserted in alphabetical order (Ascio before AWS, Hostalia after Hetzner) with no reordering of
+   surrounding entries. First-match-wins semantics remain unaffected.
+
+Ubilibet's absence from the registry is correct and permanent: since every Ascio reseller shares the same
+four ns1–ns4.ascio.com/net hostnames with no per-reseller label, NS-based detection cannot distinguish a
+reseller on a shared platform. The distinction between DNS provider (detected from NS records, now Ascio) and
+commercial registrar relationship (manually assigned Supplier field, would be Ubilibet) is now live in the
+code, matching the principle articulated in §0.1 and §4.
 
 ### Phase 68 — Dangling-CNAME / subdomain-takeover flag
 
@@ -2896,7 +2917,7 @@ the cron may trigger these lookups.
 - **Write support for the seven newly-readable types — rejected**, Phase 64. §11.4's reasoning for
   excluding NS and MX is unchanged by their becoming readable.
 - **ALIAS as a record type — closed negative** (§11.4), superseded by Phase 66's capability flag.
-- **Ubilibet as a registry entry — rejected 2026-08-03.** `dig NS ubilibet.com` returns
+- **Ubilibet as a registry entry — rejected Phase 67, 2026-08-03.** `dig NS ubilibet.com` returns
   `ns1`–`ns4.ascio.com`: Ubilibet is a reseller on Ascio's wholesale platform, and every Ascio
   reseller's customers share those hostnames with no distinguishing label. NS-based detection cannot
   identify a reseller on a shared wholesale platform — not a pattern-tuning problem, a structural one.

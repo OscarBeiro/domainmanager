@@ -11,6 +11,7 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 
 ## [Unreleased]
 ### Features
+- Ascio and Hostalia are now detected as DNS providers when a domain's nameservers resolve to them. Ubilibet, which runs as a reseller on Ascio's wholesale platform, is not separately detectable via nameserver records (and correctly identifies only the underlying DNS platform, Ascio, not the reseller). API integration not yet supported for either; detection offers visibility only.
 - Synchronization now refuses to run (and leaves the domain's records untouched) if it would move an unusually large number of DNS records to the trash bin at once — guards against a mis-scoped credential or a provider glitch being mistaken for a genuinely emptied zone. Configurable on the Setup page; an explicit confirmation lets you force the sync through if the emptied zone is expected.
 - Audited all plugin logging for accidental credential leaks (none found) and hardened the log scrubber further as a precaution.
 - Added a "Read-only mode" setting (Setup > General > Domain Manager) that, when enabled, refuses to push any DNS record change (create/update/delete/restore) to any provider until turned back off. Read/sync are unaffected.
