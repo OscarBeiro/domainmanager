@@ -123,6 +123,14 @@ class DnsRecordWriteback
         // `_domainmanager_sync` check below so it also catches a duplicate
         // a reconciler sync would otherwise mirror in locally.
         //
+        // Scoped to WRITABLE_TYPES only (§ design bug, 2026-08-03: NS and MX
+        // are structurally multi-valued — a zone normally has several NS
+        // records and often several MX records at the same name — and
+        // neither type is ever pushed by this plugin, so this data-integrity
+        // rule has nothing to protect there. Applying it unscoped rejected
+        // every NS/MX record past the first one RecordReconciler tried to
+        // mirror in at a given name, on every sync).
+        //
         // `$rawName` alone is NOT what's compared: every stored
         // DomainRecord.name is an absolute FQDN (§ absoluteRecordName()),
         // while `$item->input['name']` here is the raw, still-unqualified
@@ -133,13 +141,16 @@ class DnsRecordWriteback
         // driver-specific check, with a less helpful message). Qualify
         // against the domain's own zone name first, same as the actual
         // push below does.
-        $checkDomain = new Domain();
-        if ($domains_id > 0 && $checkDomain->getFromDB($domains_id) && DomainState::getForDomain($domains_id) !== null) {
-            $qualifiedName = self::absoluteRecordName($rawName, $checkDomain->fields['name']);
-            $duplicateError = self::duplicateNameError($domains_id, $type_id, $qualifiedName);
-            if ($duplicateError !== null) {
-                self::abort($item, $duplicateError);
-                return;
+        $checkType = self::typeName($type_id);
+        if ($checkType !== null && in_array($checkType, self::WRITABLE_TYPES, true)) {
+            $checkDomain = new Domain();
+            if ($domains_id > 0 && $checkDomain->getFromDB($domains_id) && DomainState::getForDomain($domains_id) !== null) {
+                $qualifiedName = self::absoluteRecordName($rawName, $checkDomain->fields['name']);
+                $duplicateError = self::duplicateNameError($domains_id, $type_id, $qualifiedName);
+                if ($duplicateError !== null) {
+                    self::abort($item, $duplicateError);
+                    return;
+                }
             }
         }
 
@@ -369,14 +380,17 @@ class DnsRecordWriteback
         }
 
         // Plugin-wide, driver-independent duplicate guard — see onPreAdd()'s
-        // identical check for the full rationale. Effective values fall
-        // back to the record's current stored fields for whichever of
-        // domain/type/name isn't part of this particular update, since a
-        // typical data/ttl-only update touches neither.
+        // identical check for the full rationale, including why it's scoped
+        // to WRITABLE_TYPES only (NS/MX are structurally multi-valued and
+        // never pushed by this plugin). Effective values fall back to the
+        // record's current stored fields for whichever of domain/type/name
+        // isn't part of this particular update, since a typical data/ttl-
+        // only update touches neither.
         $effectiveDomainsId = (int) ($item->input['domains_id'] ?? $item->fields['domains_id']);
         $effectiveTypeId    = (int) ($item->input['domainrecordtypes_id'] ?? $item->fields['domainrecordtypes_id']);
         $effectiveName      = trim((string) ($item->input['name'] ?? $item->fields['name']));
-        if (DomainState::getForDomain($effectiveDomainsId) !== null) {
+        $effectiveType      = self::typeName($effectiveTypeId);
+        if ($effectiveType !== null && in_array($effectiveType, self::WRITABLE_TYPES, true) && DomainState::getForDomain($effectiveDomainsId) !== null) {
             $duplicateError = self::duplicateNameError($effectiveDomainsId, $effectiveTypeId, $effectiveName, (int) $item->getID());
             if ($duplicateError !== null) {
                 self::abort($item, $duplicateError);
@@ -751,14 +765,17 @@ class DnsRecordWriteback
     public static function onPreRestore(DomainRecord $item): bool
     {
         // Plugin-wide, driver-independent duplicate guard — see onPreAdd()'s
-        // identical check for the full rationale. Checked before the
+        // identical check for the full rationale, including why it's scoped
+        // to WRITABLE_TYPES only (NS/MX are structurally multi-valued and
+        // never pushed by this plugin). Checked before the
         // `_domainmanager_sync` bail below too: restoring a trashed record
         // whose type+name another active record already claims (e.g. a
         // second copy that was left active while this one was trashed)
         // would recreate exactly the duplicate situation this guard exists
         // to prevent.
-        $domains_id = (int) $item->fields['domains_id'];
-        if (DomainState::getForDomain($domains_id) !== null) {
+        $domains_id  = (int) $item->fields['domains_id'];
+        $restoreType = self::typeName((int) $item->fields['domainrecordtypes_id']);
+        if ($restoreType !== null && in_array($restoreType, self::WRITABLE_TYPES, true) && DomainState::getForDomain($domains_id) !== null) {
             $duplicateError = self::duplicateNameError(
                 $domains_id,
                 (int) $item->fields['domainrecordtypes_id'],
@@ -1147,7 +1164,7 @@ class DnsRecordWriteback
             $provider,
             $outcome,
             $detail,
-        )
+        ),
         ]);
     }
 

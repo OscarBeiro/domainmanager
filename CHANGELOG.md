@@ -21,6 +21,7 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 - Imported MX records are now stored in the exact same form GLPI's own record form would produce (a trailing dot on the mail server name), so a plugin-synced MX record no longer looks different from a hand-entered one with the same value.
 
 ### Bugs
+- Fixed automatic synchronization repeatedly reporting NS and MX records as blocked duplicates, even though a domain normally has several of each.
 - Fixed the wording of the message shown when Domain Manager blocks a duplicate DNS record ("A A record named..." for A records).
 - Fixed a multi-entity install where a profile's per-record-type DNS write permission (e.g. TXT), granted for one entity, was wrongly honored for every entity's domains instead of only the entity it was granted for.
 
