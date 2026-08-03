@@ -16,6 +16,8 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 - Added a "Read-only mode" setting (Setup > General > Domain Manager) that, when enabled, refuses to push any DNS record change (create/update/delete/restore) to any provider until turned back off. Read/sync are unaffected.
 - A failed attempt to push a DNS record change (create/update/delete/restore/proxy toggle) to a provider now also shows up on the domain's Historical tab, alongside successful ones.
 - Creating or editing an A, AAAA, CNAME or TXT record now checks the value before pushing it to the provider: clearly invalid addresses/hostnames/TXT content are blocked with an explanation, an IPv6 address is normalized to one consistent form, and a CNAME record blocks (or is blocked by) any other record type already at the same name. Risky-but-legal cases (private-range addresses, an overloaded SPF record, a misplaced DMARC/DKIM record) are flagged with a warning instead of being blocked outright.
+- A CNAME record at the zone apex is now allowed when the configured DNS provider supports it (currently Cloudflare only); other providers still refuse it as before.
+- Imported MX records are now stored in the exact same form GLPI's own record form would produce (a trailing dot on the mail server name), so a plugin-synced MX record no longer looks different from a hand-entered one with the same value.
 
 ### Bugs
 - Fixed the wording of the message shown when Domain Manager blocks a duplicate DNS record ("A A record named..." for A records).

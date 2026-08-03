@@ -37,6 +37,7 @@ use DomainRecordType;
 use DomainType;
 use GlpiPlugin\Domainmanager\Config\Config;
 use GlpiPlugin\Domainmanager\Driver\DinahostingDriver;
+use GlpiPlugin\Domainmanager\Dto\ZoneRecord;
 use Migration;
 use ProfileRight;
 
@@ -83,6 +84,7 @@ class Installer
         self::dropRecordConflictsTable($migration);
         self::backfillManagedFieldLocks();
         self::renormalizeDinahostingRemoteIds();
+        self::renormalizeMxTrailingDot();
 
         $migration->executeMigration();
 
@@ -1096,6 +1098,51 @@ class Installer
                 $DB->update(
                     'glpi_plugin_domainmanager_records',
                     ['remote_id' => $renormalized],
+                    ['id' => (int) $row['id']],
+                );
+            }
+        }
+    }
+
+    /**
+     * Phase 63 (ARCHITECTURE.md §15.5): every driver's `extractContent()` now
+     * runs an imported MX's `data` through `ZoneRecord::normalizeMxContent()`
+     * (guarantees the RFC-canonical trailing dot on the target), but that
+     * only takes effect for a record imported/re-synced *after* this
+     * change — an MX row already stored from an earlier sync stays whatever
+     * it was, potentially differing from a hand-created MX by exactly the
+     * trailing dot core's own form would add, which is the very
+     * `record_hash` churn §11.5 exists to prevent. One-time, idempotent
+     * (`normalizeMxContent()` is a no-op wherever the dot is already
+     * present), same pattern as `renormalizeDinahostingRemoteIds()` above —
+     * runs on every install/update, cheap to re-run, never touches a
+     * genuinely-already-correct row.
+     *
+     * @return void
+     */
+    private static function renormalizeMxTrailingDot(): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $typeObj = new DomainRecordType();
+        if (!$typeObj->getFromDBByCrit(['name' => 'MX'])) {
+            return;
+        }
+        $mxTypeId = (int) $typeObj->fields['id'];
+
+        $iterator = $DB->request([
+            'SELECT' => ['id', 'data'],
+            'FROM'   => 'glpi_domainrecords',
+            'WHERE'  => ['domainrecordtypes_id' => $mxTypeId],
+        ]);
+
+        foreach ($iterator as $row) {
+            $normalized = ZoneRecord::normalizeMxContent((string) $row['data']);
+            if ($normalized !== $row['data']) {
+                $DB->update(
+                    'glpi_domainrecords',
+                    ['data' => $normalized],
                     ['id' => (int) $row['id']],
                 );
             }

@@ -134,23 +134,31 @@ class RecordValidator
      * (every other validator here is a pure function) — see
      * `DnsRecordWriteback::cnameCoexistenceError()`.
      *
-     * Apex CNAME (`$name === $zoneName`) is refused unless the configured
-     * driver declares support for it — no driver does yet (Phase 66), so
-     * this always blocks it for now.
+     * Apex CNAME (`$name === $zoneName`) is refused unless the caller says
+     * the configured driver declares support for it — Phase 66
+     * (ARCHITECTURE.md §15.5) resolved this to a driver capability flag,
+     * `DriverRegistry::supportsApexCname()`, rather than a new record type:
+     * Cloudflare flattens a CNAME at the zone apex (its own documented
+     * "CNAME flattening"), IONOS's apex-alias behaviour was already
+     * evaluated and closed negative on evidence (§11.4), and Dinahosting
+     * has no documented apex-alias support either.
      *
      * @param  string $name absolute FQDN this record would be stored at
      * @param  string $target raw CNAME target as typed/imported
      * @param  string $zoneName the domain's own absolute zone name
+     * @param  bool   $apexAllowed whether the configured driver declares
+     *                            apex-CNAME support (default false — safe
+     *                            for a caller that hasn't resolved a driver)
      * @return array{value: string, error: ?string, warning: ?string}
      */
-    public static function validateCnameTarget(string $name, string $target, string $zoneName): array
+    public static function validateCnameTarget(string $name, string $target, string $zoneName, bool $apexAllowed = false): array
     {
         $target = trim($target);
         $bareTarget = rtrim($target, '.');
 
-        if (strcasecmp($name, $zoneName) === 0) {
+        if (!$apexAllowed && strcasecmp($name, $zoneName) === 0) {
             return self::result($target, __(
-                'A CNAME record is not allowed at the zone apex; no configured provider supports it yet',
+                'A CNAME record is not allowed at the zone apex; the configured provider does not support it',
                 'domainmanager',
             ), null);
         }

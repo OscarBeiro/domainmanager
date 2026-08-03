@@ -112,6 +112,43 @@ final class ZoneRecord
     }
 
     /**
+     * Phase 63 (ARCHITECTURE.md §15.5): core's canonical `data` shape for MX
+     * is `"<priority> <target>."` — a space-joined pair with the target
+     * carrying a trailing dot (`is_fqdn`, per §11.5/§15.5's own table). All
+     * three drivers already join priority and target with a single space in
+     * that order, matching the shape; what wasn't confirmed per-provider is
+     * whether the target itself always arrives with the trailing dot core's
+     * own hand-entry form would add. Rather than guess per provider (no live
+     * account access for this phase), this normalizes it unconditionally —
+     * a no-op if the dot is already there, added if it's missing — so every
+     * driver's imported MX ends up in exactly the form a hand-created record
+     * through GLPI's own form would produce, which is what stops
+     * `record_hash` from churning against a manually entered duplicate.
+     *
+     * Content with no space (malformed/priority-less) is returned unchanged
+     * rather than guessed at.
+     *
+     * @param  string $content e.g. "10 mail.example.com" or "10 mail.example.com."
+     * @return string
+     */
+    public static function normalizeMxContent(string $content): string
+    {
+        $spacePos = strpos($content, ' ');
+        if ($spacePos === false) {
+            return $content;
+        }
+
+        $priority = substr($content, 0, $spacePos);
+        $target   = substr($content, $spacePos + 1);
+
+        if ($target === '' || str_ends_with($target, '.')) {
+            return $content;
+        }
+
+        return $priority . ' ' . $target . '.';
+    }
+
+    /**
      * @param  string $value
      * @param  int    $max_length
      * @param  string $what

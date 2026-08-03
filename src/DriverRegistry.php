@@ -190,6 +190,28 @@ class DriverRegistry
     }
 
     /**
+     * Phase 66 (ARCHITECTURE.md §15.5): whether the driver's provider
+     * supports a CNAME at the zone apex — the real shape of the old
+     * ALIAS/ANAME request, resolved as a capability flag rather than a new
+     * record type, since no driver needs one to express it.
+     *
+     * - **Cloudflare: true**, per Cloudflare's own documented "CNAME
+     *   flattening" at the apex — not independently live-verified against
+     *   this plugin's own account.
+     * - **IONOS: false** — its apex-alias behaviour was already evaluated
+     *   and closed negative on evidence (§11.4); not reopened here.
+     * - **Dinahosting: false** — no documented apex-alias support in its
+     *   own API docs or the reference client.
+     *
+     * @param  string $driver
+     * @return bool
+     */
+    public static function supportsApexCname(string $driver): bool
+    {
+        return $driver === self::DRIVER_CLOUDFLARE;
+    }
+
+    /**
      * The single capability whose result the Check Connection UI surfaces as
      * one combined badge/toast (§3.5, §6.1) — this is a display simplification
      * only, both capabilities are still tested and persisted as before. 'dns'

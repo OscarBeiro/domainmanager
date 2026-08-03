@@ -840,9 +840,9 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
             'A', 'AAAA'   => (string) ($row['ip'] ?? ''),
             'CNAME', 'NS' => (string) ($row['destinationHostname'] ?? ''),
             'TXT'         => (string) ($row['text'] ?? ''),
-            'MX'          => trim(
+            'MX'          => ZoneRecord::normalizeMxContent(trim(
                 ((string) ($row['priority'] ?? '')) . ' ' . (string) ($row['destinationHostname'] ?? $row['address'] ?? ''),
-            ),
+            )),
             default => (string) (
                 $row['destinationHostname']
                 ?? $row['destinationUrl']

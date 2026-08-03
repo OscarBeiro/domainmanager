@@ -441,7 +441,7 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
                 // `ZoneRecord::TYPES` filter above would simply never match one.
                 $content = (string) ($row['content'] ?? '');
                 if ($type === 'MX' && isset($row['priority'])) {
-                    $content = (int) $row['priority'] . ' ' . $content;
+                    $content = ZoneRecord::normalizeMxContent((int) $row['priority'] . ' ' . $content);
                 }
 
                 // `proxiable` is Cloudflare's own live per-record answer to

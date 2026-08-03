@@ -207,7 +207,7 @@ class DnsRecordWriteback
 
         $zoneName = $domain->fields['name'];
         $absoluteName = self::absoluteRecordName($name, $zoneName);
-        $typedResult = self::runTypeValidators($type, $absoluteName, $data, $zoneName, $domains_id);
+        $typedResult = self::runTypeValidators($type, $absoluteName, $data, $zoneName, $domains_id, null, self::configuredDriverName($state));
         if ($typedResult['error'] !== null) {
             self::abort($item, $typedResult['error']);
             return;
@@ -455,7 +455,7 @@ class DnsRecordWriteback
             return true;
         }
 
-        $typedResult = self::runTypeValidators($type, $name, $data, $domain->fields['name'], $domains_id, (int) $item->getID());
+        $typedResult = self::runTypeValidators($type, $name, $data, $domain->fields['name'], $domains_id, (int) $item->getID(), self::configuredDriverName($state));
         if ($typedResult['error'] !== null) {
             self::abort($item, $typedResult['error']);
             return true;
@@ -1070,13 +1070,16 @@ class DnsRecordWriteback
      * `WRITABLE_TYPES` already gates this method to only ever see `A`,
      * `AAAA`, `CNAME` or `TXT`.
      *
-     * @param  string   $type       e.g. 'A', 'AAAA', 'CNAME', 'TXT'
-     * @param  string    $name      already-absolute owner name
-     * @param  string    $data      raw data as submitted (already
-     *                              sanitize/floor-passed by the caller)
-     * @param  string    $zoneName  the domain's own absolute zone name
-     * @param  int       $domains_id
-     * @param  int|null  $excludeId the record itself, on an update
+     * @param  string      $type       e.g. 'A', 'AAAA', 'CNAME', 'TXT'
+     * @param  string      $name       already-absolute owner name
+     * @param  string      $data       raw data as submitted (already
+     *                                 sanitize/floor-passed by the caller)
+     * @param  string      $zoneName   the domain's own absolute zone name
+     * @param  int         $domains_id
+     * @param  int|null    $excludeId  the record itself, on an update
+     * @param  string|null $driverName configured driver key (Phase 66's
+     *                                 apex-CNAME capability check; null is
+     *                                 treated as "no capability")
      * @return array{value: string, error: ?string, warning: ?string}
      */
     private static function runTypeValidators(
@@ -1086,6 +1089,7 @@ class DnsRecordWriteback
         string $zoneName,
         int $domains_id,
         ?int $excludeId = null,
+        ?string $driverName = null,
     ): array {
         switch ($type) {
             case 'A':
@@ -1093,7 +1097,8 @@ class DnsRecordWriteback
                 return RecordValidator::validateAddress($type, $data);
 
             case 'CNAME':
-                $result = RecordValidator::validateCnameTarget($name, $data, $zoneName);
+                $apexAllowed = $driverName !== null && DriverRegistry::supportsApexCname($driverName);
+                $result = RecordValidator::validateCnameTarget($name, $data, $zoneName, $apexAllowed);
                 if ($result['error'] === null) {
                     $result['error'] = self::cnameCoexistenceError($domains_id, $type, $name, $excludeId);
                 }

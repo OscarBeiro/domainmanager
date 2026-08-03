@@ -477,7 +477,7 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Dns
         }
 
         if ($type === 'MX') {
-            $content = ((int) ($row['prio'] ?? 0)) . ' ' . $content;
+            $content = ZoneRecord::normalizeMxContent(((int) ($row['prio'] ?? 0)) . ' ' . $content);
         }
 
         return $content;

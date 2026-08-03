@@ -2753,6 +2753,18 @@ differ by a few characters, which is exactly the `record_hash` churn §11.5 was 
 If so, this phase carries a one-time renormalization migration, same idempotent pattern as
 `Installer::renormalizeDinahostingRemoteIds()`.
 
+**Implemented 2026-08-03.** The verification's premise held: none of the three drivers' `extractContent()`
+guaranteed the target's trailing dot before this change (each already joined `"<priority> <target>"`
+in the right order and with the right separator, matching the rest of the canonical shape — only the
+`is_fqdn` dot on the target was ever missing). Rather than resolve the question per provider (no live
+account access this phase either), added `ZoneRecord::normalizeMxContent()` — a pure, idempotent
+normalizer applied uniformly by all three drivers' MX extraction, so the answer no longer needs to be
+provider-specific: whatever a provider returns, the stored `data` ends up in exactly the form core's
+own hand-entry form would produce. `Installer::renormalizeMxTrailingDot()` is the one-time migration
+for rows already stored from before this change, same idempotent on-every-install pattern as
+`renormalizeDinahostingRemoteIds()` — re-running it is always a no-op once every row is normalized.
+SRV/CAA/SOA remain outside this feature's scope (§11.5), unchanged.
+
 ### Phase 64 — Widen the read whitelist to all 11 types
 
 Import whatever the provider returns, per type, skipping gracefully what it does not.
@@ -2762,12 +2774,27 @@ The write scope stays at A/AAAA/CNAME/TXT. §11.4's invariant — write ⊆ read
 fact strengthened, since read is now the full set. NS and MX remain deliberately non-writable for
 the reasons recorded there; widening read does not reopen that.
 
+**Already done, predating this phase number.** `ZoneRecord::TYPES`/`Installer::RECORD_TYPE_NAMES`
+already list all 11 GLPI types (confirmed live in code, 2026-08-03) — this was completed post-1.2.0
+and is the same work the resolved-items table earlier in this doc ("Read-scope expansion to all 11
+GLPI types") already records. No further code needed; this phase number exists only because Group D
+was drafted before that cross-reference was written down here.
+
 ### Phase 65 — SOA / PTR / ALIAS reality check
 
 Expected outcome: mostly absent. SOA is zone metadata that most providers do not return in a records
 list; PTR lives in reverse zones these accounts do not own; ALIAS is §11.4's documented dead end on
 IONOS Hosting. Phase 64 imports them if they arrive. This phase records per provider what actually
 arrives, so the gap is documented rather than looking like a defect later. No write support, ever.
+
+**Already done, predating this phase number.** The same resolved-items entry referenced above already
+covers this exact ground, doc-verified (not live) Phase 50, 2026-08-03: IONOS's flat-`content`
+conclusion re-checked and holding; Cloudflare's SRV/CAA structured-plus-serialized shape confirmed
+against its current API docs, SOA confirmed not exposed via Cloudflare's records endpoint at all;
+Dinahosting has no documented structured shape for SRV/SOA/CAA and its extraction's generic fallback
+is the correct best-effort handling. No live-account confirmation of what actually arrives in a real
+zone for any of the three — that half of this phase's stated goal remains open, same caveat class as
+several other "no live access" items in this document.
 
 ### Phase 66 — Apex-CNAME capability flag (the real shape of the ALIAS request)
 
@@ -2778,6 +2805,17 @@ apex-CNAME support, and Phase 60's apex refusal defers to it. No new itemtype, n
 
 **Verifications required before code:** whether Cloudflare's DNS records API accepts a CNAME at the
 zone apex and flattens it as documented; whether Dinahosting supports any apex-alias behaviour.
+
+**Implemented 2026-08-03 (documentation-sourced, not live-verified).** `DriverRegistry::
+supportsApexCname()` is the capability flag — `true` for Cloudflare only, per its own documented
+CNAME-flattening behaviour; `false` for IONOS (§11.4's existing negative finding, not reopened) and
+Dinahosting (no documented apex-alias support). `RecordValidator::validateCnameTarget()` gained an
+`$apexAllowed` parameter (default `false`, so any caller that hasn't resolved a driver still refuses
+apex CNAME, same as before this phase); `DnsRecordWriteback::runTypeValidators()` resolves it from the
+domain's configured driver and threads it through. Neither of this phase's two stated verifications
+(a live Cloudflare apex-CNAME write, or Dinahosting's own apex-alias behaviour) was actually run — no
+live account access this phase — so the Cloudflare `true` value rests on public documentation only,
+not this plugin's own confirmed behaviour against a real zone.
 
 ---
 
