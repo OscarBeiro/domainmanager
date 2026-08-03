@@ -85,6 +85,7 @@ class Installer
         self::backfillManagedFieldLocks();
         self::renormalizeDinahostingRemoteIds();
         self::renormalizeMxTrailingDot();
+        self::clearRdapEnrichmentComment();
 
         $migration->executeMigration();
 
@@ -1150,6 +1151,36 @@ class Installer
     }
 
     /**
+     * Phase 69: `registerCronTasks()` used to pre-fill the RdapEnrichment
+     * task's `comment` field with this plugin's own fixed description —
+     * that field is the admin's free-text note (Setup > Automatic actions),
+     * not this plugin's to write into; the actual fixed description is
+     * `Cron::cronInfo()`'s 'description' entry, shown separately and
+     * already correct. One-time, idempotent: only clears the comment if it
+     * still holds exactly the old pre-filled text, so an admin's own note
+     * (even one that happens to start the same way) is never touched.
+     *
+     * @return void
+     */
+    private static function clearRdapEnrichmentComment(): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $oldComment = __('Fill registrar-reported gaps (dates, lock/DNSSEC status, pending flags) from RDAP. Processes one domain per execution, gated by a daily per-domain check limit, to avoid overloading the RDAP API', 'domainmanager');
+
+        $DB->update(
+            CronTask::getTable(),
+            ['comment' => ''],
+            [
+                'itemtype' => Cron::class,
+                'name'     => 'RdapEnrichment',
+                'comment'  => $oldComment,
+            ],
+        );
+    }
+
+    /**
      * Register the daily sync automatic action (idempotent, tunable in Setup > Automatic actions)
      *
      * @return void
@@ -1181,7 +1212,10 @@ class Installer
             [
                 'state'         => CronTask::STATE_WAITING,
                 'logs_lifetime' => 30,
-                'comment'       => __('Fill registrar-reported gaps (dates, lock/DNSSEC status, pending flags) from RDAP. Processes one domain per execution, gated by a daily per-domain check limit, to avoid overloading the RDAP API', 'domainmanager'),
+                // No 'comment' here — that field is the admin's own free-text
+                // note (Setup > Automatic actions), not this plugin's to
+                // pre-fill. The fixed, non-editable description is
+                // Cron::cronInfo()'s 'description' entry above.
             ],
         );
     }

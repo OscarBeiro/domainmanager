@@ -21,6 +21,7 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 - Imported MX records are now stored in the exact same form GLPI's own record form would produce (a trailing dot on the mail server name), so a plugin-synced MX record no longer looks different from a hand-entered one with the same value.
 
 ### Bugs
+- The RdapEnrichment automatic action no longer pre-fills its own description into the "Comments" field on Setup > Automatic actions — that field is now free for you to use for your own notes, as it should be. Existing installs have their old auto-filled comment cleared automatically, unless you've already edited it yourself.
 - Fixed creating or syncing a second TXT record at the same name (e.g. SPF alongside a site-verification string) being wrongly blocked as a duplicate, even when their content was different.
 - Fixed automatic synchronization repeatedly reporting NS and MX records as blocked duplicates, even though a domain normally has several of each.
 - Fixed the wording of the message shown when Domain Manager blocks a duplicate DNS record ("A A record named..." for A records).
