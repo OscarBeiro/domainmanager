@@ -16,7 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Entries are grouped into **Features** (new capability, UI/UX change, refactor, doc/config
 change) and **Bugs** (something that was actually broken, fixed) — one line each.
 
-## [Unreleased] (1.4.2-beta11)
+## [Unreleased] (1.5.0-beta1)
+### Bugs
+- `DnsRecordWriteback::duplicateNameError()`'s message read "A %1$s record named..." — for type A specifically, that's "A A record named...", an awkward double-article. Reworded to "A record of type %1$s named...". Verified live (per explicit user request to confirm this guard actually blocks and warns on a real duplicate, not just a synthetic unit check): attempting to add a 2nd "demo" A record on dev.gal, where an active one already exists, returned `add() === false` and queued the session message `[Domain Manager] A record of type A named "demo.dev.gal" already exists for this domain; Domain Manager does not allow duplicate records` — confirming the plugin-wide guard added in 1.4.2 already satisfies "block in advance, or at least warn" for genuine duplicates (an earlier same-session check against a *trashed* record found nothing, which is correct: the guard only compares against active, non-trashed rows).
+
+## [1.4.2] - 2026-08-03
 ### Features
 - `domainrecord_edit_panel.html.twig` no longer asks "This updates the record live at the DNS provider. Continue?" before a plain Save on a managed DNS record (per explicit user request) — only the delete/purge confirmation stays, plus GLPI's own native confirmation on restore.
 

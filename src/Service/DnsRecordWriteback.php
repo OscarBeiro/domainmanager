@@ -863,7 +863,10 @@ class DnsRecordWriteback
         }
 
         return sprintf(
-            __('A %1$s record named "%2$s" already exists for this domain; Domain Manager does not allow duplicate records', 'domainmanager'),
+            // Deliberately not "A %1$s record named..." - reads as "A A
+            // record" for type A (found live 2026-08-03 while verifying
+            // this guard against a real duplicate).
+            __('A record of type %1$s named "%2$s" already exists for this domain; Domain Manager does not allow duplicate records', 'domainmanager'),
             self::typeName($type_id) ?? (string) $type_id,
             $name,
         );

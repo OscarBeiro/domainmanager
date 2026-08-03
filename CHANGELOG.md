@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Entries are grouped into **Features** and **Bugs**, one line each.
 
 ## [Unreleased]
+### Bugs
+- Fixed the wording of the message shown when Domain Manager blocks a duplicate DNS record ("A A record named..." for A records).
+
+## [1.4.2] - 2026-08-03
 ### Features
 - Domain Manager now refuses to create or restore a DNS record that would duplicate an existing one (same type and name) on any managed domain, regardless of which DNS provider is configured, with a clear message explaining why.
 - Saving a change to a managed DNS record no longer asks for confirmation first; deleting/purging one still does.
