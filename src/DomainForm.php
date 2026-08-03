@@ -35,6 +35,7 @@ use Domain;
 use DomainRecord;
 use DomainRecordType;
 use Glpi\Application\View\TemplateRenderer;
+use GlpiPlugin\Domainmanager\Config\Config;
 use GlpiPlugin\Domainmanager\Service\DnsRecordWriteback;
 use GlpiPlugin\Domainmanager\Service\DomainStatusResolver;
 use GlpiPlugin\Domainmanager\Service\NsResolver;
@@ -269,9 +270,15 @@ class DomainForm
             : null;
         $dns_editable = $state !== null && DnsRecordWriteback::isDomainDnsEditable($state);
         $is_writable_type = $type !== null && in_array($type, DnsRecordWriteback::writableTypes(), true);
+        // §15.3 Phase 53: the global write kill switch overrides per-type
+        // rights everywhere else in this class, so the controls it hides
+        // must reflect it too — otherwise a Save/Delete would appear
+        // enabled only to be refused server-side by
+        // DnsRecordWriteback::readOnlyModeError().
+        $read_only = Config::isReadOnlyMode();
 
-        $can_update = $dns_editable && $is_writable_type && DnsRecordWriteback::hasTypeRight($type, UPDATE);
-        $can_delete = $dns_editable && $is_writable_type && DnsRecordWriteback::hasTypeRight($type, DELETE);
+        $can_update = $dns_editable && $is_writable_type && !$read_only && DnsRecordWriteback::hasTypeRight($type, UPDATE, $domains_id);
+        $can_delete = $dns_editable && $is_writable_type && !$read_only && DnsRecordWriteback::hasTypeRight($type, DELETE, $domains_id);
         // Purge (emptying the trash) is gated purely on the per-type PURGE
         // bit, independent of $dns_editable/$is_writable_type — mirrors
         // LockEnforcer::blockRecordRemoval()'s own unconditional check, so
@@ -290,11 +297,16 @@ class DomainForm
         $current_proxied = $imported !== null && $imported->fields['is_proxied'] !== null
             ? (bool) $imported->fields['is_proxied']
             : null;
+        // Distinct from the generic "locked_fields" notice below: this
+        // record would otherwise be writable (right + type both check out)
+        // — the kill switch, not a rights gap, is the reason.
+        $read_only_locked = $read_only && $dns_editable && $is_writable_type;
 
         TemplateRenderer::getInstance()->display('@domainmanager/domainrecord_edit_panel.html.twig', [
-            'can_update'       => $can_update,
-            'can_delete'       => $can_delete,
-            'can_purge'        => $can_purge,
+            'can_update'        => $can_update,
+            'can_delete'        => $can_delete,
+            'can_purge'         => $can_purge,
+            'read_only_locked'  => $read_only_locked,
             'can_toggle_proxy' => $can_toggle_proxy,
             'current_proxied'  => $current_proxied,
             'display_name'  => $displayName,
@@ -435,7 +447,10 @@ class DomainForm
             return;
         }
 
-        $creatable_types = DnsRecordWriteback::creatableTypesForDomain($domains_id);
+        // §15.3 Phase 53: independent of per-type CREATE rights — see
+        // injectDomainRecord()'s identical rationale.
+        $read_only = Config::isReadOnlyMode();
+        $creatable_types = $read_only ? [] : DnsRecordWriteback::creatableTypesForDomain($domains_id);
 
         $type_options = [];
         foreach ($creatable_types as $name) {
@@ -453,6 +468,7 @@ class DomainForm
         TemplateRenderer::getInstance()->display('@domainmanager/domainrecord_add_panel.html.twig', [
             'domains_id'   => $domains_id,
             'type_options' => $type_options,
+            'read_only'    => $read_only,
             'live_notice'  => $live_notice,
             'add_form_url' => DomainRecord::getFormURLWithID(0),
         ]);

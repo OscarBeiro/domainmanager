@@ -73,6 +73,18 @@ final class Config extends CommonGLPI
         return [
             // 0 = unset ("-----"), same convention as the native dropdown.
             'domaintypes_id' => 0,
+            // §0.10: explicit int, never a raw PHP bool. 0 = writes allowed
+            // (default) — a fresh install must never come up read-only.
+            'read_only_mode' => 0,
+            // ARCHITECTURE.md §15.3 Phase 55: blast-radius guard on
+            // reconciliation. A single sync run is refused (and the domain
+            // left untouched) once it would trash more than this many
+            // records, OR more than blast_radius_max_percent of the
+            // domain's currently-owned records — whichever trips first.
+            // Conservative defaults: a genuinely emptied zone is rare, a
+            // wrongly-scoped credential or truncated upstream page is not.
+            'blast_radius_max_count'   => 20,
+            'blast_radius_max_percent' => 50,
         ];
     }
 
@@ -95,6 +107,74 @@ final class Config extends CommonGLPI
     public static function setDomainTypeId(int $domaintypes_id): void
     {
         CoreConfig::setConfigurationValues(self::CONTEXT, ['domaintypes_id' => $domaintypes_id]);
+    }
+
+    /**
+     * Global write kill switch (ARCHITECTURE.md §15.3 Phase 53): when
+     * enabled, every outbound DNS record mutation is refused, independent of
+     * any per-type write-back right (§11.6) — checked at a single point in
+     * `DnsRecordWriteback` and asserted again in each driver's own writer
+     * methods, so a future call path into a driver can never bypass it.
+     * Deactivating a supplier is not a substitute for this — that also kills
+     * reads/sync, not just writes.
+     *
+     * @return bool
+     */
+    public static function isReadOnlyMode(): bool
+    {
+        return (bool) (int) self::getConfig()['read_only_mode'];
+    }
+
+    public static function setReadOnlyMode(bool $enabled): void
+    {
+        CoreConfig::setConfigurationValues(self::CONTEXT, ['read_only_mode' => $enabled ? 1 : 0]);
+    }
+
+    /**
+     * @return int absolute record count above which the Phase 55 blast-radius
+     *             guard refuses a reconciliation run
+     */
+    public static function getBlastRadiusMaxCount(): int
+    {
+        return (int) self::getConfig()['blast_radius_max_count'];
+    }
+
+    public static function setBlastRadiusMaxCount(int $max_count): void
+    {
+        CoreConfig::setConfigurationValues(self::CONTEXT, ['blast_radius_max_count' => max(0, $max_count)]);
+    }
+
+    /**
+     * @return int percentage (0-100) of a domain's owned records above which
+     *             the Phase 55 blast-radius guard refuses a reconciliation run
+     */
+    public static function getBlastRadiusMaxPercent(): int
+    {
+        return (int) self::getConfig()['blast_radius_max_percent'];
+    }
+
+    public static function setBlastRadiusMaxPercent(int $max_percent): void
+    {
+        CoreConfig::setConfigurationValues(self::CONTEXT, ['blast_radius_max_percent' => max(0, min(100, $max_percent))]);
+    }
+
+    /**
+     * Defense in depth for Phase 53's kill switch: every driver's own
+     * createRecord()/updateRecord()/deleteRecord()/setProxied()/
+     * pushComment() calls this first, so a future call path into a driver
+     * that bypasses `DnsRecordWriteback`'s own check entirely (e.g. a new
+     * controller) still can't push a live mutation while read-only mode is
+     * on.
+     *
+     * @throws \GlpiPlugin\Domainmanager\Exception\DriverException
+     */
+    public static function assertWritesAllowed(): void
+    {
+        if (self::isReadOnlyMode()) {
+            throw new \GlpiPlugin\Domainmanager\Exception\DriverException(
+                __('Domain Manager is in read-only mode (Setup > General > Domain Manager); no DNS record change can be pushed to the provider', 'domainmanager'),
+            );
+        }
     }
 
     /**
@@ -166,7 +246,10 @@ final class Config extends CommonGLPI
     public static function showConfigForm(): bool
     {
         TemplateRenderer::getInstance()->display('@domainmanager/config.html.twig', [
-            'domaintypes_id'       => self::getDomainTypeId(),
+            'domaintypes_id'           => self::getDomainTypeId(),
+            'read_only_mode'           => self::isReadOnlyMode(),
+            'blast_radius_max_count'   => self::getBlastRadiusMaxCount(),
+            'blast_radius_max_percent' => self::getBlastRadiusMaxPercent(),
             'can_edit'             => Session::haveRight(self::$rightname, UPDATE),
             'rdap_enrichment'      => DomainState::getRdapEnrichmentStatus(),
         ]);

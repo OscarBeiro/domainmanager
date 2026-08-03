@@ -3266,7 +3266,15 @@ amendment.
 - **Expected:** Granting only the A row's Purge bit lets a user in that profile hard-purge a
   trashed A record but not a trashed TXT record (blocked with "Purging this record requires the
   'Purge' right for its DNS record type"); granting Purge on TXT as well then allows both.
-- [ ] Verified
+- [x] Verified (live, 2026-08-03, `glpi_glpi_1`/port 65008: rights-matrix rows and old-row
+  removal confirmed via the profile tab's rendered checkboxes; purge gating confirmed by
+  purging two plugin-owned trashed records (one A, one TXT) via `front/domainrecord.form.php`
+  as a profile with only the A row's Purge bit — the A purge succeeded, the TXT purge was
+  silently cancelled and the record stayed in the trash; granting Purge on TXT then let it
+  succeed too. Note: the gate only applies to plugin-owned/synced records
+  (`ImportedRecord::isPluginOwned()`) per `LockEnforcer::blockRecordRemoval()` — a manually
+  DB-inserted record with no `glpi_plugin_domainmanager_records` row purges unconditionally,
+  which matches the design intent, not a bug.)
 
 ### Phase 49 Upgrade migration for the old flat purge right
 - **Requirement:** A profile that already held the old `domainmanager:purge_records` right
@@ -3278,4 +3286,162 @@ amendment.
 - **Expected:** After upgrade, that profile has the PURGE bit set on
   `domainmanager:dns_records_a/aaaa/cname/txt`, and no `glpi_profilerights` row named
   `domainmanager:purge_records` remains.
-- [ ] Verified
+- [x] Verified (live, 2026-08-03, `glpi_glpi_1`/port 65008: inserted a synthetic
+  `domainmanager:purge_records` row (bit 1) for a test profile, re-ran `bin/console
+  glpi:plugin:install`, confirmed `migratePurgeRight()` set rights=16 (PURGE) on all four
+  per-type rows for that profile and removed the old row, exactly as designed)
+
+### Phase 50 SRV/SOA/CAA per-type data handling (read-path only, doc-verified, ARCHITECTURE.md §11.17)
+- **Requirement:** Confirm that reading SRV/SOA/CAA zone records through each of the three
+  drivers produces a correctly-formatted, fully-serialized display string, since `ZoneRecord`
+  has no typed sub-fields for these types.
+- **Note:** This phase was explicitly scoped to documentation-only research (no live provider
+  account access), per request. The items below are marked accordingly — this is a
+  doc-verified conclusion, not a live-tested guarantee, and should be re-verified against a
+  real account if one becomes available.
+- **IONOS:** re-checked `IonosDriver::extractContent()`'s existing 2026-07-29 conclusion
+  (flat `content`, no split sub-fields for ALIAS/PTR/SOA/SRV/CAA) against IONOS's current
+  DNS API documentation.
+  - [ ] Not yet verified live (doc-only re-check performed 2026-08-03; no change from the
+    existing verified conclusion)
+- **Cloudflare:** checked `CloudflareDriver::fetchZoneRecords()`'s SRV/CAA/SOA handling
+  against Cloudflare's current DNS Records API reference. Found SRV/CAA responses carry both
+  a structured `data` object and a pre-serialized `content` string; SOA is not a Cloudflare
+  DNS record type at all (zone-level, not exposed by the records endpoint).
+  - [ ] Not yet verified live (doc-verified 2026-08-03: existing flat pass-through in
+    `fetchZoneRecords()` is correct as-is for SRV/CAA; no SOA row can ever occur for this
+    driver)
+- **Dinahosting:** checked `DinahostingDriver::extractContent()`'s generic fallback against
+  Dinahosting's own API docs and the `libdns/dinahosting` reference client. Found no
+  documented structured sub-fields for SRV/SOA/CAA; the reference client treats SRV as an
+  opaque flat value and doesn't model SOA/CAA at all.
+  - [ ] Not yet verified live (doc-verified 2026-08-03: existing generic `default` fallback
+    in `extractContent()` is the correct best-effort handling; no structured shape found to
+    parse)
+- **Expected (all three):** no code changes to `WRITABLE_TYPES` or any create/update path —
+  SRV/SOA/CAA remain write-disabled by design (§11.4/§11.8); this phase only touched the
+  read/display path.
+
+### Phase 51 Credential-leak audit and `PluginLogger` scrubber (ARCHITECTURE.md §15.2)
+- **Requirement:** No `PluginLogger::activity()`/`error()` call site, and no
+  `DriverException`/`GuzzleException` message that reaches one, should be able to write a
+  decrypted credential, `Authorization` header, or full request body to either log file.
+- **Steps:** Grepped all 55 `PluginLogger::activity()`/`error()` call sites across the three
+  drivers, `Cron.php`, the controllers and `DnsRecordWriteback`/`SyncLogger`; checked each
+  driver's Guzzle client construction and every `DriverException`-raising branch.
+- **Finding (doc-verified, no live account access needed):** no leak found. All three drivers
+  authenticate via a Guzzle `headers`/`auth` client option (`Authorization: Bearer` for
+  Cloudflare, `X-Api-Key` for IONOS, HTTP Basic Auth for Dinahosting) — never a request URI or
+  body param — and all three set `http_errors => false`, handling non-2xx responses manually
+  rather than via a thrown `GuzzleException` whose message could embed request detail.
+  `GuzzleException::getMessage()` (only reachable for genuine connection failures, e.g.
+  `ConnectException`) is, by Guzzle's own `RequestException::create()`, built solely from the
+  user-info-redacted request URI, the HTTP method, and a truncated response-body summary —
+  never the request headers or body. `PluginLogger::redact()` (§3.6) was widened regardless, as
+  the residual guard: now also matches `auth_code`/`credential(s)` keys and quoted JSON-style
+  values (`"password":"x"`).
+- **Expected:** No behavior change to any driver or controller; `PluginLogger::redact()`'s
+  regex is broader; the finding above is documented in `PluginLogger::redact()`'s own docblock.
+- [x] Verified (doc/code audit, 2026-08-03 — grep-based, no live provider account access
+  needed; this phase's deliverable is the audit finding, not a live test)
+
+### Phase 52 Audit of the per-type write-right helpers (ARCHITECTURE.md §15.2)
+- **Requirement:** every field lookup, type resolution and right check in
+  `DnsRecordWriteback::hasTypeRight()`, `hasPurgeRight()`, `writableTypes()`,
+  `creatableTypesForDomain()` and `writableSupplierName()` reads `domainrecordtypes_id` (never a
+  `type` field) and is entity-aware against the target `Domain`, per §11.6/§8.
+- **Findings:**
+  - `writableTypes()` returns the `WRITABLE_TYPES` constant directly — no field lookup, no right
+    check, nothing to fix.
+  - `writableSupplierName()` only reads `DomainState`/`SupplierConfig`/`Supplier` for display
+    purposes; it never checks a per-type right and was never in scope for the field-name bug
+    (§11.6 addendum's `type` vs `domainrecordtypes_id` confusion is specific to
+    `hasPurgeRight()`), so no change.
+  - **Bug found:** `hasTypeRight()`, `hasPurgeRight()` and `creatableTypesForDomain()` all route
+    through the private `hasRight()`, which checked only `Session::haveRight($rights[$type],
+    $bit)` — a bare profile-bit check with no notion of which `Domain` the caller is asking
+    about. A profile granted a per-type DNS write-back right (e.g. `domainmanager:dns_records_txt`
+    CREATE) for one entity held it over every entity's zones, contradicting §11.6's "every entry
+    point checks rights server-side, entity-aware" and the `Domain::can()` convention used
+    everywhere else in the plugin (§8). This is the silent-privilege-escalation counterpart the
+    `hasPurgeRight()` field-name bug (fixed in `1.4.2`) failed *closed* on — this one failed
+    *open*.
+- **Fix:** `hasRight()` now takes the target `$domains_id`, fetches the `Domain`, and additionally
+  requires `Session::haveAccessToEntity($domain->fields['entities_id'],
+  $domain->fields['is_recursive'])` — the same primitive `CommonDBTM::canViewItem()`/
+  `canUpdateItem()`/etc. use internally, mirrored here because these per-type rights aren't
+  itemtype-scoped GLPI rights that `Domain::can()` itself resolves. Threaded `$domains_id` through
+  every call site: `onPreAdd()`/`onPreUpdate()`/`onPreDelete()`/`onPreRestore()` (already had it
+  in scope), `hasPurgeRight(DomainRecord $item)` (from `$item->fields['domains_id']`),
+  `hasTypeRight()` and `creatableTypesForDomain()` (new required parameter, updated at both
+  `DomainForm.php` call sites).
+- **Expected:** no behavior change for a single-entity install (every domain and every profile
+  assignment share one entity, so `Session::haveAccessToEntity()` is always true there); a
+  multi-entity install now correctly refuses a per-type write-back right granted only for a
+  different entity than the target domain's.
+- [ ] Not yet verified live (code fix + doc/code audit, 2026-08-03; requires a multi-entity
+  install with a profile scoped to one entity to confirm cross-entity denial in practice)
+
+### Phase 53 Global write kill switch / read-only mode (ARCHITECTURE.md §15.3)
+- **Requirement:** one `config`-gated boolean hard-disables every outbound DNS record mutation
+  across every driver, independent of per-type rights, enforced at a single point in
+  `DnsRecordWriteback` and asserted again in each driver's writer methods; surfaced in the UI
+  wherever a write control appears, with an actionable message naming the setting.
+- **Implementation:** `Config::isReadOnlyMode()`/`setReadOnlyMode()`, new `read_only_mode` key on
+  the existing `plugin:domainmanager` config context (stored as explicit `1`/`0`, §0.10), editable
+  from the Domain Manager Setup tab (`config` UPDATE right, existing convention) via a slider
+  field. `DnsRecordWriteback::readOnlyModeError()` is checked in `onPreAdd()`/`onPreUpdate()`/
+  `onPreDelete()`/`onPreRestore()` right after the `isDnsEditable()` gate and before the per-type
+  right check, so it's never bypassed by a user's own rights — `abort()` surfaces the existing
+  session-message convention naming the setting and where to find it.
+  `Config::assertWritesAllowed()` (throws `DriverException`) is asserted again at the top of every
+  driver's `createRecord()`/`updateRecord()`/`deleteRecord()` (Cloudflare, IONOS, Dinahosting) and
+  `setProxied()`/`pushComment()` (Cloudflare only). `DomainForm::injectDomainRecord()`'s
+  Save/Delete/proxy-toggle gating and `renderRecordWritePanel()`'s add-form both check
+  `Config::isReadOnlyMode()` too, each showing a distinct message naming read-only mode instead of
+  their normal "no rights"/"synchronization-locked" copy when that's the actual reason a control is
+  hidden.
+- **Verified by code inspection, 2026-08-03:**
+  - Confirmed `RecordReconciler::reconcileComment()` calls `CloudflareDriver::pushComment()`
+    directly during a cron sync, entirely outside `DnsRecordWriteback`'s call path — this is the
+    concrete case the driver-level assertion (not just the `DnsRecordWriteback` choke point) is
+    needed for; it's caught there and logged as a best-effort failure, same as any other
+    `pushComment()` error.
+  - Confirmed every one of the three drivers' `createRecord()`/`updateRecord()`/`deleteRecord()`
+    now calls `Config::assertWritesAllowed()` as its first statement, and Cloudflare's
+    `setProxied()`/`pushComment()` do too.
+  - Confirmed a fresh install defaults to `read_only_mode = 0` (writes allowed) via
+    `Config::getDefaults()`, so upgrading or installing never silently goes read-only.
+- [ ] Not yet verified live (code audit only, 2026-08-03; requires enabling the setting against a
+  live-configured domain and confirming a create/update/delete/restore is refused with the
+  expected message, then confirming it resumes once turned back off)
+
+### Phase 55 Blast-radius guard on reconciliation (ARCHITECTURE.md §15.3)
+- **Requirement:** abort a reconciliation run and set a distinct `DomainState` status when it would
+  trash more than N records or more than X% of a domain's owned records, whichever is hit first;
+  requires explicit operator action to proceed.
+- **Implementation:** `RecordReconciler::doReconcile()` counts, after its existing match/claim pass
+  but before the trash loop, how many currently-owned (non-deleted) records this run would newly
+  trash, against `Config::getBlastRadiusMaxCount()`/`getBlastRadiusMaxPercent()` (new
+  `blast_radius_max_count`/`blast_radius_max_percent` keys on the existing `plugin:domainmanager`
+  config context, editable on the Setup tab, defaults 20/50). Crossing either throws
+  `Exception\BlastRadiusExceededException` before any trash-bin mutation runs.
+  `SyncEngine::syncDnsLeg()` catches it distinctly from `DriverException`/`Throwable` and sets the
+  new `DomainState::STATUS_BLAST_RADIUS_GUARD` (its own label/badge class in
+  `DomainStatusResolver`). `reconcile()`/`sync()` gained a `$force` parameter (default `false`);
+  `POST /plugins/domainmanager/sync/{id}` accepts a `force` field, and the domain panel's "Update
+  Now" button, on receiving `STATUS_BLAST_RADIUS_GUARD`, shows a `window.confirm()` naming the exact
+  counts and re-issues the request with `force=1` only if the operator confirms.
+- **Verified by code inspection, 2026-08-03:**
+  - Confirmed the count is computed strictly before the trash loop, so a run that trips the guard
+    performs zero `DomainRecord::delete()` calls this pass (though any `createRecord()`/`update()`
+    calls from the earlier match/claim pass — for records the provider *did* still report — have
+    already applied; only the trash side is gated, matching the phase's own scope).
+  - Confirmed every existing caller of `reconcile()`/`sync()` (`Cron`, `MassiveActionHandler`,
+    `DomainImportController`, `RdapGapChecker`) leaves the new parameter at its `false` default, so
+    behavior for all of them is unchanged unless the guard actually trips.
+  - Confirmed the threshold comparison is an OR (either count or percent alone trips it), matching
+    "whichever is hit first."
+- [ ] Not yet verified live (code audit only, 2026-08-03; requires a live-configured domain, a
+  synthetic near-empty upstream snapshot, and confirming the sync is refused with the expected
+  message/status, then confirming the "force" override actually reconciles when confirmed)

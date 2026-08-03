@@ -66,37 +66,37 @@ class DomainDiscoveryController extends AbstractController
     {
         $supplier = new Supplier();
         if (!$supplier->getFromDB($suppliers_id)) {
-            return new Response(__('Supplier not found', 'domainmanager'), 404);
+            return $this->renderError(__('Supplier not found', 'domainmanager'));
         }
 
         if (!$supplier->can($suppliers_id, UPDATE)) {
-            return new Response(__('You do not have permission to update this supplier', 'domainmanager'), 403);
+            return $this->renderError(__('You do not have permission to update this supplier', 'domainmanager'));
         }
 
         // Never call out with an inactive supplier's credentials, not even
         // to list its domains (same rule already enforced for Check
         // Connection, §addendum "Skip Inactive Suppliers").
         if (!(bool) $supplier->fields['is_active']) {
-            return new Response(__('This supplier is inactive; domain discovery is disabled', 'domainmanager'), 409);
+            return $this->renderError(__('This supplier is inactive; domain discovery is disabled', 'domainmanager'));
         }
 
         $config = SupplierConfig::getForSupplier($suppliers_id);
         $driver = $config !== null ? DriverFactory::forDiscovery($config) : null;
         if ($driver === null) {
-            return new Response(__('This driver does not support domain discovery', 'domainmanager'), 400);
+            return $this->renderError(__('This driver does not support domain discovery', 'domainmanager'));
         }
 
         try {
             $discovered = $driver->listAccountDomains();
         } catch (DriverException $e) {
-            return new Response($e->getMessage(), 400);
+            return $this->renderError($e->getMessage());
         } catch (Throwable $e) {
             PluginLogger::error(
                 "Domain discovery crashed for supplier #$suppliers_id",
                 $e::class . ': ' . $e->getMessage(),
             );
 
-            return new Response(__('Unexpected error while listing domains, see the plugin error log', 'domainmanager'), 500);
+            return $this->renderError(__('Unexpected error while listing domains, see the plugin error log', 'domainmanager'));
         }
 
         $rows = DomainDiscoveryMatcher::match($discovered, $suppliers_id);
@@ -113,6 +113,23 @@ class DomainDiscoveryController extends AbstractController
             ]),
             'import_url'   => '/plugins/domainmanager/domainimport/' . $suppliers_id,
             'reassign_url' => '/plugins/domainmanager/domainreassign/',
+        ]);
+
+        return new Response($html);
+    }
+
+    /**
+     * Renders the modal's own error state and returns HTTP 200: jQuery's
+     * .load() (used by Ajax::createModalWindow(), see SupplierTab) only
+     * injects the response body into the dialog on a 2xx status — on a 4xx/5xx
+     * it discards the body entirely, leaving the modal blank with no
+     * indication of what went wrong. Every error path must go through this
+     * so the operator actually sees the message.
+     */
+    private function renderError(string $message): Response
+    {
+        $html = TemplateRenderer::getInstance()->render('@domainmanager/domain_discovery_modal.html.twig', [
+            'error' => $message,
         ]);
 
         return new Response($html);

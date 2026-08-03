@@ -155,6 +155,63 @@ class DriverRegistry
     }
 
     /**
+     * Phase 62 (ARCHITECTURE.md §15.4): the minimum TTL a driver's write API
+     * actually accepts, so `DnsRecordWriteback::sanitizeInputs()` can floor
+     * to the real per-provider value instead of a bare hardcoded literal.
+     *
+     * - **IONOS: 60, confirmed live** (§11.9 — probing the API directly
+     *   returned HTTP 400 below it; not asserted anywhere in the published
+     *   schema itself).
+     * - **Cloudflare: 60**, per Cloudflare's own public API documentation
+     *   (a DNS record's `ttl` field accepts `1` for "Automatic" or an
+     *   integer from 60 upward) — not independently live-verified against
+     *   this plugin's own account the way IONOS was, so treat as
+     *   documentation-sourced, not probe-confirmed.
+     * - **Dinahosting: no floor to enforce** — `DinahostingDriver` has no
+     *   `ttl` write parameter at all; TTL is entirely server-managed and
+     *   the caller's value is discarded (§3.8.1). Returns the same 60 as
+     *   the others purely so a shared floor exists to apply before the
+     *   driver is known; it has no effect on what Dinahosting actually does.
+     *
+     * `$ttl === 0` is not specially handled here — the reference IONOS
+     * client is documented to omit the field entirely at 0 rather than send
+     * a literal 0 (§11.9), but this floor runs before any driver ever sees
+     * the value, so 0 never reaches a driver call in the first place.
+     *
+     * @param  string $driver
+     * @return int
+     */
+    public static function getMinTtl(string $driver): int
+    {
+        return match ($driver) {
+            self::DRIVER_CLOUDFLARE, self::DRIVER_IONOS, self::DRIVER_DINAHOSTING => 60,
+            default => 60,
+        };
+    }
+
+    /**
+     * Phase 66 (ARCHITECTURE.md §15.5): whether the driver's provider
+     * supports a CNAME at the zone apex — the real shape of the old
+     * ALIAS/ANAME request, resolved as a capability flag rather than a new
+     * record type, since no driver needs one to express it.
+     *
+     * - **Cloudflare: true**, per Cloudflare's own documented "CNAME
+     *   flattening" at the apex — not independently live-verified against
+     *   this plugin's own account.
+     * - **IONOS: false** — its apex-alias behaviour was already evaluated
+     *   and closed negative on evidence (§11.4); not reopened here.
+     * - **Dinahosting: false** — no documented apex-alias support in its
+     *   own API docs or the reference client.
+     *
+     * @param  string $driver
+     * @return bool
+     */
+    public static function supportsApexCname(string $driver): bool
+    {
+        return $driver === self::DRIVER_CLOUDFLARE;
+    }
+
+    /**
      * The single capability whose result the Check Connection UI surfaces as
      * one combined badge/toast (§3.5, §6.1) — this is a display simplification
      * only, both capabilities are still tested and persisted as before. 'dns'

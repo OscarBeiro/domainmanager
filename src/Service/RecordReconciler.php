@@ -34,8 +34,10 @@ namespace GlpiPlugin\Domainmanager\Service;
 use Domain;
 use DomainRecord;
 use DomainRecordType;
+use GlpiPlugin\Domainmanager\Config\Config;
 use GlpiPlugin\Domainmanager\Contract\DnsRecordCommentSyncInterface;
 use GlpiPlugin\Domainmanager\Dto\ZoneRecord;
+use GlpiPlugin\Domainmanager\Exception\BlastRadiusExceededException;
 use GlpiPlugin\Domainmanager\ImportedRecord;
 use GlpiPlugin\Domainmanager\ImportLock;
 use GlpiPlugin\Domainmanager\LockEnforcer;
@@ -97,16 +99,23 @@ class RecordReconciler
      *         back upstream (§9 Phase 49) — null for every driver without
      *         that capability, in which case comment sync is download-only
      *         (seeding a newly-created record from the provider's comment).
+     * @param  bool  $force ARCHITECTURE.md §15.3 Phase 55: skip the
+     *         blast-radius guard below and apply the trash bin moves
+     *         regardless of how many records that touches — set only by an
+     *         explicit operator override of a run that previously tripped
+     *         {@see BlastRadiusExceededException} (§ requires explicit
+     *         operator action to proceed).
      * @return array{added: int, updated: int, restored: int, trashed: int, unchanged: int}
+     * @throws BlastRadiusExceededException
      */
-    public function reconcile(Domain $domain, array $records, ?DnsRecordCommentSyncInterface $commentDriver = null): array
+    public function reconcile(Domain $domain, array $records, ?DnsRecordCommentSyncInterface $commentDriver = null, bool $force = false): array
     {
         // Reconciliation is by definition a plugin-owned write: make sure
         // LockEnforcer never strips it, even when called outside SyncEngine
         $previous = LockEnforcer::$sync_in_progress;
         LockEnforcer::$sync_in_progress = true;
         try {
-            return $this->doReconcile($domain, $records, $commentDriver);
+            return $this->doReconcile($domain, $records, $commentDriver, $force);
         } finally {
             LockEnforcer::$sync_in_progress = $previous;
         }
@@ -116,9 +125,11 @@ class RecordReconciler
      * @param  Domain                              $domain
      * @param  ZoneRecord[]                        $records
      * @param  DnsRecordCommentSyncInterface|null  $commentDriver
+     * @param  bool                                $force
      * @return array{added: int, updated: int, restored: int, trashed: int, unchanged: int}
+     * @throws BlastRadiusExceededException
      */
-    private function doReconcile(Domain $domain, array $records, ?DnsRecordCommentSyncInterface $commentDriver): array
+    private function doReconcile(Domain $domain, array $records, ?DnsRecordCommentSyncInterface $commentDriver, bool $force = false): array
     {
         /** @var \DBmysql $DB */
         global $DB;
@@ -248,6 +259,48 @@ class RecordReconciler
             ]);
 
             $this->reconcileComment($domain, $native, $record, $commentDriver);
+        }
+
+        // ARCHITECTURE.md §15.3 Phase 55: a successful fetch of the wrong or
+        // empty zone (mis-scoped credential, a provider returning an empty
+        // page mid-pagination) parses as a valid snapshot and would
+        // otherwise reach the trash loop below exactly like a genuinely
+        // emptied zone would — count what that loop is about to do and
+        // refuse before it touches the DB if it crosses either configured
+        // threshold. Computed here, after the match loop above has already
+        // populated $claimed, and before any trash-bin mutation runs.
+        if (!$force) {
+            $would_trash = 0;
+            $total_owned = 0;
+            foreach ($ownership as $oid => $own_row) {
+                $native = DomainRecord::getById((int) $own_row['domainrecords_id']);
+                if ($native === false || (bool) $native->fields['is_deleted']) {
+                    continue;
+                }
+                $total_owned++;
+                if (!isset($claimed[$oid])) {
+                    $would_trash++;
+                }
+            }
+
+            $max_count   = Config::getBlastRadiusMaxCount();
+            $max_percent = Config::getBlastRadiusMaxPercent();
+            $percent     = $total_owned > 0 ? ($would_trash / $total_owned) * 100 : ($would_trash > 0 ? 100 : 0);
+
+            if ($would_trash > 0 && ($would_trash > $max_count || $percent > $max_percent)) {
+                throw new BlastRadiusExceededException(
+                    sprintf(
+                        __('Synchronization refused: this run would move %1$d of %2$d owned record(s) (%3$d%%) to the trash bin, above the configured blast-radius guard threshold (max %4$d records or %5$d%%). No change was applied. Force this synchronization only after confirming the upstream zone genuinely emptied.', 'domainmanager'),
+                        $would_trash,
+                        $total_owned,
+                        (int) round($percent),
+                        $max_count,
+                        $max_percent,
+                    ),
+                    $would_trash,
+                    $total_owned,
+                );
+            }
         }
 
         // Ownership rows not seen upstream anymore: move to the native

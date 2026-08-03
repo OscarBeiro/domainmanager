@@ -10,6 +10,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Entries are grouped into **Features** and **Bugs**, one line each.
 
 ## [Unreleased]
+
+## [1.5.0] - 2026-08-03
+### Features
+- Ascio and Hostalia are now detected as DNS providers when a domain's nameservers resolve to them. Ubilibet, which runs as a reseller on Ascio's wholesale platform, is not separately detectable via nameserver records (and correctly identifies only the underlying DNS platform, Ascio, not the reseller). API integration not yet supported for either; detection offers visibility only.
+- Synchronization now refuses to run (and leaves the domain's records untouched) if it would move an unusually large number of DNS records to the trash bin at once — guards against a mis-scoped credential or a provider glitch being mistaken for a genuinely emptied zone. Configurable on the Setup page; an explicit confirmation lets you force the sync through if the emptied zone is expected.
+- Audited all plugin logging for accidental credential leaks (none found) and hardened the log scrubber further as a precaution.
+- Added a "Read-only mode" setting (Setup > General > Domain Manager) that, when enabled, refuses to push any DNS record change (create/update/delete/restore) to any provider until turned back off. Read/sync are unaffected.
+- A failed attempt to push a DNS record change (create/update/delete/restore/proxy toggle) to a provider now also shows up on the domain's Historical tab, alongside successful ones.
+- Creating or editing an A, AAAA, CNAME or TXT record now checks the value before pushing it to the provider: clearly invalid addresses/hostnames/TXT content are blocked with an explanation, an IPv6 address is normalized to one consistent form, and a CNAME record blocks (or is blocked by) any other record type already at the same name. Risky-but-legal cases (private-range addresses, an overloaded SPF record, a misplaced DMARC/DKIM record) are flagged with a warning instead of being blocked outright.
+- A CNAME record at the zone apex is now allowed when the configured DNS provider supports it (currently Cloudflare only); other providers still refuse it as before.
+- Imported MX records are now stored in the exact same form GLPI's own record form would produce (a trailing dot on the mail server name), so a plugin-synced MX record no longer looks different from a hand-entered one with the same value.
+
+### Bugs
+- Fixed the "Import Domains" window sometimes opening completely blank, with no explanation, when the supplier's registrar/DNS account (e.g. Cloudflare, IONOS) returned an error — the error message is now shown inside the window instead.
+- Fixed the wording of the "Import Domains" window's message when you lack permission to create domains — it no longer refers to a list of domains that isn't actually shown.
+- Neither the RdapEnrichment nor the DomainSync automatic action pre-fills its own description into the "Comments" field on Setup > Automatic actions anymore — that field is now free for you to use for your own notes, as it should be. Existing installs have their old auto-filled comment cleared automatically, unless you've already edited it yourself.
+- Fixed creating or syncing a second TXT record at the same name (e.g. SPF alongside a site-verification string) being wrongly blocked as a duplicate, even when their content was different.
+- Fixed automatic synchronization repeatedly reporting NS and MX records as blocked duplicates, even though a domain normally has several of each.
+- Fixed the wording of the message shown when Domain Manager blocks a duplicate DNS record ("A A record named..." for A records).
+- Fixed a multi-entity install where a profile's per-record-type DNS write permission (e.g. TXT), granted for one entity, was wrongly honored for every entity's domains instead of only the entity it was granted for.
+
+## [1.4.2] - 2026-08-03
 ### Features
 - Domain Manager now refuses to create or restore a DNS record that would duplicate an existing one (same type and name) on any managed domain, regardless of which DNS provider is configured, with a clear message explaining why.
 - Saving a change to a managed DNS record no longer asks for confirmation first; deleting/purging one still does.

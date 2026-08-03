@@ -32,6 +32,7 @@
 namespace GlpiPlugin\Domainmanager\Driver;
 
 use DateTimeImmutable;
+use GlpiPlugin\Domainmanager\Config\Config;
 use GlpiPlugin\Domainmanager\Contract\ConnectionTestableInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsPipelineInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsRecordWriterInterface;
@@ -392,6 +393,7 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
      */
     public function createRecord(string $domain, string $type, string $name, string $data, int $ttl): ZoneRecord
     {
+        Config::assertWritesAllowed();
         $type   = self::assertWritableType($type);
         $domain = self::normalizeDomain($domain);
 
@@ -413,6 +415,7 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
      */
     public function updateRecord(string $domain, string $remoteId, string $type, string $name, string $data, int $ttl): ZoneRecord
     {
+        Config::assertWritesAllowed();
         $old    = self::decodeRemoteId($remoteId);
         $type   = self::assertWritableType($type);
         $domain = self::normalizeDomain($domain);
@@ -432,6 +435,7 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
      */
     public function deleteRecord(string $domain, string $remoteId): void
     {
+        Config::assertWritesAllowed();
         $id     = self::decodeRemoteId($remoteId);
         $domain = self::normalizeDomain($domain);
 
@@ -814,6 +818,18 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
      * about; MX priority ordering in particular is unconfirmed and should
      * be checked against a real account before being relied on.
      *
+     * Phase 50 (doc-verified 2026-08-03, no live account access): SRV/SOA/CAA
+     * were checked the same way. Dinahosting's own API command docs document
+     * no per-type sub-fields for these types, and the reference client
+     * (libdns/dinahosting) explicitly treats every type it doesn't model —
+     * SRV included — as an "opaque RR value", i.e. a flat value, not a
+     * structured object; SOA/CAA aren't mentioned at all. No evidence of a
+     * structured shape exists to parse, so the generic `default` fallback
+     * below (already covering "any type this driver doesn't specifically
+     * know") is the correct, best-effort handling for all three — left
+     * unchanged. Revisit only if a real account response ever shows
+     * otherwise.
+     *
      * @param  string $type
      * @param  array  $row
      * @return string
@@ -824,9 +840,9 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
             'A', 'AAAA'   => (string) ($row['ip'] ?? ''),
             'CNAME', 'NS' => (string) ($row['destinationHostname'] ?? ''),
             'TXT'         => (string) ($row['text'] ?? ''),
-            'MX'          => trim(
+            'MX'          => ZoneRecord::normalizeMxContent(trim(
                 ((string) ($row['priority'] ?? '')) . ' ' . (string) ($row['destinationHostname'] ?? $row['address'] ?? ''),
-            ),
+            )),
             default => (string) (
                 $row['destinationHostname']
                 ?? $row['destinationUrl']

@@ -34,6 +34,7 @@ namespace GlpiPlugin\Domainmanager\Service;
 use Domain;
 use DomainRecord;
 use DomainRecordType;
+use GlpiPlugin\Domainmanager\Config\Config;
 use GlpiPlugin\Domainmanager\Contract\DnsRecordCommentSyncInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsRecordProxyToggleInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsRecordWriterInterface;
@@ -122,6 +123,14 @@ class DnsRecordWriteback
         // `_domainmanager_sync` check below so it also catches a duplicate
         // a reconciler sync would otherwise mirror in locally.
         //
+        // Scoped to WRITABLE_TYPES only (§ design bug, 2026-08-03: NS and MX
+        // are structurally multi-valued — a zone normally has several NS
+        // records and often several MX records at the same name — and
+        // neither type is ever pushed by this plugin, so this data-integrity
+        // rule has nothing to protect there. Applying it unscoped rejected
+        // every NS/MX record past the first one RecordReconciler tried to
+        // mirror in at a given name, on every sync).
+        //
         // `$rawName` alone is NOT what's compared: every stored
         // DomainRecord.name is an absolute FQDN (§ absoluteRecordName()),
         // while `$item->input['name']` here is the raw, still-unqualified
@@ -132,13 +141,16 @@ class DnsRecordWriteback
         // driver-specific check, with a less helpful message). Qualify
         // against the domain's own zone name first, same as the actual
         // push below does.
-        $checkDomain = new Domain();
-        if ($domains_id > 0 && $checkDomain->getFromDB($domains_id) && DomainState::getForDomain($domains_id) !== null) {
-            $qualifiedName = self::absoluteRecordName($rawName, $checkDomain->fields['name']);
-            $duplicateError = self::duplicateNameError($domains_id, $type_id, $qualifiedName);
-            if ($duplicateError !== null) {
-                self::abort($item, $duplicateError);
-                return;
+        $checkType = self::typeName($type_id);
+        if ($checkType !== null && in_array($checkType, self::WRITABLE_TYPES, true)) {
+            $checkDomain = new Domain();
+            if ($domains_id > 0 && $checkDomain->getFromDB($domains_id) && DomainState::getForDomain($domains_id) !== null) {
+                $qualifiedName = self::absoluteRecordName($rawName, $checkDomain->fields['name']);
+                $duplicateError = self::duplicateNameError($domains_id, $type_id, $qualifiedName, null, (string) ($item->input['data'] ?? ''));
+                if ($duplicateError !== null) {
+                    self::abort($item, $duplicateError);
+                    return;
+                }
             }
         }
 
@@ -165,7 +177,13 @@ class DnsRecordWriteback
             return;
         }
 
-        if (!self::hasRight($type, CREATE) || Session::isCron()) {
+        $readOnlyError = self::readOnlyModeError();
+        if ($readOnlyError !== null) {
+            self::abort($item, $readOnlyError);
+            return;
+        }
+
+        if (!self::hasRight($type, CREATE, $domains_id) || Session::isCron()) {
             // Not eligible for write-back: either the profile lacks the
             // per-type right, or this is a cron-driven/sync add, which is
             // never a manual write-back push. Native add proceeds untouched.
@@ -192,16 +210,26 @@ class DnsRecordWriteback
         $name = (string) ($item->input['name'] ?? '@');
         $data = (string) ($item->input['data'] ?? '');
         $ttl  = (int) ($item->input['ttl'] ?? 3600);
-        self::sanitizeInputs($name, $data, $ttl);
+        self::sanitizeInputs($name, $data, $ttl, self::configuredDriverName($state));
         if (!self::validateInputs($data, $ttl)) {
             self::abort($item, __('Invalid record data', 'domainmanager'));
             return;
         }
 
+        $zoneName = $domain->fields['name'];
+        $absoluteName = self::absoluteRecordName($name, $zoneName);
+        $typedResult = self::runTypeValidators($type, $absoluteName, $data, $zoneName, $domains_id, null, self::configuredDriverName($state));
+        if ($typedResult['error'] !== null) {
+            self::abort($item, $typedResult['error']);
+            return;
+        }
+        $data = $typedResult['value'];
+        if ($typedResult['warning'] !== null) {
+            Session::addMessageAfterRedirect('[Domain Manager] ' . $typedResult['warning'], true, WARNING);
+        }
+
         try {
             $driver = self::getWritableDriver($state);
-            $zoneName = $domain->fields['name'];
-            $absoluteName = self::absoluteRecordName($name, $zoneName);
             $created = $driver->createRecord($zoneName, $type, $absoluteName, $data, $ttl);
             self::$pendingCreated[spl_object_id($item)] = $created;
             DomainState::recordWriteOutcome($domains_id, true);
@@ -211,6 +239,7 @@ class DnsRecordWriteback
                 DomainState::recordWriteOutcome($domains_id, false, $message);
             }
             PluginLogger::error("Failed to push new DNS record for domain #$domains_id", $e::class . ': ' . $e->getMessage());
+            self::logWriteAttempt($domains_id, $type, $name, self::driverLabel(self::configuredDriverName($state)), __('create', 'domainmanager'), false, $message);
             self::abort($item, sprintf(__('Could not create this record at %s: %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state)), $message));
         }
     }
@@ -255,14 +284,16 @@ class DnsRecordWriteback
             'domainrecordtypes_id' => $type,
         ]);
 
-        Log::history($domains_id, Domain::class, [0, '', '[Domain Manager] ' . sprintf(
-            __('Record created from GLPI: %s %s → %s (TTL %d)', 'domainmanager'),
+        $writeState = DomainState::getForDomain($domains_id);
+        self::logWriteAttempt(
+            $domains_id,
             self::typeName($type) ?? '?',
             $item->fields['name'] ?: '@',
-            $item->fields['data'],
-            (int) $item->fields['ttl'],
-        ),
-        ]);
+            $writeState !== null ? self::driverLabel(self::configuredDriverName($writeState)) : self::driverLabel(null),
+            __('create', 'domainmanager'),
+            true,
+            sprintf(__('%s → %s (TTL %d)', 'domainmanager'), $item->fields['name'] ?: '@', $item->fields['data'], (int) $item->fields['ttl']),
+        );
 
         self::pushInitialComment($item, $created->remoteId, $domains_id);
     }
@@ -349,15 +380,19 @@ class DnsRecordWriteback
         }
 
         // Plugin-wide, driver-independent duplicate guard — see onPreAdd()'s
-        // identical check for the full rationale. Effective values fall
-        // back to the record's current stored fields for whichever of
-        // domain/type/name isn't part of this particular update, since a
-        // typical data/ttl-only update touches neither.
+        // identical check for the full rationale, including why it's scoped
+        // to WRITABLE_TYPES only (NS/MX are structurally multi-valued and
+        // never pushed by this plugin). Effective values fall back to the
+        // record's current stored fields for whichever of domain/type/name
+        // isn't part of this particular update, since a typical data/ttl-
+        // only update touches neither.
         $effectiveDomainsId = (int) ($item->input['domains_id'] ?? $item->fields['domains_id']);
         $effectiveTypeId    = (int) ($item->input['domainrecordtypes_id'] ?? $item->fields['domainrecordtypes_id']);
         $effectiveName      = trim((string) ($item->input['name'] ?? $item->fields['name']));
-        if (DomainState::getForDomain($effectiveDomainsId) !== null) {
-            $duplicateError = self::duplicateNameError($effectiveDomainsId, $effectiveTypeId, $effectiveName, (int) $item->getID());
+        $effectiveData      = (string) ($item->input['data'] ?? $item->fields['data']);
+        $effectiveType      = self::typeName($effectiveTypeId);
+        if ($effectiveType !== null && in_array($effectiveType, self::WRITABLE_TYPES, true) && DomainState::getForDomain($effectiveDomainsId) !== null) {
+            $duplicateError = self::duplicateNameError($effectiveDomainsId, $effectiveTypeId, $effectiveName, (int) $item->getID(), $effectiveData);
             if ($duplicateError !== null) {
                 self::abort($item, $duplicateError);
                 return true;
@@ -382,7 +417,13 @@ class DnsRecordWriteback
             return false;
         }
 
-        if (!self::hasRight($type, UPDATE) || Session::isCron()) {
+        $readOnlyError = self::readOnlyModeError();
+        if ($readOnlyError !== null) {
+            self::abort($item, $readOnlyError);
+            return true;
+        }
+
+        if (!self::hasRight($type, UPDATE, $domains_id) || Session::isCron()) {
             return false;
         }
 
@@ -423,10 +464,20 @@ class DnsRecordWriteback
         $data = (string) ($item->input['data'] ?? $item->fields['data']);
         $ttl  = (int) ($item->input['ttl'] ?? $item->fields['ttl']);
         $name = (string) $item->fields['name'];
-        self::sanitizeInputs($name, $data, $ttl);
+        self::sanitizeInputs($name, $data, $ttl, self::configuredDriverName($state));
         if (!self::validateInputs($data, $ttl)) {
             self::abort($item, __('Invalid record data', 'domainmanager'));
             return true;
+        }
+
+        $typedResult = self::runTypeValidators($type, $name, $data, $domain->fields['name'], $domains_id, (int) $item->getID(), self::configuredDriverName($state));
+        if ($typedResult['error'] !== null) {
+            self::abort($item, $typedResult['error']);
+            return true;
+        }
+        $data = $typedResult['value'];
+        if ($typedResult['warning'] !== null) {
+            Session::addMessageAfterRedirect('[Domain Manager] ' . $typedResult['warning'], true, WARNING);
         }
 
         $imported = ImportedRecord::getForDomainRecord((int) $item->getID());
@@ -456,9 +507,15 @@ class DnsRecordWriteback
                 'domainrecordtypes_id' => (int) $item->fields['domainrecordtypes_id'],
             ]);
 
-            Log::history($domains_id, Domain::class, [0, '', '[Domain Manager] '
-                . sprintf(__('Record updated from GLPI: %s %s — data %s → %s', 'domainmanager'), $type, $name, $item->fields['data'], $data),
-            ]);
+            self::logWriteAttempt(
+                $domains_id,
+                $type,
+                $name,
+                self::driverLabel(self::configuredDriverName($state)),
+                __('update', 'domainmanager'),
+                true,
+                sprintf(__('data %s → %s', 'domainmanager'), $item->fields['data'], $data),
+            );
 
             return true;
         } catch (Throwable $e) {
@@ -467,6 +524,7 @@ class DnsRecordWriteback
                 DomainState::recordWriteOutcome($domains_id, false, $message);
             }
             PluginLogger::error("Failed to push updated DNS record #{$item->getID()} for domain #$domains_id", $e::class . ': ' . $e->getMessage());
+            self::logWriteAttempt($domains_id, $type, $name, self::driverLabel(self::configuredDriverName($state)), __('update', 'domainmanager'), false, $message);
             self::abort($item, sprintf(__('Could not update this record at %s: %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state)), $message));
             return true;
         }
@@ -523,16 +581,27 @@ class DnsRecordWriteback
                 'is_proxied' => $updated->isProxied !== null ? (int) $updated->isProxied : null,
             ]);
 
-            $message = '[Domain Manager] ' . sprintf(
-                __('Proxy status changed from GLPI: %s %s → %s', 'domainmanager'),
+            self::logWriteAttempt(
+                (int) $item->fields['domains_id'],
                 $type,
                 $item->fields['name'] ?: '@',
+                self::driverLabel(self::configuredDriverName($state)),
+                __('proxy toggle', 'domainmanager'),
+                true,
                 $desired ? __('Proxied', 'domainmanager') : __('DNS only', 'domainmanager'),
             );
-            Log::history((int) $item->fields['domains_id'], Domain::class, [0, '', $message]);
         } catch (Throwable $e) {
             $message = $e instanceof DriverException ? $e->getMessage() : __('an error occurred', 'domainmanager');
             PluginLogger::error("Failed to push proxy status for DNS record #{$item->getID()}", $e::class . ': ' . $e->getMessage());
+            self::logWriteAttempt(
+                (int) $item->fields['domains_id'],
+                $type,
+                $item->fields['name'] ?: '@',
+                self::driverLabel(self::configuredDriverName($state)),
+                __('proxy toggle', 'domainmanager'),
+                false,
+                $message,
+            );
             Session::addMessageAfterRedirect(
                 '[Domain Manager] ' . sprintf(__('Could not update proxy status at %s: %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state)), $message),
                 false,
@@ -621,7 +690,13 @@ class DnsRecordWriteback
             return false;
         }
 
-        if (!self::hasRight($type, DELETE) || Session::isCron()) {
+        $readOnlyError = self::readOnlyModeError();
+        if ($readOnlyError !== null) {
+            self::abort($item, $readOnlyError);
+            return true;
+        }
+
+        if (!self::hasRight($type, DELETE, $domains_id) || Session::isCron()) {
             return false;
         }
 
@@ -648,12 +723,15 @@ class DnsRecordWriteback
             $driver->deleteRecord($domain->fields['name'], $imported->fields['remote_id']);
             DomainState::recordWriteOutcome($domains_id, true);
 
-            Log::history($domains_id, Domain::class, [0, '', '[Domain Manager] ' . sprintf(
-                __('Record deleted from GLPI: %s %s', 'domainmanager'),
+            self::logWriteAttempt(
+                $domains_id,
                 $type,
                 $item->fields['name'],
-            ),
-            ]);
+                self::driverLabel(self::configuredDriverName($state)),
+                __('delete', 'domainmanager'),
+                true,
+                __('record removed', 'domainmanager'),
+            );
 
             return true;
         } catch (Throwable $e) {
@@ -662,6 +740,7 @@ class DnsRecordWriteback
                 DomainState::recordWriteOutcome($domains_id, false, $message);
             }
             PluginLogger::error("Failed to push deletion of DNS record #{$item->getID()} for domain #$domains_id", $e::class . ': ' . $e->getMessage());
+            self::logWriteAttempt($domains_id, $type, $item->fields['name'], self::driverLabel(self::configuredDriverName($state)), __('delete', 'domainmanager'), false, $message);
             self::abort($item, sprintf(__('Could not delete this record at %s: %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state)), $message));
             return true;
         }
@@ -687,19 +766,23 @@ class DnsRecordWriteback
     public static function onPreRestore(DomainRecord $item): bool
     {
         // Plugin-wide, driver-independent duplicate guard — see onPreAdd()'s
-        // identical check for the full rationale. Checked before the
+        // identical check for the full rationale, including why it's scoped
+        // to WRITABLE_TYPES only (NS/MX are structurally multi-valued and
+        // never pushed by this plugin). Checked before the
         // `_domainmanager_sync` bail below too: restoring a trashed record
         // whose type+name another active record already claims (e.g. a
         // second copy that was left active while this one was trashed)
         // would recreate exactly the duplicate situation this guard exists
         // to prevent.
-        $domains_id = (int) $item->fields['domains_id'];
-        if (DomainState::getForDomain($domains_id) !== null) {
+        $domains_id  = (int) $item->fields['domains_id'];
+        $restoreType = self::typeName((int) $item->fields['domainrecordtypes_id']);
+        if ($restoreType !== null && in_array($restoreType, self::WRITABLE_TYPES, true) && DomainState::getForDomain($domains_id) !== null) {
             $duplicateError = self::duplicateNameError(
                 $domains_id,
                 (int) $item->fields['domainrecordtypes_id'],
                 trim((string) $item->fields['name']),
                 (int) $item->getID(),
+                (string) $item->fields['data'],
             );
             if ($duplicateError !== null) {
                 self::abort($item, $duplicateError);
@@ -725,7 +808,13 @@ class DnsRecordWriteback
             return false;
         }
 
-        if (!self::hasRight($type, CREATE) || Session::isCron()) {
+        $readOnlyError = self::readOnlyModeError();
+        if ($readOnlyError !== null) {
+            self::abort($item, $readOnlyError);
+            return true;
+        }
+
+        if (!self::hasRight($type, CREATE, $domains_id) || Session::isCron()) {
             return false;
         }
 
@@ -749,7 +838,7 @@ class DnsRecordWriteback
         $name = (string) $item->fields['name'];
         $data = (string) $item->fields['data'];
         $ttl  = (int) $item->fields['ttl'];
-        self::sanitizeInputs($name, $data, $ttl);
+        self::sanitizeInputs($name, $data, $ttl, self::configuredDriverName($state));
 
         try {
             $driver = self::getWritableDriver($state);
@@ -771,15 +860,15 @@ class DnsRecordWriteback
                 'last_seen'   => date('Y-m-d H:i:s'),
             ]);
 
-            Log::history($domains_id, Domain::class, [0, '', '[Domain Manager] ' . sprintf(
-                __('Record restored from GLPI trash and recreated at %s: %s %s → %s (TTL %d)', 'domainmanager'),
-                self::driverLabel(self::configuredDriverName($state)),
+            self::logWriteAttempt(
+                $domains_id,
                 $type,
-                $name ?: '@',
-                $data,
-                $ttl,
-            ),
-            ]);
+                $name,
+                self::driverLabel(self::configuredDriverName($state)),
+                __('restore', 'domainmanager'),
+                true,
+                sprintf(__('recreated → %s (TTL %d)', 'domainmanager'), $data, $ttl),
+            );
 
             return true;
         } catch (Throwable $e) {
@@ -788,6 +877,7 @@ class DnsRecordWriteback
                 DomainState::recordWriteOutcome($domains_id, false, $message);
             }
             PluginLogger::error("Failed to recreate restored DNS record #{$item->getID()} for domain #$domains_id", $e::class . ': ' . $e->getMessage());
+            self::logWriteAttempt($domains_id, $type, $name, self::driverLabel(self::configuredDriverName($state)), __('restore', 'domainmanager'), false, $message);
             self::abort($item, sprintf(__('Could not recreate this record at %s: %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state)), $message));
             return true;
         }
@@ -833,16 +923,27 @@ class DnsRecordWriteback
      * assertSingleRecordAtName()`, which exists only because that specific
      * API can't target one record among same-name siblings) — a real
      * duplicate is just as meaningless on a driver that could technically
-     * store it.
+     * store it. Callers only ever invoke this for `WRITABLE_TYPES` (NS/MX
+     * are excluded upstream — § design bug, 2026-08-03, they're structurally
+     * multi-valued and never pushed by this plugin).
+     *
+     * TXT is itself multi-valued at a name (SPF, site-verification, DKIM
+     * policy, … routinely coexist with different content) — passing `$data`
+     * narrows the match to type+name+data for TXT specifically, so only an
+     * exact content repeat counts as a duplicate; every other writable type
+     * (`A`/`AAAA`/`CNAME`) keeps the original type+name-only rule, since this
+     * plugin deliberately disallows round-robin multi-value setups there.
      *
      * @param  int         $domains_id
      * @param  int         $type_id
      * @param  string      $name       already-trimmed
      * @param  int|null    $excludeId  the record itself, when checking an
      *                                 update rather than a fresh create
+     * @param  string|null $data       raw record content; only consulted
+     *                                 when `$type_id` resolves to TXT
      * @return string|null a user-facing abort message, or null if clear
      */
-    private static function duplicateNameError(int $domains_id, int $type_id, string $name, ?int $excludeId = null): ?string
+    private static function duplicateNameError(int $domains_id, int $type_id, string $name, ?int $excludeId = null, ?string $data = null): ?string
     {
         if ($domains_id <= 0 || $type_id <= 0 || $name === '') {
             return null;
@@ -858,15 +959,238 @@ class DnsRecordWriteback
             $where['id'] = ['<>', $excludeId];
         }
 
+        // TXT is structurally multi-valued at a single name (SPF, a site-
+        // verification string, a DKIM policy, … routinely coexist there
+        // with different content) — same design bug as NS/MX (§ 2026-08-03),
+        // except TXT genuinely is in WRITABLE_TYPES, so it can't just be
+        // excluded outright. Narrow the check to content instead: only an
+        // exact type+name+data repeat is a real duplicate; RFC 7208's
+        // "one SPF per name" rule is enforced separately by
+        // `spfDuplicateError()`, which already does its own content match.
+        if ($data !== null && self::typeName($type_id) === 'TXT') {
+            $where['data'] = $data;
+        }
+
         if (countElementsInTable(DomainRecord::getTable(), $where) === 0) {
             return null;
         }
 
         return sprintf(
-            __('A %1$s record named "%2$s" already exists for this domain; Domain Manager does not allow duplicate records', 'domainmanager'),
+            // Deliberately not "A %1$s record named..." - reads as "A A
+            // record" for type A (found live 2026-08-03 while verifying
+            // this guard against a real duplicate).
+            __('A record of type %1$s named "%2$s" already exists for this domain; Domain Manager does not allow duplicate records', 'domainmanager'),
             self::typeName($type_id) ?? (string) $type_id,
             $name,
         );
+    }
+
+    /**
+     * Phase 60 (ARCHITECTURE.md §15.4): the RFC 1034 rule `duplicateNameError()`
+     * cannot express — it keys on `domains_id`+`domainrecordtypes_id`+`name`,
+     * so a CNAME and an A record at the same name pass it today and produce
+     * a broken zone the moment a resolver hits that name. This checks across
+     * *all* types at `$name`, not just the one being written:
+     * - writing a CNAME: refused if any other record (any type) already
+     *   exists at that name;
+     * - writing any other type: refused if a CNAME already exists at that
+     *   name.
+     *
+     * @param  int      $domains_id
+     * @param  string   $type       type name being written, e.g. 'CNAME'
+     * @param  string   $name       already-absolute (§ absoluteRecordName())
+     * @param  int|null $excludeId  the record itself, when checking an
+     *                              update rather than a fresh create
+     * @return string|null a user-facing abort message, or null if clear
+     */
+    private static function cnameCoexistenceError(int $domains_id, string $type, string $name, ?int $excludeId = null): ?string
+    {
+        if ($domains_id <= 0 || $name === '') {
+            return null;
+        }
+
+        $where = [
+            'domains_id' => $domains_id,
+            'name'       => $name,
+            'is_deleted' => 0,
+        ];
+        if ($excludeId !== null) {
+            $where['id'] = ['<>', $excludeId];
+        }
+
+        if ($type === 'CNAME') {
+            if (countElementsInTable(DomainRecord::getTable(), $where) === 0) {
+                return null;
+            }
+            return sprintf(
+                __('"%s" already has another DNS record; a CNAME cannot coexist with any other record type at the same name (RFC 1034)', 'domainmanager'),
+                $name,
+            );
+        }
+
+        $cnameTypeId = self::typeIdByName('CNAME');
+        if ($cnameTypeId === null) {
+            return null;
+        }
+        $where['domainrecordtypes_id'] = $cnameTypeId;
+        if (countElementsInTable(DomainRecord::getTable(), $where) === 0) {
+            return null;
+        }
+        return sprintf(
+            __('"%s" already has a CNAME record; no other record type may coexist with a CNAME at the same name (RFC 1034)', 'domainmanager'),
+            $name,
+        );
+    }
+
+    /**
+     * @param  string $name e.g. 'CNAME'
+     * @return int|null
+     */
+    private static function typeIdByName(string $name): ?int
+    {
+        $typeObj = new DomainRecordType();
+        if ($typeObj->getFromDBByCrit(['name' => $name])) {
+            return (int) $typeObj->fields['id'];
+        }
+        return null;
+    }
+
+    /**
+     * Phase 61 (ARCHITECTURE.md §15.4): RFC 7208 forbids more than one
+     * `v=spf1` TXT record at a single owner name — a resolver that finds
+     * two must treat SPF as a permanent error for that name, so this is a
+     * block, not a warning. Needs a DB query across every TXT record at
+     * `$name`, which `RecordValidator` deliberately has no access to (see
+     * `RecordValidator::validateTxtContent()`'s docblock) — same shape as
+     * `cnameCoexistenceError()` above.
+     *
+     * @param  int      $domains_id
+     * @param  string   $name      already-absolute (§ absoluteRecordName())
+     * @param  string   $value     raw, unquoted TXT content being written
+     * @param  int|null $excludeId the record itself, when checking an
+     *                             update rather than a fresh create
+     * @return string|null a user-facing abort message, or null if clear
+     */
+    private static function spfDuplicateError(int $domains_id, string $name, string $value, ?int $excludeId = null): ?string
+    {
+        if ($domains_id <= 0 || $name === '' || stripos(trim($value), 'v=spf1') !== 0) {
+            return null;
+        }
+
+        $txtTypeId = self::typeIdByName('TXT');
+        if ($txtTypeId === null) {
+            return null;
+        }
+
+        $where = [
+            'domains_id'           => $domains_id,
+            'name'                 => $name,
+            'domainrecordtypes_id' => $txtTypeId,
+            'is_deleted'           => 0,
+            'data'                 => ['LIKE', 'v=spf1%'],
+        ];
+        if ($excludeId !== null) {
+            $where['id'] = ['<>', $excludeId];
+        }
+
+        if (countElementsInTable(DomainRecord::getTable(), $where) === 0) {
+            return null;
+        }
+
+        return sprintf(
+            __('"%s" already has an SPF (v=spf1) TXT record; RFC 7208 forbids more than one per name', 'domainmanager'),
+            $name,
+        );
+    }
+
+    /**
+     * Phase 62 (ARCHITECTURE.md §15.4): the single place `onPreAdd()`/
+     * `onPreUpdate()` both call to run Phases 59-61's per-type validators
+     * plus their DB-backed coexistence siblings, so the two hooks can't
+     * drift on which checks apply to which type. Every other record type
+     * (`NS`, `MX`, …) has no validator yet and passes through unchanged —
+     * `WRITABLE_TYPES` already gates this method to only ever see `A`,
+     * `AAAA`, `CNAME` or `TXT`.
+     *
+     * @param  string      $type       e.g. 'A', 'AAAA', 'CNAME', 'TXT'
+     * @param  string      $name       already-absolute owner name
+     * @param  string      $data       raw data as submitted (already
+     *                                 sanitize/floor-passed by the caller)
+     * @param  string      $zoneName   the domain's own absolute zone name
+     * @param  int         $domains_id
+     * @param  int|null    $excludeId  the record itself, on an update
+     * @param  string|null $driverName configured driver key (Phase 66's
+     *                                 apex-CNAME capability check; null is
+     *                                 treated as "no capability")
+     * @return array{value: string, error: ?string, warning: ?string}
+     */
+    private static function runTypeValidators(
+        string $type,
+        string $name,
+        string $data,
+        string $zoneName,
+        int $domains_id,
+        ?int $excludeId = null,
+        ?string $driverName = null,
+    ): array {
+        switch ($type) {
+            case 'A':
+            case 'AAAA':
+                return RecordValidator::validateAddress($type, $data);
+
+            case 'CNAME':
+                $apexAllowed = $driverName !== null && DriverRegistry::supportsApexCname($driverName);
+                $result = RecordValidator::validateCnameTarget($name, $data, $zoneName, $apexAllowed);
+                if ($result['error'] === null) {
+                    $result['error'] = self::cnameCoexistenceError($domains_id, $type, $name, $excludeId);
+                }
+                return $result;
+
+            case 'TXT':
+                $result = RecordValidator::validateTxtContent($name, $data);
+                if ($result['error'] === null) {
+                    $result['error'] = self::spfDuplicateError($domains_id, $name, $data, $excludeId);
+                }
+                return $result;
+
+            default:
+                return ['value' => $data, 'error' => null, 'warning' => null];
+        }
+    }
+
+    /**
+     * ARCHITECTURE.md §15 Phase 57: one `Log::history()` line per *attempted*
+     * provider write (success or failure), on the Domain, following
+     * §3.7.1's convention exactly (`id_search_option = 0`, `"[Domain
+     * Manager] "` prefix — no new search option). The line is the event,
+     * not the payload: type/name/provider/operation/outcome only, never the
+     * full RDATA — `Log::history()` truncates at 255 chars via
+     * `mb_substr()`, which would silently mangle e.g. a DKIM `p=` value.
+     * The untruncated detail already lives in `domainmanager.log` via the
+     * `PluginLogger::error()` call at each failing call site.
+     *
+     * @param  int    $domains_id
+     * @param  string $type
+     * @param  string $name
+     * @param  string $provider
+     * @param  string $operation e.g. __('create')/__('update')/__('delete')
+     * @param  bool   $success
+     * @param  string $detail    short outcome detail (new value, or error message)
+     * @return void
+     */
+    private static function logWriteAttempt(int $domains_id, string $type, string $name, string $provider, string $operation, bool $success, string $detail): void
+    {
+        $outcome = $success ? __('succeeded', 'domainmanager') : __('failed', 'domainmanager');
+        Log::history($domains_id, Domain::class, [0, '', '[Domain Manager] ' . sprintf(
+            __('%1$s %2$s %3$s at %4$s %5$s: %6$s', 'domainmanager'),
+            ucfirst($operation),
+            $type,
+            $name ?: '@',
+            $provider,
+            $outcome,
+            $detail,
+        ),
+        ]);
     }
 
     /**
@@ -884,34 +1208,76 @@ class DnsRecordWriteback
     }
 
     /**
+     * ARCHITECTURE.md §15.3 Phase 53: the single choke point for the global
+     * write kill switch — checked independently of, and before, any
+     * per-type right, so an admin flipping it off is never second-guessed
+     * by a user's own rights. Each driver's own writer methods assert the
+     * same setting again (§ each Driver's createRecord()/updateRecord()/
+     * deleteRecord()), so a future call path into a driver directly (e.g.
+     * a new controller) can't bypass this by skipping this class.
+     *
+     * @return string|null a user-facing abort message naming the setting,
+     *                      or null when writes are allowed
+     */
+    private static function readOnlyModeError(): ?string
+    {
+        if (!Config::isReadOnlyMode()) {
+            return null;
+        }
+
+        return __('Domain Manager is in read-only mode (Setup > General > Domain Manager); no DNS record change can be pushed to the provider', 'domainmanager');
+    }
+
+    /**
+     * §11.6/§8, Phase 52: these per-type rights are plain profile bits, so a
+     * bare `Session::haveRight()` alone would hold them over every entity's
+     * zones once granted anywhere — a profile granted `Domain Record: TXT`
+     * for one entity would otherwise write TXT records on a Domain in any
+     * other entity too. `Domain::can()` already enforces entity-awareness
+     * for every other action in this plugin (§8's convention); mirrored
+     * here directly via `Session::haveAccessToEntity()` since these rights
+     * aren't itemtype-scoped GLPI rights that `Domain::can()` itself checks.
+     *
      * @param  string $type
-     * @param  int    $bit CREATE|UPDATE|DELETE
+     * @param  int    $bit        CREATE|UPDATE|DELETE|PURGE
+     * @param  int    $domains_id target Domain whose entity gates this right
      * @return bool
      */
-    private static function hasRight(string $type, int $bit): bool
+    private static function hasRight(string $type, int $bit, int $domains_id): bool
     {
         $rights = Profile::getDnsRecordRights();
-        if (!isset($rights[$type])) {
+        if (!isset($rights[$type]) || !Session::haveRight($rights[$type], $bit)) {
             return false;
         }
-        return Session::haveRight($rights[$type], $bit);
+
+        $domain = new Domain();
+        if (!$domain->getFromDB($domains_id)) {
+            return false;
+        }
+
+        return Session::haveAccessToEntity(
+            (int) $domain->fields['entities_id'],
+            (bool) ($domain->fields['is_recursive'] ?? false),
+        );
     }
 
     /**
      * Whether the current user holds the CREATE bit on at least one
-     * per-type DNS write-back right (§11.6/§11.7) — used by
-     * `DomainForm::onShowTab()` to decide whether the native "Link a
-     * record"/"New Domain record for this item" controls are worth
-     * showing on a write-back-managed domain's Records tab: a user who can't
-     * create any type via write-back would only get a confusing local-only
-     * add that `DnsRecordWriteback::onPreAdd()` may reject outright.
+     * per-type DNS write-back right for this domain's entity (§11.6/§11.7,
+     * entity-awareness added Phase 52) — used by `DomainForm::onShowTab()`
+     * to decide whether the native "Link a record"/"New Domain record for
+     * this item" controls are worth showing on a write-back-managed
+     * domain's Records tab: a user who can't create any type via write-back
+     * would only get a confusing local-only add that
+     * `DnsRecordWriteback::onPreAdd()` may reject outright.
      *
+     * @param  int $domains_id
      * @return bool
      */
-    public static function userMayCreateAnyType(): bool
+    public static function userMayCreateAnyType(int $domains_id): bool
     {
         foreach (Profile::getDnsRecordRights() as $type => $right) {
-            if (self::hasRight($type, CREATE)) {
+            if (self::hasRight($type, CREATE, $domains_id)) {
                 return true;
             }
         }
@@ -942,7 +1308,7 @@ class DnsRecordWriteback
             return false;
         }
 
-        return self::hasRight($type, PURGE);
+        return self::hasRight($type, PURGE, (int) ($item->fields['domains_id'] ?? 0));
     }
 
     /**
@@ -966,12 +1332,14 @@ class DnsRecordWriteback
      * the edit-page banner/lock (per-type UPDATE/DELETE for one known type).
      *
      * @param  string $type
-     * @param  int    $bit CREATE|UPDATE|DELETE
+     * @param  int    $bit        CREATE|UPDATE|DELETE
+     * @param  int    $domains_id target Domain whose entity gates this right
+     *                            (Phase 52)
      * @return bool
      */
-    public static function hasTypeRight(string $type, int $bit): bool
+    public static function hasTypeRight(string $type, int $bit, int $domains_id): bool
     {
-        return self::hasRight($type, $bit);
+        return self::hasRight($type, $bit, $domains_id);
     }
 
     /**
@@ -1039,7 +1407,7 @@ class DnsRecordWriteback
 
         $types = [];
         foreach (self::WRITABLE_TYPES as $type) {
-            if (self::hasRight($type, CREATE)) {
+            if (self::hasRight($type, CREATE, $domains_id)) {
                 $types[] = $type;
             }
         }
@@ -1229,18 +1597,25 @@ class DnsRecordWriteback
     }
 
     /**
-     * Ported from the removed controller's sanitizeInputs().
+     * Ported from the removed controller's sanitizeInputs(). Phase 62
+     * (ARCHITECTURE.md §15.4): the TTL floor is the configured driver's own
+     * minimum (`DriverRegistry::getMinTtl()`) rather than a bare literal;
+     * `$driver` is `null` when it can't be resolved yet (e.g. no supplier
+     * configured), which falls back to the same 60 every current driver
+     * happens to share.
      *
-     * @param  string $name
-     * @param  string $data
-     * @param  int    $ttl
+     * @param  string      $name
+     * @param  string      $data
+     * @param  int         $ttl
+     * @param  string|null $driver one of DriverRegistry's DRIVER_* keys
      * @return void
      */
-    private static function sanitizeInputs(string &$name, string &$data, int &$ttl): void
+    private static function sanitizeInputs(string &$name, string &$data, int &$ttl, ?string $driver = null): void
     {
         $name = trim($name);
         $data = trim($data);
-        $ttl = max(60, min($ttl, 2147483647));
+        $minTtl = $driver !== null ? DriverRegistry::getMinTtl($driver) : 60;
+        $ttl = max($minTtl, min($ttl, 2147483647));
     }
 
     /**

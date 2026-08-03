@@ -32,6 +32,7 @@
 namespace GlpiPlugin\Domainmanager\Driver;
 
 use DateTimeImmutable;
+use GlpiPlugin\Domainmanager\Config\Config;
 use GlpiPlugin\Domainmanager\Contract\ConnectionTestableInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsPipelineInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsRecordWriterInterface;
@@ -442,10 +443,31 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Dns
      * and Dinahosting were NOT verified the same way and may need
      * per-type handling of their own before relying on this pattern.
      *
+     * Phase 50 (re-checked 2026-08-03, no live account access): Cloudflare's
+     * and Dinahosting's own extraction methods have since been doc-verified
+     * too (see their docblocks) — Cloudflare's SRV/CAA already carry a
+     * pre-serialized `content` same as here, and Dinahosting has no
+     * documented structured shape for SRV/SOA/CAA either. This conclusion
+     * for IONOS itself still stands unchanged.
+     *
      * @param  string $type
      * @param  array  $row
      * @return string
      */
+    /**
+     * Phase 58's explicit-name-form-boundary rule: no name transform anywhere
+     * implicit, even a one-liner. `absoluteRecordName()` in `DnsRecordWriteback`
+     * guarantees `$name` arrives here as an absolute FQDN; IONOS's own
+     * `record` schema (§11.9 point 4) wants that same absolute form but with
+     * no trailing dot, so this is the sole, named outbound transform this
+     * driver needs. No inbound counterpart exists because `fetchZoneRecords()`
+     * already receives absolute names from IONOS as-is.
+     */
+    private static function wireHostname(string $name): string
+    {
+        return rtrim($name, '.');
+    }
+
     private static function extractContent(string $type, array $row): string
     {
         $content = (string) ($row['content'] ?? '');
@@ -455,7 +477,7 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Dns
         }
 
         if ($type === 'MX') {
-            $content = ((int) ($row['prio'] ?? 0)) . ' ' . $content;
+            $content = ZoneRecord::normalizeMxContent(((int) ($row['prio'] ?? 0)) . ' ' . $content);
         }
 
         return $content;
@@ -474,13 +496,14 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Dns
      */
     public function createRecord(string $domain, string $type, string $name, string $data, int $ttl): ZoneRecord
     {
+        Config::assertWritesAllowed();
         $type   = self::assertWritableType($type);
         $domain = self::normalizeDomain($domain);
         $zoneId = $this->findZoneId($domain);
 
         $response = $this->request('POST', 'zones/' . rawurlencode($zoneId) . '/records', [
             [
-                'name'     => rtrim($name, '.'),
+                'name'     => self::wireHostname($name),
                 'type'     => $type,
                 'content'  => self::toWireContent($type, $data),
                 'ttl'      => $ttl,
@@ -511,6 +534,7 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Dns
      */
     public function updateRecord(string $domain, string $remoteId, string $type, string $name, string $data, int $ttl): ZoneRecord
     {
+        Config::assertWritesAllowed();
         $type   = self::assertWritableType($type);
         $domain = self::normalizeDomain($domain);
         $zoneId = $this->findZoneId($domain);
@@ -533,6 +557,7 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Dns
      */
     public function deleteRecord(string $domain, string $remoteId): void
     {
+        Config::assertWritesAllowed();
         $domain = self::normalizeDomain($domain);
         $zoneId = $this->findZoneId($domain);
 

@@ -33,11 +33,18 @@
    .modal-dialog/.modal-content chrome, so this fragment only ever renders
    what belongs inside .modal-body. #}
 
-{% if not can_create %}
+{% if error is defined and error %}
     <div class="modal-body">
         <div class="alert alert-danger mb-0">
             <i class="ti ti-alert-triangle me-1"></i>
-            {{ __('You do not have permission to create domains, so none of the domains discovered below can be imported.', 'domainmanager') }}
+            {{ error }}
+        </div>
+    </div>
+{% elseif not can_create %}
+    <div class="modal-body">
+        <div class="alert alert-danger mb-0">
+            <i class="ti ti-alert-triangle me-1"></i>
+            {{ __('You do not have permission to create domains, so none of the domains discovered in this supplier\'s account can be imported.', 'domainmanager') }}
         </div>
     </div>
 {% elseif rows is empty %}

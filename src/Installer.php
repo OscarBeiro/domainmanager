@@ -37,6 +37,7 @@ use DomainRecordType;
 use DomainType;
 use GlpiPlugin\Domainmanager\Config\Config;
 use GlpiPlugin\Domainmanager\Driver\DinahostingDriver;
+use GlpiPlugin\Domainmanager\Dto\ZoneRecord;
 use Migration;
 use ProfileRight;
 
@@ -83,6 +84,9 @@ class Installer
         self::dropRecordConflictsTable($migration);
         self::backfillManagedFieldLocks();
         self::renormalizeDinahostingRemoteIds();
+        self::renormalizeMxTrailingDot();
+        self::clearRdapEnrichmentComment();
+        self::clearDomainSyncComment();
 
         $migration->executeMigration();
 
@@ -1103,6 +1107,105 @@ class Installer
     }
 
     /**
+     * Phase 63 (ARCHITECTURE.md §15.5): every driver's `extractContent()` now
+     * runs an imported MX's `data` through `ZoneRecord::normalizeMxContent()`
+     * (guarantees the RFC-canonical trailing dot on the target), but that
+     * only takes effect for a record imported/re-synced *after* this
+     * change — an MX row already stored from an earlier sync stays whatever
+     * it was, potentially differing from a hand-created MX by exactly the
+     * trailing dot core's own form would add, which is the very
+     * `record_hash` churn §11.5 exists to prevent. One-time, idempotent
+     * (`normalizeMxContent()` is a no-op wherever the dot is already
+     * present), same pattern as `renormalizeDinahostingRemoteIds()` above —
+     * runs on every install/update, cheap to re-run, never touches a
+     * genuinely-already-correct row.
+     *
+     * @return void
+     */
+    private static function renormalizeMxTrailingDot(): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $typeObj = new DomainRecordType();
+        if (!$typeObj->getFromDBByCrit(['name' => 'MX'])) {
+            return;
+        }
+        $mxTypeId = (int) $typeObj->fields['id'];
+
+        $iterator = $DB->request([
+            'SELECT' => ['id', 'data'],
+            'FROM'   => 'glpi_domainrecords',
+            'WHERE'  => ['domainrecordtypes_id' => $mxTypeId],
+        ]);
+
+        foreach ($iterator as $row) {
+            $normalized = ZoneRecord::normalizeMxContent((string) $row['data']);
+            if ($normalized !== $row['data']) {
+                $DB->update(
+                    'glpi_domainrecords',
+                    ['data' => $normalized],
+                    ['id' => (int) $row['id']],
+                );
+            }
+        }
+    }
+
+    /**
+     * Phase 69: `registerCronTasks()` used to pre-fill the RdapEnrichment
+     * task's `comment` field with this plugin's own fixed description —
+     * that field is the admin's free-text note (Setup > Automatic actions),
+     * not this plugin's to write into; the actual fixed description is
+     * `Cron::cronInfo()`'s 'description' entry, shown separately and
+     * already correct. One-time, idempotent: only clears the comment if it
+     * still holds exactly the old pre-filled text, so an admin's own note
+     * (even one that happens to start the same way) is never touched.
+     *
+     * @return void
+     */
+    private static function clearRdapEnrichmentComment(): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $oldComment = __('Fill registrar-reported gaps (dates, lock/DNSSEC status, pending flags) from RDAP. Processes one domain per execution, gated by a daily per-domain check limit, to avoid overloading the RDAP API', 'domainmanager');
+
+        $DB->update(
+            CronTask::getTable(),
+            ['comment' => ''],
+            [
+                'itemtype' => Cron::class,
+                'name'     => 'RdapEnrichment',
+                'comment'  => $oldComment,
+            ],
+        );
+    }
+
+    /**
+     * Phase 69 addendum: same fix as `clearRdapEnrichmentComment()` above,
+     * for the DomainSync task's identical pre-fill.
+     *
+     * @return void
+     */
+    private static function clearDomainSyncComment(): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $oldComment = __('Synchronize domain lifecycle and DNS zone records from provider APIs', 'domainmanager');
+
+        $DB->update(
+            CronTask::getTable(),
+            ['comment' => ''],
+            [
+                'itemtype' => Cron::class,
+                'name'     => 'DomainSync',
+                'comment'  => $oldComment,
+            ],
+        );
+    }
+
+    /**
      * Register the daily sync automatic action (idempotent, tunable in Setup > Automatic actions)
      *
      * @return void
@@ -1119,7 +1222,10 @@ class Installer
                 'hourmax'       => 24,
                 'param'         => 20,
                 'logs_lifetime' => 30,
-                'comment'       => __('Synchronize domain lifecycle and DNS zone records from provider APIs', 'domainmanager'),
+                // No 'comment' here — that field is the admin's own free-text
+                // note (Setup > Automatic actions), not this plugin's to
+                // pre-fill. The fixed, non-editable description is
+                // Cron::cronInfo()'s 'description' entry.
             ],
         );
 
@@ -1134,7 +1240,10 @@ class Installer
             [
                 'state'         => CronTask::STATE_WAITING,
                 'logs_lifetime' => 30,
-                'comment'       => __('Fill registrar-reported gaps (dates, lock/DNSSEC status, pending flags) from RDAP. Processes one domain per execution, gated by a daily per-domain check limit, to avoid overloading the RDAP API', 'domainmanager'),
+                // No 'comment' here — that field is the admin's own free-text
+                // note (Setup > Automatic actions), not this plugin's to
+                // pre-fill. The fixed, non-editable description is
+                // Cron::cronInfo()'s 'description' entry above.
             ],
         );
     }
