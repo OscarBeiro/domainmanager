@@ -2424,6 +2424,21 @@ Abort the run and set a distinct `DomainState` status when a single reconciliati
 than N records or more than X% of a domain's owned records, whichever is hit first. Requires explicit
 operator action to proceed. A genuinely emptied zone is rare; a wrongly-scoped credential is not.
 
+**Outcome, 2026-08-03 (TESTING.md Phase 55):** `RecordReconciler::doReconcile()` counts, after its
+existing match/claim pass but before the trash loop runs, how many currently-owned (non-deleted)
+records this run would newly trash. Refuses (throws `Exception\BlastRadiusExceededException`, before
+any trash-bin mutation) once that count exceeds `Config::getBlastRadiusMaxCount()` (default 20) or
+exceeds `Config::getBlastRadiusMaxPercent()` (default 50) of the domain's owned records — an OR, either
+threshold alone trips it. Both configurable on the Setup tab, same `plugin:domainmanager` config
+context as Phase 53's kill switch. `SyncEngine::syncDnsLeg()` catches this exception distinctly and
+sets the new `DomainState::STATUS_BLAST_RADIUS_GUARD` rather than `STATUS_ERROR` — a guard doing its
+job, not a failure, mirroring how `STATUS_SOURCE_CONFLICT` (Phase 47) already treats a deliberate pause
+as its own status rather than an error. "Requires explicit operator action to proceed": `reconcile()`
+and `sync()` gained a `$force` parameter (default `false`, every existing caller unaffected); the
+`POST /plugins/domainmanager/sync/{id}` endpoint accepts a `force` field, and the domain panel's
+"Update Now" button offers a `window.confirm()` naming the exact counts and re-issues the request with
+`force=1` only if the operator confirms — nothing forces automatically.
+
 ### Phase 56 — Typed confirmation for destructive writes
 
 Replace `window.confirm()` (§11.19 surface 3) with a typed confirmation — the user enters the record

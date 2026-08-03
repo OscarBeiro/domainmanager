@@ -84,6 +84,18 @@ final class ConfigController extends AbstractController
             );
         }
 
+        $max_count = (int) $request->request->get('blast_radius_max_count', Config::getBlastRadiusMaxCount());
+        if ($max_count !== Config::getBlastRadiusMaxCount()) {
+            Config::setBlastRadiusMaxCount($max_count);
+            PluginLogger::activity("Configuration changed: blast-radius guard max record count set to $max_count");
+        }
+
+        $max_percent = (int) $request->request->get('blast_radius_max_percent', Config::getBlastRadiusMaxPercent());
+        if ($max_percent !== Config::getBlastRadiusMaxPercent()) {
+            Config::setBlastRadiusMaxPercent($max_percent);
+            PluginLogger::activity("Configuration changed: blast-radius guard max record percent set to $max_percent");
+        }
+
         Session::addMessageAfterRedirect(__s('Configuration saved', 'domainmanager'));
 
         return new RedirectResponse(self::configTabUrl());

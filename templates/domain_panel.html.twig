@@ -471,17 +471,19 @@
         badge.title = message || '';
     }
 
-    button.addEventListener('click', function () {
+    function runSync(force) {
         const csrf = document.querySelector('meta[property="glpi:csrf_token"]');
         button.disabled = true;
         button.querySelector('i').classList.add('ti-spin');
 
-        fetch({{ path('/plugins/domainmanager/sync/' ~ domains_id)|json_encode|raw }}, {
+        return fetch({{ path('/plugins/domainmanager/sync/' ~ domains_id)|json_encode|raw }}, {
             method: 'POST',
             headers: {
                 'X-Glpi-Csrf-Token': csrf ? csrf.getAttribute('content') : '',
-                'X-Requested-With': 'XMLHttpRequest'
-            }
+                'X-Requested-With': 'XMLHttpRequest',
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: force ? 'force=1' : ''
         }).then(function (response) {
             return response.json().then(function (data) {
                 return { ok: response.ok, data: data };
@@ -534,12 +536,28 @@
                     warning.classList.add('d-none');
                 }
             }
+
+            // ARCHITECTURE.md §15.3 Phase 55: this run's reconciliation
+            // refused to apply because it would have trashed more records
+            // than the configured blast-radius guard allows — the domain
+            // was left untouched. Offer an explicit, one-off override
+            // rather than silently retrying or leaving no way forward
+            // short of the Setup config page.
+            if (data.dns_status === 'blast_radius_guard' && !force) {
+                if (window.confirm(data.dns_message + '\n\n' + {{ __('Force this synchronization anyway?', 'domainmanager')|json_encode|raw }})) {
+                    return runSync(true);
+                }
+            }
         }).catch(function (error) {
             window.alert({{ __('Synchronization request failed:', 'domainmanager')|json_encode|raw }} + ' ' + error.message);
         }).finally(function () {
             button.disabled = false;
             button.querySelector('i').classList.remove('ti-spin');
         });
+    }
+
+    button.addEventListener('click', function () {
+        runSync(false);
     });
 })();
 </script>

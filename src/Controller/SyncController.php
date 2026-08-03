@@ -36,6 +36,7 @@ use Glpi\Controller\AbstractController;
 use GlpiPlugin\Domainmanager\Service\SyncEngine;
 use Session;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 
@@ -47,7 +48,7 @@ use Symfony\Component\Routing\Attribute\Route;
 class SyncController extends AbstractController
 {
     #[Route('/sync/{domains_id}', name: 'domainmanager_sync', methods: ['POST'], requirements: ['domains_id' => '\d+'])]
-    public function __invoke(int $domains_id): Response
+    public function __invoke(int $domains_id, Request $request): Response
     {
         if (!Session::haveRight('domain', UPDATE)) {
             return new JsonResponse(['error' => __('You do not have permission to synchronize domains', 'domainmanager')], 403);
@@ -62,7 +63,14 @@ class SyncController extends AbstractController
             return new JsonResponse(['error' => __('You do not have permission to synchronize this domain', 'domainmanager')], 403);
         }
 
-        $result = (new SyncEngine())->sync($domain);
+        // ARCHITECTURE.md §15.3 Phase 55: explicit operator override of a
+        // previous run's blast-radius guard refusal — only ever meaningful
+        // as a deliberate, one-off re-request from the domain panel's own
+        // "Update Now" button after it surfaced STATUS_BLAST_RADIUS_GUARD,
+        // never a default.
+        $force = (bool) $request->request->getBoolean('force', false);
+
+        $result = (new SyncEngine())->sync($domain, false, $force);
 
         return new JsonResponse($result);
     }

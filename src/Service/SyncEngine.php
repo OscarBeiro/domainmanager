@@ -38,6 +38,7 @@ use GlpiPlugin\Domainmanager\Dto\LifecycleStatus;
 use GlpiPlugin\Domainmanager\DomainState;
 use GlpiPlugin\Domainmanager\DriverFactory;
 use GlpiPlugin\Domainmanager\DriverRegistry;
+use GlpiPlugin\Domainmanager\Exception\BlastRadiusExceededException;
 use GlpiPlugin\Domainmanager\Exception\DriverException;
 use GlpiPlugin\Domainmanager\ImportLock;
 use GlpiPlugin\Domainmanager\LockEnforcer;
@@ -74,6 +75,13 @@ class SyncEngine
      *                          defaults to "Native". Ignored entirely when
      *                          the domain already has a state row — this
      *                          field is set once, at creation, never again.
+     * @param  bool   $forceDnsReconcile ARCHITECTURE.md §15.3 Phase 55:
+     *                          bypass the reconciliation blast-radius guard
+     *                          for this run. Only ever set true by an
+     *                          explicit operator override of a run that
+     *                          previously returned
+     *                          `DomainState::STATUS_BLAST_RADIUS_GUARD` —
+     *                          every other caller leaves this false.
      * @return array{registrar_status: string, dns_status: string,
      *               registrar_message: string, dns_message: string,
      *               detected_provider: string, last_sync_date: string,
@@ -82,7 +90,7 @@ class SyncEngine
      *               registrar_auto_renew: ?int, registrar_domain_type: ?string,
      *               registrar_dnssec_enabled: ?int}
      */
-    public function sync(Domain $domain, bool $isImport = false): array
+    public function sync(Domain $domain, bool $isImport = false, bool $forceDnsReconcile = false): array
     {
         $state = DomainState::getForDomain((int) $domain->getID());
         $fqdn  = (string) $domain->fields['name'];
@@ -212,7 +220,7 @@ class SyncEngine
                     "DNS sync skipped: resolved supplier changed from #$previous_dns_suppliers_id to #" . (int) $dns_config->fields['suppliers_id'] . ' (source conflict, pending confirmation)',
                 );
             } elseif ($dns_config !== null) {
-                $this->syncDnsLeg($domain, $dns_config, $result);
+                $this->syncDnsLeg($domain, $dns_config, $result, $forceDnsReconcile);
             }
         } finally {
             LockEnforcer::$sync_in_progress = false;
@@ -448,7 +456,7 @@ class SyncEngine
      * @param  array          $result
      * @return void
      */
-    private function syncDnsLeg(Domain $domain, SupplierConfig $config, array &$result): void
+    private function syncDnsLeg(Domain $domain, SupplierConfig $config, array &$result, bool $force = false): void
     {
         try {
             $dns_suppliers_id = (int) $config->fields['suppliers_id'];
@@ -481,7 +489,7 @@ class SyncEngine
                 'DNS fetch succeeded, returned ' . count($records) . ' record(s) from the provider',
             );
             $commentDriver = $driver instanceof DnsRecordCommentSyncInterface ? $driver : null;
-            $stats = $this->reconciler->reconcile($domain, $records, $commentDriver);
+            $stats = $this->reconciler->reconcile($domain, $records, $commentDriver, $force);
 
             $result['dns_status']  = DomainState::STATUS_OK;
             $result['dns_message'] = sprintf(
@@ -493,6 +501,13 @@ class SyncEngine
                 $stats['unchanged'],
             );
             $this->logger->milestone((int) $domain->getID(), 'DNS sync OK: ' . $result['dns_message']);
+        } catch (BlastRadiusExceededException $e) {
+            $result['dns_status']  = DomainState::STATUS_BLAST_RADIUS_GUARD;
+            $result['dns_message'] = $e->getMessage();
+            $this->logger->detail(
+                'DNS leg refused for domain #' . $domain->getID() . ' (blast-radius guard): '
+                . $e->wouldTrash . ' of ' . $e->totalOwned . ' owned record(s) would be trashed',
+            );
         } catch (DriverException $e) {
             $result['dns_status']  = DomainState::STATUS_ERROR;
             $result['dns_message'] = $e->getMessage();

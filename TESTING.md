@@ -3415,3 +3415,33 @@ amendment.
 - [ ] Not yet verified live (code audit only, 2026-08-03; requires enabling the setting against a
   live-configured domain and confirming a create/update/delete/restore is refused with the
   expected message, then confirming it resumes once turned back off)
+
+### Phase 55 Blast-radius guard on reconciliation (ARCHITECTURE.md §15.3)
+- **Requirement:** abort a reconciliation run and set a distinct `DomainState` status when it would
+  trash more than N records or more than X% of a domain's owned records, whichever is hit first;
+  requires explicit operator action to proceed.
+- **Implementation:** `RecordReconciler::doReconcile()` counts, after its existing match/claim pass
+  but before the trash loop, how many currently-owned (non-deleted) records this run would newly
+  trash, against `Config::getBlastRadiusMaxCount()`/`getBlastRadiusMaxPercent()` (new
+  `blast_radius_max_count`/`blast_radius_max_percent` keys on the existing `plugin:domainmanager`
+  config context, editable on the Setup tab, defaults 20/50). Crossing either throws
+  `Exception\BlastRadiusExceededException` before any trash-bin mutation runs.
+  `SyncEngine::syncDnsLeg()` catches it distinctly from `DriverException`/`Throwable` and sets the
+  new `DomainState::STATUS_BLAST_RADIUS_GUARD` (its own label/badge class in
+  `DomainStatusResolver`). `reconcile()`/`sync()` gained a `$force` parameter (default `false`);
+  `POST /plugins/domainmanager/sync/{id}` accepts a `force` field, and the domain panel's "Update
+  Now" button, on receiving `STATUS_BLAST_RADIUS_GUARD`, shows a `window.confirm()` naming the exact
+  counts and re-issues the request with `force=1` only if the operator confirms.
+- **Verified by code inspection, 2026-08-03:**
+  - Confirmed the count is computed strictly before the trash loop, so a run that trips the guard
+    performs zero `DomainRecord::delete()` calls this pass (though any `createRecord()`/`update()`
+    calls from the earlier match/claim pass — for records the provider *did* still report — have
+    already applied; only the trash side is gated, matching the phase's own scope).
+  - Confirmed every existing caller of `reconcile()`/`sync()` (`Cron`, `MassiveActionHandler`,
+    `DomainImportController`, `RdapGapChecker`) leaves the new parameter at its `false` default, so
+    behavior for all of them is unchanged unless the guard actually trips.
+  - Confirmed the threshold comparison is an OR (either count or percent alone trips it), matching
+    "whichever is hit first."
+- [ ] Not yet verified live (code audit only, 2026-08-03; requires a live-configured domain, a
+  synthetic near-empty upstream snapshot, and confirming the sync is refused with the expected
+  message/status, then confirming the "force" override actually reconciles when confirmed)
