@@ -16,7 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Entries are grouped into **Features** (new capability, UI/UX change, refactor, doc/config
 change) and **Bugs** (something that was actually broken, fixed) — one line each.
 
-## [Unreleased] (1.5.0-beta20)
+## [Unreleased]
+
+## [1.5.0] - 2026-08-03
 ### Bugs
 - **Phase 70 addendum: fixed misleading wording on the "no permission to create domains" alert.** This branch of `domain_discovery_modal.html.twig` renders only the alert itself, with no table below it — so "none of the domains discovered below can be imported" referred to a table that was never actually shown. Reworded to "none of the domains discovered in this supplier's account can be imported" (flagged by the user right after Phase 70 landed the general "show an error instead of a blank modal" fix).
 - **Phase 70 (RESEARCH-phases69plus.md §(a)): "Import Domains" modal blank on discovery error, e.g. Cloudflare/IONOS scope errors.** `DomainDiscoveryController::__invoke()` returned non-2xx HTTP statuses (400/403/404/409/500) for every failure path — supplier not found, missing permission, inactive supplier, unsupported driver, and `listAccountDomains()` throwing `DriverException`/`Throwable`. The modal is loaded via core's `Ajax::createModalWindow()`, whose generated JS calls jQuery's `.load(url, fields)`; jQuery only writes the response body into the dialog on a 2xx status, so on any error the dialog opened and stayed completely blank with no indication anything had gone wrong (reported live for Cloudflare/IONOS discovery). Fix: all error paths now go through a new `renderError()` helper that renders `domain_discovery_modal.html.twig`'s own error state (a `.alert-danger` fragment, new `error` template variable) and always returns HTTP 200, so jQuery injects it like any successful load.
