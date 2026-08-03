@@ -3266,7 +3266,15 @@ amendment.
 - **Expected:** Granting only the A row's Purge bit lets a user in that profile hard-purge a
   trashed A record but not a trashed TXT record (blocked with "Purging this record requires the
   'Purge' right for its DNS record type"); granting Purge on TXT as well then allows both.
-- [ ] Verified
+- [x] Verified (live, 2026-08-03, `glpi_glpi_1`/port 65008: rights-matrix rows and old-row
+  removal confirmed via the profile tab's rendered checkboxes; purge gating confirmed by
+  purging two plugin-owned trashed records (one A, one TXT) via `front/domainrecord.form.php`
+  as a profile with only the A row's Purge bit — the A purge succeeded, the TXT purge was
+  silently cancelled and the record stayed in the trash; granting Purge on TXT then let it
+  succeed too. Note: the gate only applies to plugin-owned/synced records
+  (`ImportedRecord::isPluginOwned()`) per `LockEnforcer::blockRecordRemoval()` — a manually
+  DB-inserted record with no `glpi_plugin_domainmanager_records` row purges unconditionally,
+  which matches the design intent, not a bug.)
 
 ### Phase 49 Upgrade migration for the old flat purge right
 - **Requirement:** A profile that already held the old `domainmanager:purge_records` right
@@ -3278,4 +3286,7 @@ amendment.
 - **Expected:** After upgrade, that profile has the PURGE bit set on
   `domainmanager:dns_records_a/aaaa/cname/txt`, and no `glpi_profilerights` row named
   `domainmanager:purge_records` remains.
-- [ ] Verified
+- [x] Verified (live, 2026-08-03, `glpi_glpi_1`/port 65008: inserted a synthetic
+  `domainmanager:purge_records` row (bit 1) for a test profile, re-ran `bin/console
+  glpi:plugin:install`, confirmed `migratePurgeRight()` set rights=16 (PURGE) on all four
+  per-type rows for that profile and removed the old row, exactly as designed)
