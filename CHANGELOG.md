@@ -22,6 +22,7 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 
 ### Bugs
 - Fixed the "Import Domains" window sometimes opening completely blank, with no explanation, when the supplier's registrar/DNS account (e.g. Cloudflare, IONOS) returned an error — the error message is now shown inside the window instead.
+- Fixed the wording of the "Import Domains" window's message when you lack permission to create domains — it no longer refers to a list of domains that isn't actually shown.
 - Neither the RdapEnrichment nor the DomainSync automatic action pre-fills its own description into the "Comments" field on Setup > Automatic actions anymore — that field is now free for you to use for your own notes, as it should be. Existing installs have their old auto-filled comment cleared automatically, unless you've already edited it yourself.
 - Fixed creating or syncing a second TXT record at the same name (e.g. SPF alongside a site-verification string) being wrongly blocked as a duplicate, even when their content was different.
 - Fixed automatic synchronization repeatedly reporting NS and MX records as blocked duplicates, even though a domain normally has several of each.
