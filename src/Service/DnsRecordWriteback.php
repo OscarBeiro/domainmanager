@@ -336,6 +336,18 @@ class DnsRecordWriteback
             return false;
         }
 
+        if (!empty($item->fields['is_deleted'])) {
+            // Trashing a write-back-managed record already pushed a real
+            // deleteRecord() upstream (§ onPreDelete()) — its remote copy is
+            // gone. Saving an edit while still trashed must never attempt
+            // to push it (found live 2026-08-03: doing so tried to update a
+            // record that no longer exists at the provider). The only
+            // write-back action a trashed record can still trigger is
+            // onPreRestore() recreating it; a plain edit here is local-only,
+            // same as any other native field change on a non-managed item.
+            return false;
+        }
+
         // Plugin-wide, driver-independent duplicate guard — see onPreAdd()'s
         // identical check for the full rationale. Effective values fall
         // back to the record's current stored fields for whichever of

@@ -19,6 +19,7 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 - Fixed running "Update now" on a Dinahosting-managed domain spuriously trying to re-push every synced DNS record back to Dinahosting, which could fail the sync and, in some cases, corrupt the record name being pushed.
 - Fixed the Purge button never appearing on a trashed managed DNS record's edit page, even for a user holding the right to purge it.
 - Fixed deleting a Dinahosting-managed DNS record failing with "Domain is not managed by this Dinahosting account", even when the domain and record were both valid.
+- Fixed saving an edit to a trashed managed DNS record trying to push the change to the provider, even though a trashed record has already been removed from the provider and can only be recreated by restoring it.
 
 ## [1.4.1] - 2026-08-01
 ### Features
