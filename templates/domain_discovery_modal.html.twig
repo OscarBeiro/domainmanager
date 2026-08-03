@@ -33,7 +33,14 @@
    .modal-dialog/.modal-content chrome, so this fragment only ever renders
    what belongs inside .modal-body. #}
 
-{% if not can_create %}
+{% if error is defined and error %}
+    <div class="modal-body">
+        <div class="alert alert-danger mb-0">
+            <i class="ti ti-alert-triangle me-1"></i>
+            {{ error }}
+        </div>
+    </div>
+{% elseif not can_create %}
     <div class="modal-body">
         <div class="alert alert-danger mb-0">
             <i class="ti ti-alert-triangle me-1"></i>
