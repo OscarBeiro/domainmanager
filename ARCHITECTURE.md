@@ -2146,3 +2146,631 @@ duplicate created by this race for records already affected before the fix ships
 ---
 
 *Open items awaiting your approval: the four deviations in §0.1–§0.4 (Registrar as plugin field, `date_domaincreation` mapping, plugin-owned lock layer replacing native `Lockedfield`, documented `managed_domainrecordtypes` gate on web-triggered record writes), the CREATE TABLE exception in §0.6, and §11 (Phases 31–35 — Manual DNS record write-back to IONOS). The two items that were blocking Phase 32 — the rights-matrix rendering mechanism (§11.6/§11.16) and the §10 changelog-policy amendment for pre-release versions (§11.14) — are both resolved as of 2026-07-29; Phase 32 is unblocked. **§12 (Phase 41 — Cloudflare write support) is a design-only addition pending your approval; §12.8 lists five implementation-time API verifications that are not blocking approval of the design itself. §13 (Phase 44 — update-conflict reconciliation) was implemented 2026-07-30 and removed 2026-07-31 — a managed record's GLPI value is always authoritative, so there was no genuine conflict to reconcile. §14 (Phases 46–48) is fully resolved as of 2026-07-30: Phase 46 closed as already solved (§14.1, no code change), Phase 47's Domain-level "Native" field and DNS source-conflict write gate are implemented (§14.2), and Phase 48's trash/restore bug is fixed (§14.3). This closes out the 1.3.0 line at `1.3.0-beta1`.***
+
+---
+
+# §15 Phases 49–68 — one `1.5.0` release: containment, write safety rails, validation engine, full record-type coverage, NS registry (plan, 2026-08-03)
+
+Design-only. No code is written until this section is approved (Phase 0 discipline, §9).
+
+Five requirement groups were raised together on 2026-08-03. Investigating them before planning
+changed three of them materially, and those corrections are recorded here rather than in the phase
+bodies so they are not rediscovered later:
+
+- **The "4 items maximum" cap is not a regression.** Core's `DomainRecord::showForDomain()`
+  (verified on `11.0/bugfixes`) issues its `$DB->request()` with no `LIMIT` and passes
+  `count($entries)` as both `total_number` and `filtered_number` — it cannot cap rows. What was
+  actually observed is the plugin's own six-type read whitelist (§5: "unknown record types skipped
+  (read-only scope: A, AAAA, NS, TXT, MX, CNAME)"), a deliberate design decision. `SOA`, `SRV`,
+  `CAA`, `PTR` and `ALIAS` have never been imported. Nothing broke.
+- **`NS` is a separate question.** `NS` *is* in the read whitelist, so if it is genuinely absent the
+  cause is downstream of the whitelist — most likely provider-side, since Cloudflare does not expose
+  a zone's own apex `NS` records through its DNS records API at all. Phase 50 diagnoses this and is
+  permitted to conclude "provider limitation, documented" with no code.
+- **Per-profile audit attribution is not achievable natively.** `glpi_logs` (verified against
+  `install/mysql/glpi-empty.sql`) has `itemtype`, `items_id`, `itemtype_link`, `linked_action`,
+  `user_name`, `date_mod`, `id_search_option`, `old_value`, `new_value`, `old_id`, `new_id`. There is
+  no `profiles_id` and no `entities_id`, and `user_name` is a formatted display string from
+  `User::getNameForLog()`, not a `users_id` FK — so it cannot even be joined back to `glpi_users`
+  reliably. **Rejected**, see §15.6.
+
+---
+
+## 15.1 Version line
+
+**Everything in §15 ships as a single `1.5.0` release.** The five-line split an earlier draft of this
+section proposed is superseded.
+
+| Group | Theme | Phases |
+|---|---|---|
+| A | Containment of the write-duplication class | 49–52, 51b |
+| B | Write safety rails, History gaps | 53–57, 57b |
+| C | DNS record validation engine | 58–62 |
+| D | Full record-type coverage | 63–66 |
+| E | NS provider registry (Hostalia, Ascio), takeover detection | 67–68 |
+
+Groups are ordering and review units, not versions. Work proceeds as `1.5.0-alpha1`, `-alpha2`, …
+then `-betaN`, each bump landing under the running `## [Unreleased]` section per §10's pre-release
+rule, with the accumulated content promoted into one dated `## [1.5.0]` header at release. That is a
+long pre-release run — expect the `CHANGELOG.md` derivation at cut time to need real trimming, since
+§10 requires one line per item and this is roughly twenty phases of items.
+
+**Group A ordering is load-bearing.** Phases 49–52 address a defect class that has already created
+duplicate records at a provider, so they run first inside `1.5.0` rather than being sequenced by
+convenience.
+
+**The sequencing question this section previously left open is now settled by the changelog.** `1.4.2`
+was cut as a real release on 2026-08-03, carrying the Dinahosting normalization fixes, the
+`remote_id` repair migration, the duplicate guard and the `hasPurgeRight()` fix; `[Unreleased]` now
+names `1.5.0-beta1`. So the shipped-versus-bundled tension is resolved in the safer direction on its
+own: the containment work already in flight reached an instance, and only Phases 49–52 — which are
+refinements of it, not the incident fix itself — ride the full `1.5.0`. No `1.4.3` is needed and no
+retroactive header is at issue.
+
+One observation on the `1.4.2` entry rather than on the plan: it carries four buckets —
+`### Features`, `### Bugs`, `### Bugs (continued)` and `### Added`. §10 mandates exactly two,
+`### Features` and `### Bugs`, explicitly not Keep a Changelog's Added/Changed/Removed/Fixed split.
+`### Added` should fold into `### Features` and `### Bugs (continued)` into `### Bugs` before this
+becomes the pattern the `1.5.0` section inherits.
+
+**Schema-bearing phases:** 54 (`supplierconfigs` circuit-breaker columns) and, conditionally, 63 (MX
+renormalization migration). Each must bump `PLUGIN_DOMAINMANAGER_VERSION` in the same commit as its
+migration, per §3.7.2's lesson — the pre-release bump sequence gives each one its own gate, and
+`Installer::install()`'s chain stays idempotent throughout.
+
+One GitHub Issue per phase, branched from `develop`, per the standing workflow.
+
+**Status update, 2026-08-03 (post-drafting):** Phases 49 and 50 have already been verified/implemented
+on this branch (commits `11f381c` "Verify Phase 49 per-type purge right live, check off TESTING.md"
+and `73ee509` "Phase 50: doc-verify SRV/SOA/CAA read handling for all three drivers"), on top of the
+`1.4.2` release commit. The bodies of §15.2's Phase 49 and Phase 50 below are retained as the design
+record of what was verified and why; no further code is pending for either unless a future finding
+reopens them.
+
+---
+
+## 15.2 Phases 49–52 and 51b — Group A, containment
+
+These come first because they address a class of defect that has already reached production DNS,
+not because they are the smallest.
+
+### Phase 49 — Idempotent pre-create, and a visible outcome when the duplicate guard fires on a sync
+
+**Revised 2026-08-03 against §3.8.2 and §11.20, which confirm the sequence and change what is
+missing.** The earlier draft of this phase assumed the duplicate reached GLPI through the add path.
+It did not. Confirmed sequence:
+
+1. The upstream create **succeeded**. `findByIdentity()`'s post-create confirmation failed (the
+   un-normalized-hostname bug), so the driver reported failure.
+2. The user retried, producing a second **real record at the provider** (§3.8.2: "the resulting user
+   retries created real duplicate records upstream").
+3. The duplicates entered GLPI on the **next sync**, mirrored in by `RecordReconciler` as two local
+   `DomainRecord` rows (§3.8.2: "silently mirrored into GLPI as a second local `DomainRecord`" —
+   observed live as two duplicate `manel` A records).
+
+So `duplicateNameError()`, checked before each hook's `_domainmanager_sync` bail-out precisely so it
+catches a reconciler mirroring an upstream duplicate (§11.20), does now stop step 3. **Neither the
+guard nor the `qualifyHostname()` fix stops step 2** — at retry time no local row exists yet, so
+there is nothing for the guard to compare against, and a second upstream record is still created.
+
+**And stopping step 3 introduces a worse failure mode than the one it fixes.** Once a genuine
+upstream duplicate exists — however it arose, including by an admin editing the zone directly at the
+provider — the reconciler can never represent it. `add()` returns `false` on every sync, forever, and
+the only signal is a session message, which during a cron run no one is present to read. The result
+is a domain reporting a clean sync while silently omitting a live record. That is precisely the
+class of divergence §5.4's trash-bin design and §5.6's fetch-succeeded audit line exist to make
+impossible, reintroduced through a different door.
+
+**Two-part fix.**
+
+- **Upstream (step 2): idempotent pre-create.** Before any create, look the record up upstream by
+  identity; if an identical record already exists, **adopt** it — write the local `DomainRecord` and
+  `ImportedRecord` ownership rows against the existing `remoteId` — rather than issuing a create.
+  This is the `findByIdentity()` call the drivers already make, moved from after the create to before
+  it, which also makes the confirmation lookup redundant on the happy path. Driver-agnostic: lives in
+  `DnsRecordWriteback`, keyed off `DnsRecordWriterInterface`, no driver named. Dinahosting's synthetic
+  `type|name` `remoteId` is unaffected, since the lookup is by identity rather than by id.
+- **Local (step 3): make the guard's refusal visible and persistent.** When `duplicateNameError()`
+  fires on a reconciler-driven path, it must set a distinct `DomainState` status naming the
+  unrepresented record and log to `domainmanager-errors.log` via `SyncLogger` — not queue a session
+  message. A refusal that only surfaces in a message nobody reads is indistinguishable from a
+  successful sync, and this is the one case where GLPI knowingly holds a different view of the zone
+  than the provider does.
+
+**Verifications required before code:**
+1. Confirm `findByIdentity()` is safe to call pre-create on all three write-capable drivers when the
+   record does not exist — returns null rather than throwing.
+2. Confirm whether `onPreAdd()` aborts the local add or commits it unowned when the driver reports a
+   failed create. §3.8.2 establishes the misreport but not this detail, and it determines whether the
+   adopt path also needs to repair rows left behind by the old behaviour.
+3. Confirm the guard's reconciler-path refusal currently produces no persisted state — §11.20 records
+   a session message and an `add() === false`, and nothing else.
+
+### Phase 50 — Diagnose the absent `NS` records
+
+Determine whether `NS` records are missing because of the plugin or because the provider does not
+return them. Deliverable is a finding, not necessarily code.
+
+**Verifications required before code:**
+1. For each of `CloudflareDriver`, `IonosDriver`, `DinahostingDriver`: does the zone-records fetch
+   return the zone's own apex `NS` records? Cloudflare is expected not to (it owns them).
+2. Whether the affected domain in the live report uses a supplier whose driver does return them.
+3. Whether `RecordReconciler` filters `NS` anywhere beyond the whitelist.
+
+If the cause is provider behaviour, the outcome is a documented limitation in §4 plus a `TESTING.md`
+note — and, if this proves confusing in practice, a UI line stating that apex `NS` is provider-managed.
+No fabricated `NS` rows.
+
+### Phase 51 — Credential-leak audit and a `PluginLogger` scrubber
+
+`PluginLogger::activity()`/`error()` are the single funnel for both log files. Add a scrubber there
+— a key allow-list for structured context plus a bearer/token regex for free text — so no future
+call site can leak a secret by accident. Defense in depth: §3.7.2 already establishes that
+`SupplierConfig` logs field labels and never values, and this does not replace that discipline.
+
+**Verifications required before code:** grep every `PluginLogger` call site and every
+`DriverException` message construction for a path that can carry a decrypted credential, an
+`Authorization` header, or a full request body. The audit is the phase; the scrubber is the residual
+guarantee.
+
+### Phase 51b — Per-command error mapping in `DinahostingDriver::request()`
+
+§3.8.2 leaves this explicitly open: `request()`'s shared handler maps `2303`/`CODE_OBJECT_NOT_EXISTS`
+to "Domain is not managed by this Dinahosting account" regardless of which command produced it. That
+reading was only ever confirmed for domain-level commands (`Domain_Zone_GetAll`,
+`Services_GetDomains`). For `Domain_Zone_DeleteType*` the same code means "this hostname/value
+combination doesn't exist" — the raw text is literally `Param "hostname"/"ip" value doesn't exist`.
+
+The `relativeHostname()` fix stopped the delete calls that were *triggering* the wrong message, so the
+symptom is gone, but the mapping is still wrong and will resurface the moment a delete legitimately
+targets an absent record. It also collides directly with the project's standing requirement that an
+operator-facing message name the specific thing to fix: "domain not managed by this account" sends an
+admin to check credentials and supplier assignment for what is actually a missing record.
+
+Make the mapping command-aware. Note §3.8's open gap remains: there is no documented record-not-found
+`responseCode`, so a delete against a genuinely absent record still cannot be told apart from other
+`2303` failures with certainty — the honest outcome is a message that states both possibilities for
+record-level commands rather than asserting the wrong one.
+
+**Verifications required before code:** whether any command other than `Domain_Zone_DeleteType*`
+returns `2303` with record-level rather than domain-level meaning; §3.8.2 confirms only the delete
+family.
+
+### Phase 52 — Audit of the per-type write-right helpers (rights resolution, not only entity scope)
+
+**Widened 2026-08-03.** The original scope was entity-awareness alone. `1.4.2` then shipped a fix for
+`DnsRecordWriteback::hasPurgeRight()` reading `$item->fields['type']` — not a real `DomainRecord`
+field, where every other type lookup in the class reads `domainrecordtypes_id` — so it resolved to no
+type and returned `false` **unconditionally**, hiding the Purge button even from a super-admin holding
+every right. That bug lived in the same helpers this phase audits, and it was invisible for as long as
+it existed because it failed *closed*. A symmetric bug that failed *open* would be a silent privilege
+escalation and equally invisible. That asymmetry is the argument for auditing the whole family rather
+than one property of it.
+
+Scope: every field lookup, type resolution and right check in `DnsRecordWriteback::hasTypeRight()`,
+`hasPurgeRight()`, `writableTypes()`, `creatableTypesForDomain()` and `writableSupplierName()`.
+
+Entity-awareness remains part of it: §11.6's per-type rights are profile bits, and if they are checked
+with a bare `Session::haveRight()` rather than an entity-aware `can()` against the target `Domain`,
+then a profile granted `Domain Record: TXT` for one entity holds it over every entity's zones. §8
+establishes entity-aware `can()` as the convention for every other action in this plugin.
+
+**Verifications required before code:** read every call site of the five helpers above; confirm each
+reads `domainrecordtypes_id` (never a `type` field), and whether the target domain's entity is
+consulted. If both are already correct, the phase concludes with `TESTING.md` regression checks and no
+code change — but per the `hasPurgeRight()` precedent, "looks right" is not sufficient here.
+
+---
+
+## 15.3 Phases 53–57b — Group B, write safety rails and History gaps
+
+### Phase 53 — Global write kill switch (read-only mode)
+
+One `config`-gated boolean (§6.6's `Config\Config` tab, `config` UPDATE right per §8) that hard-
+disables every outbound mutation across every driver, independent of per-type rights. Enforced at a
+single point in `DnsRecordWriteback` and asserted again in each driver's writer methods, so a future
+call path cannot bypass it. Deactivating a supplier is not a substitute — that also kills reads.
+
+Surfaced in the UI wherever a write control appears, with an actionable message naming the setting.
+
+### Phase 54 — Per-supplier write rate limit and circuit breaker
+
+Cap outbound mutations per supplier per rolling window. After N consecutive provider write errors,
+open the circuit for a cooldown and refuse further writes with a message naming the supplier, the
+failure count and when it reopens. This is the direct structural answer to a retry storm: it bounds
+damage even when the underlying defect is unknown.
+
+State persists on `glpi_plugin_domainmanager_supplierconfigs` via `Migration::addField()` —
+consecutive-failure count and circuit-open-until. Per §0.10, any boolean-ish column is written as an
+explicit `1`/`0`/`null` int, never a raw PHP bool.
+
+**Verifications required before code:** each provider's own documented write rate limits, to set
+defaults that are conservative rather than invented.
+
+### Phase 55 — Blast-radius guard on reconciliation
+
+§5.6 establishes that a fetch *failure* throws before `reconcile()` runs. A *successful* fetch of
+the wrong or empty zone does not — a token scoped to a different account, or a provider returning an
+empty page mid-pagination, parses as a valid empty snapshot, which `RecordReconciler` correctly reads
+as "every record vanished" and soft-deletes the entire zone. That path is unguarded today.
+
+Abort the run and set a distinct `DomainState` status when a single reconciliation would trash more
+than N records or more than X% of a domain's owned records, whichever is hit first. Requires explicit
+operator action to proceed. A genuinely emptied zone is rare; a wrongly-scoped credential is not.
+
+### Phase 56 — Typed confirmation for destructive writes
+
+Replace `window.confirm()` (§11.19 surface 3) with a typed confirmation — the user enters the record
+name — for delete/purge of a write-back-managed record. `window.confirm()` loses to muscle memory,
+and these actions reach production DNS with no rollback (§11.14). Server-side enforcement in
+`LockEnforcer::blockRecordRemoval()` is unchanged and remains authoritative.
+
+**Deliberate asymmetry, recorded because it looks like a reversal and isn't.** `1.4.2` removed the
+"This updates the record live at the DNS provider. Continue?" prompt on a plain Save, per explicit
+request, as noise. This phase *adds* friction to delete/purge. The two are consistent on one axis: a
+mistaken Save is repairable by another Save, and a mistaken delete is not — §11.14 rules out rollback
+anywhere, and §11.11 makes a trash a real upstream `deleteRecord()`. If that reasoning is not accepted,
+drop this phase rather than reintroducing prompts on the save path.
+
+### Phase 57 — Provider writes into native History
+
+Today only supplier credential changes, registrar assignment and sync milestones reach `glpi_logs`
+(§3.7.2). The event "GLPI changed a live record at a provider on behalf of user X" exists only in
+`domainmanager.log`.
+
+Add one `Log::history()` line per attempted provider write, on the `Domain`, following §3.7.1's
+established convention exactly: `id_search_option = 0` and a `"[Domain Manager] "` prefix, so **no
+new search options are registered**.
+
+**The line is the event, not the payload.** `Log::history()` truncates `old_value`/`new_value` at 255
+chars via `mb_substr()`, which would silently mangle a DKIM `p=` value. So History carries type,
+name, provider, operation and outcome; the full RDATA and request/response detail stay in
+`domainmanager.log`. Truncation stops being a concern rather than being worked around.
+
+### Phase 57b — Domain Manager right changes in Profile history
+
+**Changing a Domain Manager right on a profile currently writes no history entry at all.** Not a
+blank-field entry — no row. Verified on `11.0/bugfixes`:
+
+- `ProfileRight` declares `$dohistory = true` and overrides `getLogTypeID()` to return
+  `['Profile', $this->fields['profiles_id']]`, which is why right changes appear on the **Profile's**
+  Historical tab.
+- `Log::constructHistory()` carries a hardcoded `ProfileRight` special case: for the `rights` field it
+  scans `SearchOption::getOptionsForItemtype('Profile')` for an option whose `'rightname'` equals the
+  `glpi_profilerights.name` value being changed. On a match it builds
+  `[$id_search_option, $oldval, $newval]`; **on no match `$changes` stays empty and nothing is
+  inserted.**
+- No option declares `'rightname' => 'domainmanager:unlock_imported'` (or the per-type write-back
+  rights, or `domainmanager:purge_records`), so every Domain Manager right change is invisible.
+
+The save path is already correct — `ProfileRight::updateProfileRights()` goes through
+`ProfileRight::update()` → `updateInDB()` → `Log::constructHistory()`. Only the search options are
+missing.
+
+**Fix:** register one search option on `Profile` per plugin right via the existing
+`plugin_domainmanager_getAddSearchOptionsNew()` hook, matching core's own shape (option id 1896,
+`'rightclass' => Domain::class`, is the direct precedent):
+
+```
+'table'      => 'glpi_profilerights',
+'field'      => 'rights',
+'name'       => <label>,
+'datatype'   => 'right',
+'rightclass' => <class implementing getRights()>,
+'rightname'  => '<the glpi_profilerights.name value>',
+'joinparams' => ['jointype' => 'child', 'condition' => ['NEWTABLE.name' => '<same value>']],
+```
+
+`rightclass` is load-bearing for the rendering, not decoration: `ProfileRight::getSpecificValueToDisplay()`
+resolves it via `getItemForItemtype()` and walks `getRights()` to produce the comma-joined bit labels
+("Create, View all, Update all, …"). It must therefore point at a plugin class that both resolves
+through the autoloader (§0.5) and exposes the plugin's bit→label map — most likely `src/Profile.php`,
+which already holds that map for its `displayRightsChoiceMatrix` tab.
+
+**This is not a reversal of §3.7.1.** That section dropped three search options for being placeholders
+or duplicates of native ones, cluttering the Search UI with no filtering value. These are the
+opposite: they expose real values available nowhere else, they are the only mechanism core provides
+for this, and core registers 101 of them. Recorded here so the two decisions are not read as
+contradictory.
+
+**Blocking prerequisite — the search-option ID ceiling has drifted across three statements.** §3.7.4
+says the reserved block is `9400-9429`; §9 item 22 (Phase 32) assigns `9430` and says the block "widens
+by one"; §14.2 then assigns `9431` with nothing widening the block to cover it. No ID has been *reused*
+— the never-reassign rule held, and `9425`/`9426`/`9429` remain correct permanent gaps — so nothing is
+broken. Only the bookkeeping diverged, and it diverged because the number is written in prose in two
+sections as well as in the JSON file.
+
+Resolution, decided 2026-08-03:
+
+- **`resources/search-options-registry.json` is the single source of truth** for the current ceiling and
+  for retired IDs. §3.7.4 and §14.2 keep the rule and a pointer to that file; neither restates the
+  number. Adding a fourth prose copy — including in this section — would recreate the drift.
+- **Fold an enforcement check into this phase.** Assert at install (or in a dev-only check) that every
+  ID returned by `plugin_domainmanager_getAddSearchOptionsNew()` appears in the registry and falls
+  inside the reserved block. `NsProviderRegistry`'s validated-JSON-resource pattern is the precedent, so
+  this is idiomatic rather than new machinery — and it converts a documentation-discipline problem into
+  one the code catches, which is the only kind that survives twenty phases.
+- **IDs needed here: five.** §11.6 gives four per-type rights rows (`domainmanager:dns_records_a`,
+  `_aaaa`, `_cname`, `_txt`) plus `domainmanager:unlock_imported`. Search options are per right *name*,
+  one per `glpi_profilerights` row — the `CREATE`/`UPDATE`/`DELETE`/`PURGE` bits are rendered by
+  `getRights()` and need no IDs of their own. Presumed `9432`–`9436`, pending the registry's actual
+  highest value.
+
+**Note on §11.6 and Phase 52:** §11.6 states that "every entry point checks rights server-side,
+entity-aware." That reduces Phase 52 to confirming the code matches its own documentation — still worth
+doing, since `hasPurgeRight()` reading a nonexistent `type` field proves this class has diverged from
+its stated conventions before.
+
+**Verifications required before code:**
+1. Confirm the plugin's Profile tab saves through `ProfileRight::updateProfileRights()` (or another
+   path that reaches `ProfileRight::update()`) rather than writing `glpi_profilerights` directly — if
+   it bypasses the model, no search option will produce history.
+2. Confirm `getItemForItemtype()` instantiates the chosen namespaced plugin class in this context.
+3. Confirm the per-type write-back rights are individually named rows in `glpi_profilerights` rather
+   than packed bits on one row, since that determines how many options are needed.
+
+---
+
+## 15.4 Phases 58–62 — Group C, DNS record validation engine
+
+Two rules govern the whole group.
+
+**Write-path authoritative, read-path advisory.** Validation is enforced in
+`DnsRecordWriteback::onPreAdd()`/`onPreUpdate()` — the one choke point that already covers the native
+UI, the custom write panel, massive actions, the HL API and cron. On the **read/import** path it may
+only flag, never reject: refusing a provider-returned record you consider malformed hides a live
+record from the operator, the same failure class §11.4's "write scope ⊆ read scope" invariant exists
+to prevent. Client-side checks in the add/edit panels are a UX echo of the server rules, never the
+authority.
+
+**Every message names the fix**, per the standing operator-facing-error requirement.
+
+### Phase 58 — Explicit name-form boundary (prerequisite)
+
+**Reframed 2026-08-03 against §3.8.2.** The earlier draft called for one canonicalizer that every
+driver and write path routes through. That is now known to be wrong, because the wire form is
+genuinely per-command, not per-plugin: `DinahostingDriver` alone needs the absolute form on
+`Domain_Zone_AddType*`, the **relative** label on `Domain_Zone_DeleteType*` (confirmed live —
+absolute is rejected outright with `2303`), `@` for an A/AAAA/CNAME apex, and the bare zone name for
+a TXT/MX apex. Four conventions inside one driver, all legitimate.
+
+So what this phase owns is the **boundary**, not a single form:
+
+- **The internal canonical form is the absolute FQDN**, and that is settled, not up for revisiting.
+  §11.20 corroborates it from the core side: `DomainRecord::getDisplayName($domain, $name)` exists
+  precisely to strip the domain suffix back out for display, which confirms absolute storage is the
+  GLPI-native convention rather than a plugin artefact.
+- **Every wire transformation is explicit, named and paired.** `qualifyHostname()` /
+  `relativeHostname()` is the precedent to generalize: an inbound normalizer applied once in
+  `fetchZoneRecords()` before anything else in the driver sees a name, and an outbound denormalizer
+  applied only at the specific parameter that needs it. No name transformation anywhere else, and none
+  implicit.
+- **Nothing outside a driver constructs a name by string concatenation.** The three name-doubling bugs
+  (`dev.gal.dev.gal`, `manel.example.com.example.com`, `beiro.net.dnss`) were all one call site
+  building a name inline. `absoluteRecordName()` already consolidated this for `onPreAdd()`; this phase
+  makes it the only path and adds the shared apex-aware helper the other drivers currently lack.
+
+Distinct from Phase 63's trailing dot: that concerns core's `is_fqdn` convention on the RDATA
+**target** inside `data`, a different field with a different rule. The two must not be conflated —
+record names carry no trailing dot internally, RDATA targets do.
+
+Must land before Phases 59–62 and before Phase 63.
+
+**Verifications required before code:**
+1. The exact name form each provider accepts on write and returns on read, per record type **and per
+   command** — the Dinahosting add/delete asymmetry proves per-type is not a fine enough grain.
+2. Apex delete for TXT/MX on Dinahosting, recorded in §3.8.2 as still unconfirmed (no apex record was
+   safe to test-delete against a live zone). The current code assumes the `@` convention observed for
+   A/AAAA/CNAME apex. Confirm against a disposable zone rather than a production one.
+
+### Phase 59 — A / AAAA validation and canonicalization
+
+`filter_var($v, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4|FILTER_FLAG_IPV6)` covers standard, compressed
+and loopback forms; no library needed. Pair it with `inet_pton`/`inet_ntop` canonicalization —
+otherwise `2001:0db8::1` and `2001:db8::1` read as a diff on every sync and the reconciler churns
+indefinitely.
+
+Warn (not block) on an A/AAAA value in RFC1918, `127/8`, `0.0.0.0`, `169.254/16` or IPv4-mapped IPv6
+space on a public zone. Legitimate in split-horizon setups, so this cannot be a hard refusal.
+
+### Phase 60 — CNAME validation, including the relational rule
+
+Block: not a valid FQDN, self-reference, label >63 octets, name >253 octets, and — the rule that
+matters — **a CNAME may not coexist with any other record type at the same owner name** (RFC 1034).
+`duplicateNameError()` keys on `domains_id`+`domainrecordtypes_id`+`name`, so CNAME-plus-A at one
+name passes it today and produces a broken zone.
+
+Apex CNAME is refused unless the driver declares support (Phase 66).
+
+### Phase 61 — TXT validation: block mechanics, warn semantics
+
+**Block** what is unambiguous: any single character-string exceeding 255 octets (a long DKIM key must
+be split into multiple strings, and providers differ on whether they chunk for you), quoting
+inconsistency against core's `quote_value` convention, and more than one `v=spf1` record at a single
+name (RFC 7208 forbids it and it is a common outage).
+
+**Warn** on semantics: SPF exceeding 10 DNS-lookup mechanisms, DMARC not at `_dmarc` or missing `p=`,
+DKIM missing `p=`. A strict SPF parser that blocks a valid-but-unusual record is worse than no
+parser.
+
+**Verifications required before code:** whether each provider accepts a single long TXT string and
+chunks it server-side, or requires pre-chunked strings. §11.5 records that IONOS returns TXT quoted
+and agrees with core; the other two are unverified on this specific point.
+
+### Phase 62 — Wire-up and TTL guardrails
+
+Register the validators at the hook layer, echo them client-side, and add a TTL floor per provider
+minimum rather than a hardcoded number.
+
+**Verifications required before code:** each provider's documented minimum TTL and its behaviour on
+TTL 0 (§11.9 notes the reference client omits the field entirely at 0).
+
+---
+
+## 15.5 Phases 63–66 — Group D, full record-type coverage
+
+### Phase 63 — Per-type RDATA codec
+
+Core defines the canonical `data` representation and the plugin follows it (§11.5's decision,
+unchanged). Verified in `DomainRecordType::$knowtypes` and
+`templates/pages/management/domainrecordtype_helper.html.twig` on `11.0/bugfixes`: field values are
+**joined with a single space in declaration order**, `is_fqdn` fields get a **trailing dot**, and
+`quote_value` fields are **wrapped in double quotes** with inner quotes escaped as `\"`.
+
+| Type | Canonical `data` |
+|---|---|
+| MX | `10 mail.example.com.` |
+| SRV | `0 10 5060 sip.example.com.` |
+| CAA | `0 issue "letsencrypt.org"` (`value` is `quote_value`) |
+| SOA | seven space-joined tokens, four of them `is_fqdn` |
+
+A pipe or other custom separator was **considered and rejected**: the edit form's helper modal
+reconstructs its per-field inputs by parsing `data` client-side on space and quote boundaries, so a
+non-canonical string mis-parses in the UI, and a plugin-imported record would render differently from
+a hand-created one in the same form. Following core means there is no second convention to define,
+document or maintain.
+
+`data_obj` is populated in the **same input array** as `data`. Core's `pre_updateInDB()` nulls
+`data_obj` whenever `data` changes and `data_obj` is absent from the input, so the two can never be
+written separately. The importer has the fields decomposed at the moment it composes the string, so
+this is nearly free — and it is what lets the helper modal pre-fill reliably instead of depending on
+that parser.
+
+**Verifications required before code:** whether imported `MX` records are *currently* stored in core-
+canonical form or as the provider's raw value plus a separate `prio`. §11.5 scoped the convention to
+the four writable types and states that multi-field RDATA is outside it, but MX has always been in
+the *read* whitelist — so a hand-created and a plugin-imported MX for the same target may already
+differ by a few characters, which is exactly the `record_hash` churn §11.5 was written to prevent.
+If so, this phase carries a one-time renormalization migration, same idempotent pattern as
+`Installer::renormalizeDinahostingRemoteIds()`.
+
+### Phase 64 — Widen the read whitelist to all 11 types
+
+Import whatever the provider returns, per type, skipping gracefully what it does not.
+`Installer`'s existing by-name type assertion widens to the full seeded set.
+
+The write scope stays at A/AAAA/CNAME/TXT. §11.4's invariant — write ⊆ read — is preserved and in
+fact strengthened, since read is now the full set. NS and MX remain deliberately non-writable for
+the reasons recorded there; widening read does not reopen that.
+
+### Phase 65 — SOA / PTR / ALIAS reality check
+
+Expected outcome: mostly absent. SOA is zone metadata that most providers do not return in a records
+list; PTR lives in reverse zones these accounts do not own; ALIAS is §11.4's documented dead end on
+IONOS Hosting. Phase 64 imports them if they arrive. This phase records per provider what actually
+arrives, so the gap is documented rather than looking like a defect later. No write support, ever.
+
+### Phase 66 — Apex-CNAME capability flag (the real shape of the ALIAS request)
+
+The ALIAS/ANAME evaluation was already completed and closed negative for IONOS on evidence (§11.4).
+What remains is Cloudflare-specific, and there it needs no new record type at all: Cloudflare flattens
+a CNAME at the zone apex. So the feature reduces to a **driver capability flag** — a driver declares
+apex-CNAME support, and Phase 60's apex refusal defers to it. No new itemtype, no new UI.
+
+**Verifications required before code:** whether Cloudflare's DNS records API accepts a CNAME at the
+zone apex and flattens it as documented; whether Dinahosting supports any apex-alias behaviour.
+
+---
+
+## 15.6 Phases 67–68 — Group E, NS registry and takeover detection
+
+### Phase 67 — Hostalia and Ascio detection entries (Ubilibet dropped)
+
+Detection-only entries (no `driver` key ⇒ the existing "API integration not currently supported"
+banner plus contribution link).
+
+**Ubilibet is dropped, and the reason generalizes.** `dig NS ubilibet.com` returns
+`ns1`–`ns4.ascio.com`, so Ubilibet is a **reseller on Ascio's wholesale registrar platform**, not an
+operator of branded nameservers. NS-based detection therefore cannot identify Ubilibet, and no amount
+of pattern work will change that. This is not the `ui-dns` situation: there, each sibling brand had a
+distinguishable NS label (`ns-strato.`, `ns-arsys.`, numeric `ns[0-9]*` for IONOS itself), so
+*narrowing* separated them. Here every Ascio reseller's customers land on the same four hostnames with
+no per-reseller label, so narrowing is not merely unnecessary — it is impossible. `Ubilibet` would be
+a name the registry can never legitimately return.
+
+**Ascio replaces it.** `ns1`–`ns4.ascio.com` resolve (`ns5`/`ns6` do not; a bare `ns.ascio.com` does),
+so `*.ascio.com` is the correct pattern shape and needs no narrowing — unlike `ui-dns.*`, `ascio.com`
+is a single brand's namespace. Two observations from probing worth carrying into the entry:
+
+- `ns1.ascio.net` also resolves, into `156.154.130.100` (UltraDNS space), while `ns3`/`ns4.ascio.com`
+  sit in `64.98.148.x` / `216.40.47.x` (Tucows). Ascio appears to layer over other platforms and may
+  have more than one delegation set. Include `*.ascio.net` as a second pattern on the same entry —
+  same precedent as folding Dinahosting's undocumented `gestiondecuenta.com` into its existing entry
+  rather than creating a new provider.
+- Hostalia's range is wider than first probed: `ns1`, `ns4` and `ns5.hostalia.com` all resolve in
+  `82.194.x`, so `ns[0-9]*.hostalia.com` rather than an enumerated `ns1`–`ns3`.
+
+**This makes §0.1's separation concrete, and it should be recorded as such.** For a wholesale platform
+the NS answers "which DNS platform serves this zone" (Ascio) and cannot answer "who do we pay and
+contact at renewal" (Ubilibet). The registry has one `name` per entry and no reseller concept — and
+needs none, because §0.1 already establishes Registrar as a separate, manually-assigned field mirroring
+Infocom's native Supplier. Detection populates the DNS platform; the Supplier field carries the
+commercial relationship. Worth stating explicitly in §4, because the natural follow-up request is
+"make it say Ubilibet" and the honest answer is that it structurally cannot.
+
+**Verifications required before code:**
+1. Live `dig NS` against a **real Ubilibet-managed customer domain**, not `ubilibet.com` itself. The
+   probe so far is Ubilibet's own corporate domain, which is one data point and not the one §4's
+   standing rule asks for. This also settles whether customer zones land on `ascio.com` or `ascio.net`.
+2. Live `dig NS` against a real Hostalia customer domain. Hostalia runs on Acens/Telefónica
+   infrastructure, so confirm customers delegate to `*.hostalia.com` and not to a sibling brand's label
+   on a shared host — the `ui-dns` check, which is still needed here even though it turned out moot for
+   Ascio.
+3. Registry file order: `*.ascio.com` is specific enough not to collide with existing entries, but
+   §4's "first matching entry wins, checked in file order" makes that worth confirming rather than
+   assuming.
+
+### Phase 68 — Dangling-CNAME / subdomain-takeover flag
+
+Cron-based, advisory. Flag a managed CNAME whose target does not resolve — the precondition for
+subdomain takeover. Fits the plugin's inventory purpose and is genuinely a security finding rather
+than a hygiene one. Advisory status only; never auto-deletes anything.
+
+Rate-limit posture follows §9 Phase 22's precedent: tick spacing is the defense, and nothing outside
+the cron may trigger these lookups.
+
+---
+
+## 15.7 Deferred and rejected, recorded so they are not silently revisited
+
+- **Per-profile *attribution* of item changes — rejected.** Asking "which profile made this change to
+  this domain" is not answerable: `glpi_logs` has no `profiles_id` and its `user_name` is a formatted
+  display string, not an FK. Delivering it would require a plugin-owned audit table duplicating what
+  native History already covers for `Domain`/`DomainRecord` (both declare `$dohistory = true`, and
+  `DomainRecord` is a `CommonDBChild` inheriting `$logs_for_parent = true`, so record add/update/delete
+  already produce both per-record history and `HISTORY_ADD_SUBITEM`/`UPDATE_SUBITEM`/`DELETE_SUBITEM`
+  entries on the parent Domain).
+  **Distinct from, and not to be confused with, Phase 57b** — logging *changes to a profile's own
+  rights* on that Profile's Historical tab. That one is natively supported, currently broken for this
+  plugin, and in scope. The two were conflated in the original requirement; keeping them separate
+  matters because one is impossible and the other is cheap.
+- **Dry-run / preview diff before sync and write — deferred**, tracked as its own GitHub Issue.
+- **Custom RDATA separator (pipe or other) — rejected**, Phase 63.
+- **Write support for the seven newly-readable types — rejected**, Phase 64. §11.4's reasoning for
+  excluding NS and MX is unchanged by their becoming readable.
+- **ALIAS as a record type — closed negative** (§11.4), superseded by Phase 66's capability flag.
+- **Ubilibet as a registry entry — rejected 2026-08-03.** `dig NS ubilibet.com` returns
+  `ns1`–`ns4.ascio.com`: Ubilibet is a reseller on Ascio's wholesale platform, and every Ascio
+  reseller's customers share those hostnames with no distinguishing label. NS-based detection cannot
+  identify a reseller on a shared wholesale platform — not a pattern-tuning problem, a structural one.
+  Replaced by an `Ascio` entry (Phase 67). Recorded because the same reasoning will apply to the next
+  reseller brand someone asks for, and because it is the concrete case that separates §4's DNS-platform
+  detection from §0.1's manually-assigned Registrar field.
+
+---
+
+## 15.8 Open items awaiting approval
+
+1. This section as a whole, before any code (Phase 0).
+2. **Resolved** — `1.4.2` shipped 2026-08-03 and `[Unreleased]` is `1.5.0-beta1`; see §15.1. Retained
+   here only so the earlier open item is visibly closed rather than dropped.
+2b. Phase 49's second half — whether a reconciler-path duplicate refusal should set a `DomainState`
+   status, or whether an unrepresentable upstream duplicate should instead be imported and flagged.
+   The plan proposes the former; the latter is arguably more honest about what the zone contains.
+3. Phase 51b — whether the `request()` error-mapping correction belongs in Group A at all, or is
+   small enough to fold into whichever phase next touches `DinahostingDriver`.
+4. Phase 52's outcome is unknown by design — it may be a bug fix or a no-op with a regression test.
+5. Phase 57b's ID allocation — the registry file is the last thing blocking that phase. The plan
+   presumes `9432`–`9436` and makes `search-options-registry.json` the single source of truth for the
+   ceiling, with the prose in §3.7.4/§14.2 reduced to a pointer. Confirm the file's actual highest
+   value, and confirm the enforcement check is wanted rather than just the corrected number.
