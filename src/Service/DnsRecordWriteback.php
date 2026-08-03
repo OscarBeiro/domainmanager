@@ -121,8 +121,21 @@ class DnsRecordWriteback
         // support are out of scope for Domain Manager). Applied before the
         // `_domainmanager_sync` check below so it also catches a duplicate
         // a reconciler sync would otherwise mirror in locally.
-        if (DomainState::getForDomain($domains_id) !== null) {
-            $duplicateError = self::duplicateNameError($domains_id, $type_id, $rawName);
+        //
+        // `$rawName` alone is NOT what's compared: every stored
+        // DomainRecord.name is an absolute FQDN (§ absoluteRecordName()),
+        // while `$item->input['name']` here is the raw, still-unqualified
+        // label a user types in the add form — comparing them directly
+        // never matched (found live 2026-08-03: creating a 2nd "manel"
+        // while "manel.dev.gal" already existed sailed straight past this
+        // guard, only to be rejected deeper in, by Dinahosting's own
+        // driver-specific check, with a less helpful message). Qualify
+        // against the domain's own zone name first, same as the actual
+        // push below does.
+        $checkDomain = new Domain();
+        if ($domains_id > 0 && $checkDomain->getFromDB($domains_id) && DomainState::getForDomain($domains_id) !== null) {
+            $qualifiedName = self::absoluteRecordName($rawName, $checkDomain->fields['name']);
+            $duplicateError = self::duplicateNameError($domains_id, $type_id, $qualifiedName);
             if ($duplicateError !== null) {
                 self::abort($item, $duplicateError);
                 return;
