@@ -18,6 +18,7 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 - Fixed Dinahosting DNS record creation being misreported as failed (and, on retry, sometimes creating duplicate records), and fixed restoring a deleted DNS record from the trash failing for Dinahosting-managed domains. Existing Dinahosting-managed DNS records are automatically repaired on upgrade — no data is deleted or re-imported, so any linked tickets, contracts, or projects are unaffected.
 - Fixed running "Update now" on a Dinahosting-managed domain spuriously trying to re-push every synced DNS record back to Dinahosting, which could fail the sync and, in some cases, corrupt the record name being pushed.
 - Fixed the Purge button never appearing on a trashed managed DNS record's edit page, even for a user holding the right to purge it.
+- Fixed deleting a Dinahosting-managed DNS record failing with "Domain is not managed by this Dinahosting account", even when the domain and record were both valid.
 
 ## [1.4.1] - 2026-08-01
 ### Features

@@ -548,7 +548,20 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
             default => throw new DriverException(sprintf(__('Record type %s is not writable through Domain Manager', 'domainmanager'), $type)),
         };
 
-        $params    = ['domain' => $domain, 'hostname' => $hostname];
+        // Confirmed live against a real account, 2026-08-03: every
+        // Domain_Zone_DeleteType* command rejects an absolute `hostname`
+        // with responseCode 2303 ("Param \"hostname\"/\"ip\" value doesn't
+        // exist"), even when that exact record is the one `findByIdentity()`
+        // resolves it to moments earlier — the delete commands want the
+        // *relative* label back (reproduced for both A and TXT), unlike
+        // `Domain_Zone_AddType*`, which is fine with the absolute form
+        // `createRecordRaw()` already sends. `$hostname` here is always
+        // absolute (every caller works in the absolute convention), so it
+        // must be de-qualified before going out on the wire — but
+        // `findByIdentity()` below still needs the absolute form, since
+        // that's what `fetchZoneRecords()` normalizes every record's name
+        // to (§ qualifyHostname()).
+        $params    = ['domain' => $domain, 'hostname' => self::relativeHostname($domain, $hostname)];
         $existing  = $this->findByIdentity($domain, $type, $hostname);
         if ($existing !== null) {
             $params += match ($type) {
@@ -761,6 +774,36 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
         }
 
         return $hostname . '.' . $domain;
+    }
+
+    /**
+     * Inverse of `qualifyHostname()`, for `deleteByIdentity()`'s outgoing
+     * `hostname` param — see that method's docblock for why the delete
+     * commands need this and the add commands don't. Apex is de-qualified
+     * to `@`, matching the raw form `Domain_Zone_GetAll` itself reports
+     * for an A/AAAA/CNAME apex record (confirmed live, § qualifyHostname()'s
+     * own docblock); TXT/MX apex delete specifically is unconfirmed against
+     * a live account (untested — no existing TXT/MX apex record was safe to
+     * delete for verification) but this is the only convention Dinahosting
+     * has shown us so far, so it's used uniformly rather than guessing at a
+     * type-specific exception.
+     *
+     * @param  string $domain       already-normalized FQDN
+     * @param  string $absoluteName as returned by qualifyHostname()
+     * @return string relative label, or `@` for the zone apex
+     */
+    private static function relativeHostname(string $domain, string $absoluteName): string
+    {
+        if (strcasecmp($absoluteName, $domain) === 0) {
+            return '@';
+        }
+
+        $suffix = '.' . $domain;
+        if (strcasecmp(substr($absoluteName, -\strlen($suffix)), $suffix) === 0) {
+            return substr($absoluteName, 0, -\strlen($suffix));
+        }
+
+        return $absoluteName; // defensive: not actually absolute, pass through
     }
 
     /**
