@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Entries are grouped into **Features** and **Bugs**, one line each.
 
 ## [Unreleased]
+### Features
+- Domain Manager now refuses to create or restore a DNS record that would duplicate an existing one (same type and name) on any managed domain, regardless of which DNS provider is configured.
+
+### Bugs
+- Fixed Dinahosting DNS record deletion (A/AAAA/CNAME) failing with a "required param missing" error.
+- Fixed Dinahosting DNS record creation being misreported as failed (and, on retry, sometimes creating duplicate records), and fixed restoring a deleted DNS record from the trash failing for Dinahosting-managed domains. Existing Dinahosting-managed DNS records are automatically repaired on upgrade — no data is deleted or re-imported, so any linked tickets, contracts, or projects are unaffected.
+- Fixed running "Update now" on a Dinahosting-managed domain spuriously trying to re-push every synced DNS record back to Dinahosting, which could fail the sync and, in some cases, corrupt the record name being pushed.
+- Fixed the Purge button never appearing on a trashed managed DNS record's edit page, even for a user holding the right to purge it.
 
 ## [1.4.1] - 2026-08-01
 ### Features

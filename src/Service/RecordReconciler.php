@@ -197,7 +197,7 @@ class RecordReconciler
                 // different content too (bucketed as 'updated', matching
                 // this branch's pre-existing priority over 'restored').
                 if ($was_trashed) {
-                    $native->restore(['id' => $native->getID()]);
+                    $native->restore(['id' => $native->getID(), '_domainmanager_sync' => true]);
                 }
                 $native->update([
                     'id'                   => $native->getID(),
@@ -205,10 +205,11 @@ class RecordReconciler
                     'data'                 => $record->data,
                     'ttl'                  => $record->ttl,
                     'domainrecordtypes_id' => $type_ids[$record->type],
+                    '_domainmanager_sync'  => true,
                 ]);
                 $stats['updated']++;
             } elseif ($was_trashed) {
-                $native->restore(['id' => $native->getID()]);
+                $native->restore(['id' => $native->getID(), '_domainmanager_sync' => true]);
                 $stats['restored']++;
             } else {
                 $stats['unchanged']++;
@@ -268,7 +269,7 @@ class RecordReconciler
                 continue;
             }
 
-            $native->delete(['id' => $native->getID()]);
+            $native->delete(['id' => $native->getID(), '_domainmanager_sync' => true]);
             $stats['trashed']++;
         }
 
@@ -343,6 +344,13 @@ class RecordReconciler
             'entities_id'          => $domain->fields['entities_id'],
             'is_recursive'         => $domain->fields['is_recursive'],
             'comment'              => $record->comment ?? '',
+            // Tells DnsRecordWriteback::onPreAdd() this is a local mirror of
+            // a record just read FROM the provider, not a genuine
+            // user-initiated create — see that guard's docblock (§ live
+            // bug, 2026-08-03: without it, this fired on every reconciler
+            // add outside an actual cron run and tried to push the record
+            // straight back to the provider it came from).
+            '_domainmanager_sync'  => true,
         ]);
 
         if (!$records_id) {

@@ -36,6 +36,7 @@ use DBConnection;
 use DomainRecordType;
 use DomainType;
 use GlpiPlugin\Domainmanager\Config\Config;
+use GlpiPlugin\Domainmanager\Driver\DinahostingDriver;
 use Migration;
 use ProfileRight;
 
@@ -81,6 +82,7 @@ class Installer
         self::registerCronTasks();
         self::dropRecordConflictsTable($migration);
         self::backfillManagedFieldLocks();
+        self::renormalizeDinahostingRemoteIds();
 
         $migration->executeMigration();
 
@@ -1008,6 +1010,94 @@ class Installer
             }
             if (!empty($row['date_expiration']) && !in_array('date_expiration', $locked, true)) {
                 ImportLock::setLock(\Domain::class, $domains_id, 'date_expiration', $row['date_expiration']);
+            }
+        }
+    }
+
+    /**
+     * Re-encodes every Dinahosting-managed `ImportedRecord.remote_id`
+     * through `DinahostingDriver::renormalizeRemoteId()` (1.4.2 fix for the
+     * hostname-normalization bug — see `DinahostingDriver::qualifyHostname()`'s
+     * docblock). `RecordReconciler::createRecord()` sets `remote_id` once
+     * at import and never rewrites it for an unchanged record, so any
+     * record synced before that fix still carries the old, un-normalized
+     * name and no longer matches what `fetchZoneRecords()` reports —
+     * breaking delete/update/restore for it. Deliberately only touches the
+     * `remote_id` column on the plugin's own ownership row; the
+     * DomainRecord/Domain rows themselves (and anything linked to them —
+     * tickets, contracts, projects) are never touched.
+     *
+     * Idempotent (safe to run on every install/upgrade, no version guard
+     * needed): `qualifyHostname()` is itself idempotent, so re-running this
+     * against an already-normalized remote id is a no-op.
+     *
+     * @return void
+     */
+    private static function renormalizeDinahostingRemoteIds(): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $suppliers_ids = [];
+        foreach (
+            $DB->request([
+                'SELECT' => ['suppliers_id'],
+                'FROM'   => 'glpi_plugin_domainmanager_supplierconfigs',
+                'WHERE'  => ['api_driver' => DriverRegistry::DRIVER_DINAHOSTING],
+            ]) as $row
+        ) {
+            $suppliers_ids[] = (int) $row['suppliers_id'];
+        }
+
+        if ($suppliers_ids === []) {
+            return;
+        }
+
+        $domains = [];
+        foreach (
+            $DB->request([
+                'SELECT' => ['glpi_domains.id', 'glpi_domains.name'],
+                'FROM'   => 'glpi_domains',
+                'INNER JOIN' => [
+                    'glpi_plugin_domainmanager_states' => [
+                        'ON' => [
+                            'glpi_plugin_domainmanager_states' => 'domains_id',
+                            'glpi_domains'                      => 'id',
+                        ],
+                    ],
+                ],
+                'WHERE' => [
+                    'glpi_domains.is_deleted'                             => 0,
+                    'glpi_plugin_domainmanager_states.dns_suppliers_id'   => $suppliers_ids,
+                ],
+            ]) as $row
+        ) {
+            $domains[(int) $row['id']] = (string) $row['name'];
+        }
+
+        if ($domains === []) {
+            return;
+        }
+
+        $iterator = $DB->request([
+            'SELECT' => ['id', 'domains_id', 'remote_id'],
+            'FROM'   => 'glpi_plugin_domainmanager_records',
+            'WHERE'  => [
+                'domains_id' => array_keys($domains),
+                'remote_id'  => ['<>', ''],
+            ],
+        ]);
+
+        foreach ($iterator as $row) {
+            $domains_id = (int) $row['domains_id'];
+            $renormalized = DinahostingDriver::renormalizeRemoteId((string) $row['remote_id'], $domains[$domains_id]);
+
+            if ($renormalized !== null && $renormalized !== $row['remote_id']) {
+                $DB->update(
+                    'glpi_plugin_domainmanager_records',
+                    ['remote_id' => $renormalized],
+                    ['id' => (int) $row['id']],
+                );
             }
         }
     }

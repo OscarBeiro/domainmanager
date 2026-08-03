@@ -360,7 +360,7 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
                 continue; // read-only scope: unknown/unsupported types skipped
             }
 
-            $name    = (string) ($row['hostname'] ?? $row['host'] ?? '');
+            $name    = self::qualifyHostname($domain, (string) ($row['hostname'] ?? $row['host'] ?? ''));
             $content = self::extractContent($type, $row);
 
             try {
@@ -501,6 +501,15 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
 
         $found = $this->findByIdentity($domain, $type, $name);
         if ($found === null) {
+            $seen = array_map(
+                static fn(ZoneRecord $record): string => "{$record->type}:{$record->name}",
+                $this->fetchZoneRecords($domain),
+            );
+            PluginLogger::error(
+                "Dinahosting did not report the newly created record for $domain (looked for $type:$name)",
+                'zone now reports: ' . (empty($seen) ? '(empty)' : implode(', ', $seen)),
+            );
+
             throw new DriverException(__('Dinahosting did not report the newly created record', 'domainmanager'));
         }
 
@@ -509,17 +518,20 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
 
     /**
      * Deletes every record at `type`+`hostname`. Dinahosting's delete
-     * commands for A/AAAA/CNAME take hostname alone — no value filter, so
-     * this necessarily removes *all* records of that type at that name.
-     * Callers must have already confirmed (via assertSingleRecordAtName())
-     * that at most one such record exists. TXT is the one type Dinahosting
-     * lets us also scope by value; that's passed here as defense in depth,
-     * even though the caller-side guard already limits us to a single
-     * record at the name.
+     * commands for A/AAAA/CNAME require the record's value alongside the
+     * hostname (confirmed against a live account: omitting it fails with
+     * "Required param \"ip\" is missing"/2003-2005), so this necessarily
+     * removes *all* records of that type at that name if more than one
+     * shared the same value — but callers must have already confirmed
+     * (via assertSingleRecordAtName()) that at most one such record exists
+     * at the name in the first place.
      *
      * A "record not found" result is treated as success (§ Cloudflare's
      * identical 404-is-success stance in CloudflareDriver::deleteRecord()):
-     * the desired end state — no such record — already holds.
+     * the desired end state — no such record — already holds. If the
+     * record can no longer be found here, the value param is simply
+     * omitted and the delete is attempted anyway so that outcome surfaces
+     * through the normal API error path.
      *
      * @param  string $domain   already-normalized FQDN
      * @param  string $type     one of self::WRITABLE_TYPES
@@ -536,12 +548,14 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
             default => throw new DriverException(sprintf(__('Record type %s is not writable through Domain Manager', 'domainmanager'), $type)),
         };
 
-        $params = ['domain' => $domain, 'hostname' => $hostname];
-        if ($type === 'TXT') {
-            $existing = $this->findByIdentity($domain, $type, $hostname);
-            if ($existing !== null) {
-                $params['value'] = $existing->data;
-            }
+        $params    = ['domain' => $domain, 'hostname' => $hostname];
+        $existing  = $this->findByIdentity($domain, $type, $hostname);
+        if ($existing !== null) {
+            $params += match ($type) {
+                'A', 'AAAA' => ['ip' => $existing->data],
+                'CNAME'     => ['destinationHostname' => $existing->data],
+                default     => ['value' => $existing->data],
+            };
         }
 
         // Unlike Cloudflare's deleteRecord() (404-is-success), no documented
@@ -656,6 +670,35 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
     }
 
     /**
+     * Re-encodes a previously-stored `ImportedRecord.remote_id` through
+     * `qualifyHostname()`, for `Installer::renormalizeDinahostingRemoteIds()`
+     * (the 1.4.2 migration fixing the hostname-normalization bug documented
+     * on `qualifyHostname()` itself). A remote id encoded before that fix
+     * carries the old, un-normalized name and no longer matches what
+     * `fetchZoneRecords()` reports, breaking delete/update/restore for any
+     * record synced before the fix — this recomputes it in place, without
+     * touching the DomainRecord/Domain rows themselves (so ticket/contract/
+     * project links on those never move). Idempotent: re-running against an
+     * already-normalized remote id is a no-op, since `qualifyHostname()`
+     * itself is idempotent.
+     *
+     * @param  string $remoteId a previously-stored ImportedRecord.remote_id
+     * @param  string $domain   that record's own domain's zone name
+     * @return string|null the re-encoded remote id, or null if $remoteId
+     *                     doesn't decode (leave such rows untouched)
+     */
+    public static function renormalizeRemoteId(string $remoteId, string $domain): ?string
+    {
+        try {
+            $decoded = self::decodeRemoteId($remoteId);
+        } catch (DriverException $e) {
+            return null;
+        }
+
+        return self::encodeRemoteId($decoded['type'], self::qualifyHostname($domain, $decoded['name']));
+    }
+
+    /**
      * {@inheritDoc}
      *
      * §9 Phase 8 addendum: `Services_GetDomains` (no parameters) returns
@@ -685,6 +728,39 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
         }
 
         return $domains;
+    }
+
+    /**
+     * Dinahosting's `Domain_Zone_GetAll` reports the apex record's hostname
+     * inconsistently by record type — confirmed live: A/AAAA/CNAME apex
+     * comes back as `@`, while TXT/MX apex comes back as the bare zone name
+     * itself (e.g. `dev.gal`), and every non-apex record comes back as a
+     * bare relative label (`manel`, not `manel.dev.gal`). Every other write
+     * path in this driver and in DnsRecordWriteback works in absolute FQDNs
+     * (matching Cloudflare/IONOS, and DnsRecordWriterInterface's contract),
+     * so left un-normalized this mismatch broke `findByIdentity()` for
+     * virtually every non-apex record: it silently never matched a record
+     * that was just created, which surfaced as "Dinahosting did not report
+     * the newly created record" even on a successful create, prompting a
+     * retry that duplicated the record upstream (§ live bug, 2026-08-03:
+     * duplicate "manel" A records after such a retry storm).
+     *
+     * @param  string $domain already-normalized FQDN
+     * @param  string $hostname raw hostname as reported by Domain_Zone_GetAll
+     * @return string absolute FQDN (the zone itself for an apex record)
+     */
+    private static function qualifyHostname(string $domain, string $hostname): string
+    {
+        $hostname = trim($hostname);
+        if ($hostname === '' || $hostname === '@' || strcasecmp($hostname, $domain) === 0) {
+            return $domain;
+        }
+
+        if (strcasecmp(substr($hostname, -\strlen($domain) - 1), '.' . $domain) === 0) {
+            return $hostname; // already absolute
+        }
+
+        return $hostname . '.' . $domain;
     }
 
     /**
