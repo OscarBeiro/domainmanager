@@ -278,7 +278,7 @@ class RecordValidator
         }
 
         if (stripos($value, 'v=DMARC1') === 0) {
-            $firstLabel = strtolower(explode('.', rtrim($name, '.'))[0] ?? '');
+            $firstLabel = strtolower(explode('.', rtrim($name, '.'))[0]);
             if ($firstLabel !== '_dmarc') {
                 return __('This looks like a DMARC record but its name is not "_dmarc"; DMARC is only honoured there', 'domainmanager');
             }
