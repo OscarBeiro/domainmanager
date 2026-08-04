@@ -188,9 +188,9 @@ class Installer
                     `is_managed` tinyint NOT NULL DEFAULT '0',
                     `is_glpi_created` tinyint NOT NULL DEFAULT '1',
                     `name_ascii` varchar(255) NOT NULL DEFAULT '',
-                    `last_rdap_check_date` datetime NULL DEFAULT NULL,
-                    `last_changed_date` datetime NULL DEFAULT NULL,
-                    `transfer_date` datetime NULL DEFAULT NULL,
+                    `last_rdap_check_date` timestamp NULL DEFAULT NULL,
+                    `last_changed_date` timestamp NULL DEFAULT NULL,
+                    `transfer_date` timestamp NULL DEFAULT NULL,
                     `pending_delete` tinyint NULL DEFAULT NULL,
                     `pending_transfer` tinyint NULL DEFAULT NULL,
                     `rdap_registrar_name` varchar(255) NULL DEFAULT NULL,
@@ -278,7 +278,7 @@ class Installer
             $migration->addField($table, "{$prefix}_test_status", 'string', ['value' => null]);
             $migration->addField($table, "{$prefix}_test_message", 'text', ['value' => null]);
             $migration->addField($table, "{$prefix}_test_http_code", 'INT NULL DEFAULT NULL');
-            $migration->addField($table, "{$prefix}_test_date", 'datetime', ['value' => null]);
+            $migration->addField($table, "{$prefix}_test_date", 'timestamp', ['value' => null]);
         }
     }
 
@@ -699,7 +699,7 @@ class Installer
 
         $table = 'glpi_plugin_domainmanager_states';
 
-        $migration->addField($table, 'last_rdap_check_date', 'datetime', ['value' => null]);
+        $migration->addField($table, 'last_rdap_check_date', 'timestamp', ['value' => null]);
 
         // §9 Phase 27: renamed away from the "rdap_"-prefixed/shadow-column
         // naming this feature briefly had (never in a real release, only on
@@ -720,8 +720,8 @@ class Installer
         // already matches.
         foreach (
             [
-                ['rdap_last_changed_date', 'last_changed_date', 'datetime', ['value' => null]],
-                ['rdap_transfer_date', 'transfer_date', 'datetime', ['value' => null]],
+                ['rdap_last_changed_date', 'last_changed_date', 'timestamp', ['value' => null]],
+                ['rdap_transfer_date', 'transfer_date', 'timestamp', ['value' => null]],
                 ['rdap_pending_delete', 'pending_delete', 'tinyint NULL DEFAULT NULL', []],
                 ['rdap_pending_transfer', 'pending_transfer', 'tinyint NULL DEFAULT NULL', []],
             ] as [$oldfield, $newfield, $type, $options]
