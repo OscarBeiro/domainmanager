@@ -13,7 +13,7 @@
             'DomainType',
             'domaintypes_id',
             domaintypes_id,
-            __('Domain type to apply to imported domains', 'domainmanager'),
+            __('Default domain type', 'domainmanager'),
             {
                 'full_width': true,
                 'display_emptychoice': true,
@@ -49,7 +49,7 @@
         {{ fields.numberField(
             'sync_safety_max_count',
             sync_safety_max_count,
-            __('Sync safety guard: max records trashed per sync', 'domainmanager'),
+            __('Max records trashed per sync', 'domainmanager'),
             {
                 'full_width': true,
                 'disabled': not can_edit,
@@ -61,7 +61,7 @@
         {{ fields.numberField(
             'sync_safety_max_percent',
             sync_safety_max_percent,
-            __('Sync safety guard: max percent of owned records trashed per sync', 'domainmanager'),
+            __('Max percent of records trashed per sync', 'domainmanager'),
             {
                 'full_width': true,
                 'disabled': not can_edit,
