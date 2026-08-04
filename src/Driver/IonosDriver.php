@@ -38,6 +38,7 @@ use GlpiPlugin\Domainmanager\Contract\DnsPipelineInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsRecordWriterInterface;
 use GlpiPlugin\Domainmanager\Contract\DomainDiscoveryInterface;
 use GlpiPlugin\Domainmanager\Contract\RegistrarDriverInterface;
+use GlpiPlugin\Domainmanager\Driver\Concern\ValidatesCredentialsTrait;
 use GlpiPlugin\Domainmanager\Dto\ConnectionTestResult;
 use GlpiPlugin\Domainmanager\Dto\DiscoveredDomain;
 use GlpiPlugin\Domainmanager\Dto\DomainLifecycle;
@@ -114,6 +115,8 @@ use Toolbox;
  */
 class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, DnsRecordWriterInterface, ConnectionTestableInterface, DomainDiscoveryInterface
 {
+    use ValidatesCredentialsTrait;
+
     private const BASE_URI = 'https://api.hosting.ionos.com/dns/v1/';
 
     private const DOMAINS_BASE_URI = 'https://api.hosting.ionos.com/domains/v1/';
@@ -155,7 +158,13 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Dns
         $this->client       = null;
 
         try {
-            $dns = $this->probeZonesList();
+            $missing = self::missingConfigMessage($credentials, [
+                'key'    => __('IONOS API key', 'domainmanager'),
+                'secret' => __('IONOS API secret', 'domainmanager'),
+            ]);
+            $dns     = $missing !== null
+                ? ConnectionTestResult::notConfigured('dns', $missing)
+                : $this->probeZonesList();
         } catch (Throwable $e) {
             $dns = ConnectionTestResult::fromException('dns', $e);
         } finally {

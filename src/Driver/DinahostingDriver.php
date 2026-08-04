@@ -38,6 +38,7 @@ use GlpiPlugin\Domainmanager\Contract\DnsPipelineInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsRecordWriterInterface;
 use GlpiPlugin\Domainmanager\Contract\DomainDiscoveryInterface;
 use GlpiPlugin\Domainmanager\Contract\RegistrarDriverInterface;
+use GlpiPlugin\Domainmanager\Driver\Concern\ValidatesCredentialsTrait;
 use GlpiPlugin\Domainmanager\Dto\ConnectionTestResult;
 use GlpiPlugin\Domainmanager\Dto\ConnectionTestStatus;
 use GlpiPlugin\Domainmanager\Dto\DiscoveredDomain;
@@ -96,6 +97,8 @@ use Toolbox;
  */
 class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterface, ConnectionTestableInterface, DomainDiscoveryInterface, DnsRecordWriterInterface
 {
+    use ValidatesCredentialsTrait;
+
     private const BASE_URI = 'https://dinahosting.com/special/';
 
     private const REQUEST_TIMEOUT = 15;
@@ -136,7 +139,16 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
         $this->client       = null;
 
         try {
-            $results = $this->probeAuth();
+            $missing = self::missingConfigMessage($credentials, [
+                'user'     => __('Dinahosting username', 'domainmanager'),
+                'password' => __('Dinahosting password', 'domainmanager'),
+            ]);
+            $results = $missing !== null
+                ? [
+                    'registrar' => ConnectionTestResult::notConfigured('registrar', $missing),
+                    'dns'       => ConnectionTestResult::notConfigured('dns', $missing),
+                ]
+                : $this->probeAuth();
         } catch (Throwable $e) {
             $result  = ConnectionTestResult::fromException('registrar', $e);
             $results = [

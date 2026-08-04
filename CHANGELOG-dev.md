@@ -17,6 +17,8 @@ Entries are grouped into **Features** (new capability, UI/UX change, refactor, d
 change) and **Bugs** (something that was actually broken, fixed) — one line each.
 
 ## [Unreleased]
+### Bugs
+- **Pre-flight empty-credential check extended to IONOS and Dinahosting.** `CloudflareDriver::missingConfigMessage()` was the only driver with a pre-flight check rejecting empty required credential fields before any network call in `testConnection()`; IONOS/Dinahosting only discovered missing credentials lazily via a generic exception from `buildClient()`/`getClient()`. Extracted into new `Driver\Concern\ValidatesCredentialsTrait::missingConfigMessage(array $credentials, array $requiredFields)`, used by all three drivers. `IonosDriver::testConnection()` now returns `ConnectionTestResult::notConfigured('dns', ...)` for an empty `key`/`secret` instead of calling `probeZonesList()`; `DinahostingDriver::testConnection()` returns `notConfigured` for both `registrar` and `dns` for an empty `user`/`password` instead of calling `probeAuth()`. Cloudflare's own messages/behavior are unchanged. The existing lazy checks inside `buildClient()`/`getClient()` are left in place as defense-in-depth for callers outside `testConnection()`.
 
 ## [1.5.0] - 2026-08-03
 ### Bugs
