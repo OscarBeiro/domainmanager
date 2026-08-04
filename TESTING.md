@@ -3416,21 +3416,21 @@ amendment.
   live-configured domain and confirming a create/update/delete/restore is refused with the
   expected message, then confirming it resumes once turned back off)
 
-### Phase 55 Blast-radius guard on reconciliation (ARCHITECTURE.md §15.3)
+### Phase 55 Sync safety guard on reconciliation (ARCHITECTURE.md §15.3)
 - **Requirement:** abort a reconciliation run and set a distinct `DomainState` status when it would
   trash more than N records or more than X% of a domain's owned records, whichever is hit first;
   requires explicit operator action to proceed.
 - **Implementation:** `RecordReconciler::doReconcile()` counts, after its existing match/claim pass
   but before the trash loop, how many currently-owned (non-deleted) records this run would newly
-  trash, against `Config::getBlastRadiusMaxCount()`/`getBlastRadiusMaxPercent()` (new
-  `blast_radius_max_count`/`blast_radius_max_percent` keys on the existing `plugin:domainmanager`
+  trash, against `Config::getSyncSafetyMaxCount()`/`getSyncSafetyMaxPercent()` (new
+  `sync_safety_max_count`/`sync_safety_max_percent` keys on the existing `plugin:domainmanager`
   config context, editable on the Setup tab, defaults 20/50). Crossing either throws
-  `Exception\BlastRadiusExceededException` before any trash-bin mutation runs.
+  `Exception\SyncSafetyExceededException` before any trash-bin mutation runs.
   `SyncEngine::syncDnsLeg()` catches it distinctly from `DriverException`/`Throwable` and sets the
-  new `DomainState::STATUS_BLAST_RADIUS_GUARD` (its own label/badge class in
+  new `DomainState::STATUS_SYNC_SAFETY_GUARD` (its own label/badge class in
   `DomainStatusResolver`). `reconcile()`/`sync()` gained a `$force` parameter (default `false`);
   `POST /plugins/domainmanager/sync/{id}` accepts a `force` field, and the domain panel's "Update
-  Now" button, on receiving `STATUS_BLAST_RADIUS_GUARD`, shows a `window.confirm()` naming the exact
+  Now" button, on receiving `STATUS_SYNC_SAFETY_GUARD`, shows a `window.confirm()` naming the exact
   counts and re-issues the request with `force=1` only if the operator confirms.
 - **Verified by code inspection, 2026-08-03:**
   - Confirmed the count is computed strictly before the trash loop, so a run that trips the guard

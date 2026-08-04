@@ -539,11 +539,11 @@
 
             // ARCHITECTURE.md §15.3 Phase 55: this run's reconciliation
             // refused to apply because it would have trashed more records
-            // than the configured blast-radius guard allows — the domain
+            // than the configured sync safety guard allows — the domain
             // was left untouched. Offer an explicit, one-off override
             // rather than silently retrying or leaving no way forward
             // short of the Setup config page.
-            if (data.dns_status === 'blast_radius_guard' && !force) {
+            if (data.dns_status === 'sync_safety_guard' && !force) {
                 if (window.confirm(data.dns_message + '\n\n' + {{ __('Force this synchronization anyway?', 'domainmanager')|json_encode|raw }})) {
                     return runSync(true);
                 }

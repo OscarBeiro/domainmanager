@@ -36,18 +36,18 @@ use RuntimeException;
 /**
  * ARCHITECTURE.md §15.3 Phase 55: a reconciliation run whose upstream
  * snapshot would trash more of a domain's owned records than the
- * configured blast-radius thresholds allow — thrown by
+ * configured sync safety guard thresholds allow — thrown by
  * `RecordReconciler::reconcile()` *before* any trash bin mutation runs,
  * so a wrongly-scoped credential or a truncated/empty upstream page never
  * gets the chance to soft-delete a whole zone. `SyncEngine::syncDnsLeg()`
  * catches this distinctly from `DriverException`/generic `Throwable` and
- * sets `DomainState::STATUS_BLAST_RADIUS_GUARD` rather than `STATUS_ERROR`
+ * sets `DomainState::STATUS_SYNC_SAFETY_GUARD` rather than `STATUS_ERROR`
  * — this isn't a failure, it's a guard that did its job. Deliberately not
  * a `DriverException`: this has nothing to do with a provider call
  * failing, and mixing it into that catch branch would lose the distinct
  * status.
  */
-class BlastRadiusExceededException extends RuntimeException
+class SyncSafetyExceededException extends RuntimeException
 {
     public function __construct(
         string $message,

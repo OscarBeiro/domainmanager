@@ -37,7 +37,7 @@ use DomainRecordType;
 use GlpiPlugin\Domainmanager\Config\Config;
 use GlpiPlugin\Domainmanager\Contract\DnsRecordCommentSyncInterface;
 use GlpiPlugin\Domainmanager\Dto\ZoneRecord;
-use GlpiPlugin\Domainmanager\Exception\BlastRadiusExceededException;
+use GlpiPlugin\Domainmanager\Exception\SyncSafetyExceededException;
 use GlpiPlugin\Domainmanager\ImportedRecord;
 use GlpiPlugin\Domainmanager\ImportLock;
 use GlpiPlugin\Domainmanager\LockEnforcer;
@@ -100,13 +100,13 @@ class RecordReconciler
      *         that capability, in which case comment sync is download-only
      *         (seeding a newly-created record from the provider's comment).
      * @param  bool  $force ARCHITECTURE.md §15.3 Phase 55: skip the
-     *         blast-radius guard below and apply the trash bin moves
+     *         sync safety guard below and apply the trash bin moves
      *         regardless of how many records that touches — set only by an
      *         explicit operator override of a run that previously tripped
-     *         {@see BlastRadiusExceededException} (§ requires explicit
+     *         {@see SyncSafetyExceededException} (§ requires explicit
      *         operator action to proceed).
      * @return array{added: int, updated: int, restored: int, trashed: int, unchanged: int}
-     * @throws BlastRadiusExceededException
+     * @throws SyncSafetyExceededException
      */
     public function reconcile(Domain $domain, array $records, ?DnsRecordCommentSyncInterface $commentDriver = null, bool $force = false): array
     {
@@ -127,7 +127,7 @@ class RecordReconciler
      * @param  DnsRecordCommentSyncInterface|null  $commentDriver
      * @param  bool                                $force
      * @return array{added: int, updated: int, restored: int, trashed: int, unchanged: int}
-     * @throws BlastRadiusExceededException
+     * @throws SyncSafetyExceededException
      */
     private function doReconcile(Domain $domain, array $records, ?DnsRecordCommentSyncInterface $commentDriver, bool $force = false): array
     {
@@ -283,14 +283,14 @@ class RecordReconciler
                 }
             }
 
-            $max_count   = Config::getBlastRadiusMaxCount();
-            $max_percent = Config::getBlastRadiusMaxPercent();
+            $max_count   = Config::getSyncSafetyMaxCount();
+            $max_percent = Config::getSyncSafetyMaxPercent();
             $percent     = $total_owned > 0 ? ($would_trash / $total_owned) * 100 : ($would_trash > 0 ? 100 : 0);
 
             if ($would_trash > 0 && ($would_trash > $max_count || $percent > $max_percent)) {
-                throw new BlastRadiusExceededException(
+                throw new SyncSafetyExceededException(
                     sprintf(
-                        __('Synchronization refused: this run would move %1$d of %2$d owned record(s) (%3$d%%) to the trash bin, above the configured blast-radius guard threshold (max %4$d records or %5$d%%). No change was applied. Force this synchronization only after confirming the upstream zone genuinely emptied.', 'domainmanager'),
+                        __('Synchronization refused: this run would move %1$d of %2$d owned record(s) (%3$d%%) to the trash bin, above the configured sync safety guard threshold (max %4$d records or %5$d%%). No change was applied. Force this synchronization only after confirming the upstream zone genuinely emptied.', 'domainmanager'),
                         $would_trash,
                         $total_owned,
                         (int) round($percent),

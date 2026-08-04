@@ -36,13 +36,20 @@
             }
         ) }}
 
-        {# §15.3 Phase 55: blast-radius guard on reconciliation — a sync run
+        <hr>
+
+        {# §15.3 Phase 55: sync safety guard on reconciliation — a sync run
            that would trash more than either threshold refuses to apply and
            leaves the domain's records untouched instead. #}
+        <div class="alert alert-warning" role="alert">
+            <i class="ti ti-alert-triangle me-1"></i>
+            {{ __('Advanced: sync safety guard thresholds. Leave at the defaults unless you understand exactly what they control — lowering them can cause normal syncs to be refused, while raising them weakens protection against a mis-scoped credential trashing DNS records.', 'domainmanager') }}
+        </div>
+
         {{ fields.numberField(
-            'blast_radius_max_count',
-            blast_radius_max_count,
-            __('Blast-radius guard: max records trashed per sync', 'domainmanager'),
+            'sync_safety_max_count',
+            sync_safety_max_count,
+            __('Sync safety guard: max records trashed per sync', 'domainmanager'),
             {
                 'full_width': true,
                 'disabled': not can_edit,
@@ -52,9 +59,9 @@
         ) }}
 
         {{ fields.numberField(
-            'blast_radius_max_percent',
-            blast_radius_max_percent,
-            __('Blast-radius guard: max percent of owned records trashed per sync', 'domainmanager'),
+            'sync_safety_max_percent',
+            sync_safety_max_percent,
+            __('Sync safety guard: max percent of owned records trashed per sync', 'domainmanager'),
             {
                 'full_width': true,
                 'disabled': not can_edit,

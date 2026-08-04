@@ -64,9 +64,9 @@ class SyncController extends AbstractController
         }
 
         // ARCHITECTURE.md §15.3 Phase 55: explicit operator override of a
-        // previous run's blast-radius guard refusal — only ever meaningful
+        // previous run's sync safety guard refusal — only ever meaningful
         // as a deliberate, one-off re-request from the domain panel's own
-        // "Update Now" button after it surfaced STATUS_BLAST_RADIUS_GUARD,
+        // "Update Now" button after it surfaced STATUS_SYNC_SAFETY_GUARD,
         // never a default.
         $force = (bool) $request->request->getBoolean('force', false);
 

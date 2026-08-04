@@ -38,7 +38,7 @@ use GlpiPlugin\Domainmanager\Dto\LifecycleStatus;
 use GlpiPlugin\Domainmanager\DomainState;
 use GlpiPlugin\Domainmanager\DriverFactory;
 use GlpiPlugin\Domainmanager\DriverRegistry;
-use GlpiPlugin\Domainmanager\Exception\BlastRadiusExceededException;
+use GlpiPlugin\Domainmanager\Exception\SyncSafetyExceededException;
 use GlpiPlugin\Domainmanager\Exception\DriverException;
 use GlpiPlugin\Domainmanager\ImportLock;
 use GlpiPlugin\Domainmanager\LockEnforcer;
@@ -76,11 +76,11 @@ class SyncEngine
      *                          the domain already has a state row — this
      *                          field is set once, at creation, never again.
      * @param  bool   $forceDnsReconcile ARCHITECTURE.md §15.3 Phase 55:
-     *                          bypass the reconciliation blast-radius guard
+     *                          bypass the reconciliation sync safety guard
      *                          for this run. Only ever set true by an
      *                          explicit operator override of a run that
      *                          previously returned
-     *                          `DomainState::STATUS_BLAST_RADIUS_GUARD` —
+     *                          `DomainState::STATUS_SYNC_SAFETY_GUARD` —
      *                          every other caller leaves this false.
      * @return array{registrar_status: string, dns_status: string,
      *               registrar_message: string, dns_message: string,
@@ -501,11 +501,11 @@ class SyncEngine
                 $stats['unchanged'],
             );
             $this->logger->milestone((int) $domain->getID(), 'DNS sync OK: ' . $result['dns_message']);
-        } catch (BlastRadiusExceededException $e) {
-            $result['dns_status']  = DomainState::STATUS_BLAST_RADIUS_GUARD;
+        } catch (SyncSafetyExceededException $e) {
+            $result['dns_status']  = DomainState::STATUS_SYNC_SAFETY_GUARD;
             $result['dns_message'] = $e->getMessage();
             $this->logger->detail(
-                'DNS leg refused for domain #' . $domain->getID() . ' (blast-radius guard): '
+                'DNS leg refused for domain #' . $domain->getID() . ' (sync safety guard): '
                 . $e->wouldTrash . ' of ' . $e->totalOwned . ' owned record(s) would be trashed',
             );
         } catch (DriverException $e) {

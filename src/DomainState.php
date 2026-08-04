@@ -80,13 +80,13 @@ class DomainState extends CommonDBTM
     public const STATUS_SOURCE_CONFLICT   = 'source_conflict';
 
     // ARCHITECTURE.md §15.3 Phase 55: a sync run whose reconciliation would
-    // have trashed more records than the configured blast-radius guard
+    // have trashed more records than the configured sync safety guard
     // allows was refused before any trash-bin mutation ran — the domain's
     // records are exactly as they were before this sync attempt. Distinct
     // from STATUS_ERROR (a failed API call) for the same reason
     // STATUS_SOURCE_CONFLICT is: this is a deliberate pause pending explicit
     // operator confirmation ("force"), not a failure.
-    public const STATUS_BLAST_RADIUS_GUARD = 'blast_radius_guard';
+    public const STATUS_SYNC_SAFETY_GUARD = 'sync_safety_guard';
 
     // Per-domain DNS record write-editability state (ARCHITECTURE.md §12.3,
     // Phase 42) — independent of dns_status (the read-sync outcome above).

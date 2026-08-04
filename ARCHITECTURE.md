@@ -2416,7 +2416,7 @@ explicit `1`/`0`/`null` int, never a raw PHP bool.
 **Verifications required before code:** each provider's own documented write rate limits, to set
 defaults that are conservative rather than invented.
 
-### Phase 55 — Blast-radius guard on reconciliation
+### Phase 55 — Sync safety guard on reconciliation
 
 §5.6 establishes that a fetch *failure* throws before `reconcile()` runs. A *successful* fetch of
 the wrong or empty zone does not — a token scoped to a different account, or a provider returning an
@@ -2429,12 +2429,12 @@ operator action to proceed. A genuinely emptied zone is rare; a wrongly-scoped c
 
 **Outcome, 2026-08-03 (TESTING.md Phase 55):** `RecordReconciler::doReconcile()` counts, after its
 existing match/claim pass but before the trash loop runs, how many currently-owned (non-deleted)
-records this run would newly trash. Refuses (throws `Exception\BlastRadiusExceededException`, before
-any trash-bin mutation) once that count exceeds `Config::getBlastRadiusMaxCount()` (default 20) or
-exceeds `Config::getBlastRadiusMaxPercent()` (default 50) of the domain's owned records — an OR, either
+records this run would newly trash. Refuses (throws `Exception\SyncSafetyExceededException`, before
+any trash-bin mutation) once that count exceeds `Config::getSyncSafetyMaxCount()` (default 20) or
+exceeds `Config::getSyncSafetyMaxPercent()` (default 50) of the domain's owned records — an OR, either
 threshold alone trips it. Both configurable on the Setup tab, same `plugin:domainmanager` config
 context as Phase 53's kill switch. `SyncEngine::syncDnsLeg()` catches this exception distinctly and
-sets the new `DomainState::STATUS_BLAST_RADIUS_GUARD` rather than `STATUS_ERROR` — a guard doing its
+sets the new `DomainState::STATUS_SYNC_SAFETY_GUARD` rather than `STATUS_ERROR` — a guard doing its
 job, not a failure, mirroring how `STATUS_SOURCE_CONFLICT` (Phase 47) already treats a deliberate pause
 as its own status rather than an error. "Requires explicit operator action to proceed": `reconcile()`
 and `sync()` gained a `$force` parameter (default `false`, every existing caller unaffected); the
