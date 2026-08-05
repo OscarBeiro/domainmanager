@@ -16,6 +16,7 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 
 ### Bugs
 - Check Connection now clearly flags a missing IONOS or Dinahosting credential field before contacting the provider, the same way it already did for Cloudflare, instead of surfacing a generic error.
+- The "creating this record pushes it live to the provider" warning on the new DNS record form now only appears when the domain you actually pick is managed with write-back enabled, and is shown at the top of the form instead of the bottom.
 
 ## [1.5.0] - 2026-08-03
 ### Features
