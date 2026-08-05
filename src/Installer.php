@@ -279,6 +279,10 @@ class Installer
             $migration->addField($table, "{$prefix}_test_message", 'text', ['value' => null]);
             $migration->addField($table, "{$prefix}_test_http_code", 'INT NULL DEFAULT NULL');
             $migration->addField($table, "{$prefix}_test_date", 'timestamp', ['value' => null]);
+            // §7 datetime->timestamp normalization: addField() above is a no-op
+            // once the column exists, so an install that created this column
+            // back when it was 'datetime' never gets converted without this.
+            $migration->changeField($table, "{$prefix}_test_date", "{$prefix}_test_date", 'timestamp', ['value' => null]);
         }
     }
 
@@ -700,6 +704,9 @@ class Installer
         $table = 'glpi_plugin_domainmanager_states';
 
         $migration->addField($table, 'last_rdap_check_date', 'timestamp', ['value' => null]);
+        // §7 datetime->timestamp normalization: no-op via addField() alone
+        // once the column already exists as 'datetime'.
+        $migration->changeField($table, 'last_rdap_check_date', 'last_rdap_check_date', 'timestamp', ['value' => null]);
 
         // §9 Phase 27: renamed away from the "rdap_"-prefixed/shadow-column
         // naming this feature briefly had (never in a real release, only on
@@ -730,6 +737,11 @@ class Installer
                 $migration->changeField($table, $oldfield, $newfield, $type, $options);
             } else {
                 $migration->addField($table, $newfield, $type, $options);
+                // §7 datetime->timestamp normalization: addField() is a
+                // no-op once $newfield already exists, so an install that
+                // already has it (under either name) as 'datetime' never
+                // gets converted without this.
+                $migration->changeField($table, $newfield, $newfield, $type, $options);
             }
         }
 
