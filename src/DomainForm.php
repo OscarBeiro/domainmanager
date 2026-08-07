@@ -239,7 +239,9 @@ class DomainForm
             // top-nav "+"), which reaches the exact same `onPreAdd()` live
             // push as every other entry point (§11.7) but previously had no
             // warning at all before a submit.
-            TemplateRenderer::getInstance()->display('@domainmanager/domainrecord_new_notice.html.twig', []);
+            TemplateRenderer::getInstance()->display('@domainmanager/domainrecord_new_notice.html.twig', [
+                'rand' => mt_rand(),
+            ]);
             return;
         }
 

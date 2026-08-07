@@ -1,33 +1,598 @@
-# domainmanager Glpi Plugin.
-# Copyright (C) 2026 TICgal
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
 # This file is distributed under the same license as the PACKAGE package.
-# TICgal, 2026
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
 #
 #, fuzzy
 msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-31 18:25+0200\n"
-"PO-Revision-Date: 2026-MO-DA HO:MI+ZONE\n"
+"POT-Creation-Date: 2026-08-04 20:25+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
 "Language: \n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=INTEGER; plural=EXPRESSION;\n"
+
+#: domain_discovery_modal.html.twig
+msgid ""
+"You do not have permission to create domains, so none of the domains "
+"discovered in this supplier's account can be imported."
+msgstr ""
+
+#: domain_discovery_modal.html.twig
+msgid "No pending domains to import: this supplier's account has no domains."
+msgstr ""
+
+#: domain_discovery_modal.html.twig
+msgid ""
+"No pending domains to import: every domain found in this supplier's account "
+"already exists in GLPI."
+msgstr ""
+
+#: domain_discovery_modal.html.twig
+msgid "Import into entity"
+msgstr ""
+
+#: domain_discovery_modal.html.twig supplier_domains_list.html.twig
+msgid "Domain"
+msgstr ""
+
+#: domain_discovery_modal.html.twig
+msgid "Status"
+msgstr ""
+
+#: domain_discovery_modal.html.twig
+msgid "Not yet in GLPI"
+msgstr ""
+
+#: domain_discovery_modal.html.twig domain_panel.html.twig
+msgid "Registrar mismatch"
+msgstr ""
+
+#: domain_discovery_modal.html.twig
+#, php-format
+msgid "Reassign registrar to %s"
+msgstr ""
+
+#: domain_discovery_modal.html.twig
+#, php-format
+msgid "Set registrar to %s"
+msgstr ""
+
+#: domain_discovery_modal.html.twig
+msgid "Already exists"
+msgstr ""
+
+#: domain_discovery_modal.html.twig
+msgid "Import selected domains"
+msgstr ""
+
+#: domain_discovery_modal.html.twig
+msgid "Reassigned"
+msgstr ""
+
+#: domain_discovery_modal.html.twig
+msgid "Registrar reassigned"
+msgstr ""
+
+#: config.html.twig
+msgid "Default domain type"
+msgstr ""
+
+#: config.html.twig
+msgid ""
+"Applied once, only when the plugin creates a new domain (bulk import). Left "
+"empty, imported domains get no type, same as one created by hand. Never "
+"changes an existing domain's type on a later sync."
+msgstr ""
+
+#: config.html.twig
+msgid "Read-only mode"
+msgstr ""
+
+#: config.html.twig
+msgid ""
+"When enabled, Domain Manager refuses to push any DNS record change (create/"
+"update/delete/restore) to any provider. Reads and sync are unaffected."
+msgstr ""
+
+#: config.html.twig
+msgid ""
+"Advanced: sync safety guard thresholds. Leave at the defaults unless you "
+"understand exactly what they control — lowering them can cause normal syncs "
+"to be refused, while raising them weakens protection against a mis-scoped "
+"credential trashing DNS records."
+msgstr ""
+
+#: config.html.twig
+msgid "Max records trashed per sync"
+msgstr ""
+
+#: config.html.twig
+msgid ""
+"A single synchronization is refused, and the domain left untouched, once it "
+"would move more than this many records to the trash bin, or more than the "
+"percentage below of the domain's currently-owned records — whichever is hit "
+"first."
+msgstr ""
+
+#: config.html.twig
+msgid "Max percent of records trashed per sync"
+msgstr ""
+
+#: config.html.twig
+#, php-format
+msgid "%d domain(s) pending RDAP enrichment, last processed at %s"
+msgstr ""
+
+#: config.html.twig
+#, php-format
+msgid "%d domain(s) pending RDAP enrichment, none processed yet"
+msgstr ""
+
+#: domainrecord_proxy_indicators.html.twig
+msgid "Proxied through Cloudflare"
+msgstr ""
+
+#: domainrecord_new_notice.html.twig
+msgid ""
+"If the domain you select above is managed by Domain Manager with DNS write-"
+"back enabled, creating this record here pushes it live to the provider "
+"immediately, with no undo."
+msgstr ""
+
+#: supplier_domains_list.html.twig
+msgid "Plugin managed"
+msgstr ""
+
+#: supplier_domains_list.html.twig
+msgid "Known, unmanaged (yet)"
+msgstr ""
+
+#: supplier_domains_list.html.twig src/DomainState.php:203
+#: src/SupplierTab.php:417
+msgid "Unknown"
+msgstr ""
+
+#: supplier_domains_list.html.twig domain_panel.html.twig
+#: src/SupplierTab.php:420
+msgid "Not yet checked"
+msgstr ""
+
+#: supplier_domains_list.html.twig
+msgid "Domains"
+msgstr ""
+
+#: supplier_domains_list.html.twig
+#, php-format
+msgid ""
+"%d domain linked to this supplier hasn't been checked yet — run a sync to "
+"detect its DNS provider and status."
+msgid_plural ""
+"%d domains linked to this supplier haven't been checked yet — run a sync to "
+"detect their DNS provider and status."
+msgstr[0] ""
+msgstr[1] ""
+
+#: supplier_domains_list.html.twig
+msgid "Review and sync"
+msgstr ""
+
+#: supplier_domains_list.html.twig
+msgid ""
+"No domain currently references this supplier as its registrar or DNS "
+"provider."
+msgstr ""
+
+#: supplier_domains_list.html.twig domain_panel.html.twig setup.php:611
+msgid "Registrar"
+msgstr ""
+
+#: supplier_domains_list.html.twig domain_panel.html.twig
+msgid "DNS Provider"
+msgstr ""
+
+#: supplier_domains_list.html.twig
+msgid "None"
+msgstr ""
+
+#: domainrecord_edit_panel.html.twig domain_managed_indicator.html.twig
+msgid "Managed by Domain Manager"
+msgstr ""
+
+#: domainrecord_edit_panel.html.twig
+#, php-format
+msgid "Saving this form updates the record live at %s. There is no undo."
+msgstr ""
+
+#: domainrecord_edit_panel.html.twig
+msgid ""
+"Saving this form updates the record live at the DNS provider. There is no "
+"undo."
+msgstr ""
+
+#: domainrecord_edit_panel.html.twig src/Service/DnsRecordWriteback.php:591
+msgid "Proxied"
+msgstr ""
+
+#: domainrecord_edit_panel.html.twig
+msgid ""
+"Domain Manager is in read-only mode (Setup > General > Domain Manager); this "
+"record cannot be edited here until it is turned off."
+msgstr ""
+
+#: domainrecord_edit_panel.html.twig
+msgid ""
+"This record is imported by Domain Manager synchronization and cannot be "
+"edited here."
+msgstr ""
+
+#: domainrecord_edit_panel.html.twig domain_panel.html.twig
+msgid "Locked by Domain Manager synchronization"
+msgstr ""
+
+#: domainrecord_edit_panel.html.twig
+msgid "This deletes the record live at the DNS provider. Continue?"
+msgstr ""
+
+#: connection_test_panel.html.twig
+msgid "Not tested yet"
+msgstr ""
+
+#: connection_test_panel.html.twig
+msgid "Success"
+msgstr ""
+
+#: connection_test_panel.html.twig
+msgid "Authentication failed"
+msgstr ""
+
+#: connection_test_panel.html.twig
+msgid "Forbidden"
+msgstr ""
+
+#: connection_test_panel.html.twig
+msgid "Not found"
+msgstr ""
+
+#: connection_test_panel.html.twig
+msgid "Rate limited"
+msgstr ""
+
+#: connection_test_panel.html.twig
+msgid "Upstream error"
+msgstr ""
+
+#: connection_test_panel.html.twig
+msgid "Network error"
+msgstr ""
+
+#: connection_test_panel.html.twig
+msgid "Timeout"
+msgstr ""
+
+#: connection_test_panel.html.twig src/Service/DomainStatusResolver.php:58
+msgid "Error"
+msgstr ""
+
+#: connection_test_panel.html.twig src/Service/DomainStatusResolver.php:59
+msgid "Not configured"
+msgstr ""
+
+#: connection_test_panel.html.twig
+msgid "Connection diagnostics"
+msgstr ""
+
+#: connection_test_panel.html.twig
+msgid "RDAP registrar of record"
+msgstr ""
+
+#: connection_test_panel.html.twig
+msgid "IANA number"
+msgstr ""
+
+#: connection_test_panel.html.twig
+msgid ""
+"This supplier is inactive. Activate it to test or use its Domain Manager "
+"credentials."
+msgstr ""
+
+#: connection_test_panel.html.twig supplier_tab.html.twig
+msgid "Connection"
+msgstr ""
+
+#: connection_test_panel.html.twig
+msgid "Last checked"
+msgstr ""
+
+#: connection_test_panel.html.twig domain_panel.html.twig
+msgid "Never"
+msgstr ""
+
+#: connection_test_panel.html.twig
+msgid "This driver has nothing to test."
+msgstr ""
+
+#: domain_panel.html.twig setup.php:200 setup.php:486 setup.php:574
+#: src/HookHandler.php:229 src/SupplierTab.php:55 src/Profile.php:101
+#: src/SupplierConfig.php:429 src/SupplierConfig.php:469
+#: src/Service/SyncLogger.php:57 src/Config/Config.php:57
+msgid "Domain Manager"
+msgstr ""
+
+#: domain_panel.html.twig
+msgid "Copy Punycode form"
+msgstr ""
+
+#: domain_panel.html.twig
+msgid "Visit"
+msgstr ""
+
+#: domain_panel.html.twig
+msgid "WHOIS"
+msgstr ""
+
+#: domain_panel.html.twig
+msgid "Unlink registrar"
+msgstr ""
+
+#: domain_panel.html.twig
+msgid ""
+"Not managed by Domain Manager: no registrar or DNS supplier with API access "
+"is configured for this domain."
+msgstr ""
+
+#: domain_panel.html.twig
+msgid "Set the Registrar via the Financial and administrative information tab"
+msgstr ""
+
+#: domain_panel.html.twig
+msgid "Registrar sync"
+msgstr ""
+
+#: domain_panel.html.twig
+msgid "DNS sync"
+msgstr ""
+
+#: domain_panel.html.twig setup.php:415
+msgid "Last changed"
+msgstr ""
+
+#: domain_panel.html.twig setup.php:427
+msgid "Last transfer"
+msgstr ""
+
+#: domain_panel.html.twig setup.php:310
+msgid "Last sync"
+msgstr ""
+
+#: domain_panel.html.twig
+msgid "No registrar supplier set"
+msgstr ""
+
+#: domain_panel.html.twig src/DomainState.php:157
+#: src/Service/DomainStatusResolver.php:56
+msgid "Never synchronized"
+msgstr ""
+
+#: domain_panel.html.twig
+msgid "Not yet checked, or never transferred"
+msgstr ""
+
+#: domain_panel.html.twig
+msgid "DNS"
+msgstr ""
+
+#: domain_panel.html.twig
+#, php-format
+msgid "API integration for %s is not currently supported."
+msgstr ""
+
+#: domain_panel.html.twig
+msgid "The DNS provider of this domain could not be identified."
+msgstr ""
+
+#: domain_panel.html.twig
+msgid "Help us support this provider"
+msgstr ""
+
+#: domain_panel.html.twig setup.php:348
+msgid "WHOIS privacy"
+msgstr ""
+
+#: domain_panel.html.twig setup.php:360
+msgid "Transfer lock"
+msgstr ""
+
+#: domain_panel.html.twig
+msgid "Transfer / EPP auth code"
+msgstr ""
+
+#: domain_panel.html.twig setup.php:372
+msgid "Domain lock"
+msgstr ""
+
+#: domain_panel.html.twig setup.php:384
+msgid "Auto-renew"
+msgstr ""
+
+#: domain_panel.html.twig setup.php:396
+msgid "DNSSEC"
+msgstr ""
+
+#: domain_panel.html.twig setup.php:439
+msgid "Pending delete"
+msgstr ""
+
+#: domain_panel.html.twig setup.php:451
+msgid "Pending transfer"
+msgstr ""
+
+#: domain_panel.html.twig
+msgid "Not reported by this driver"
+msgstr ""
+
+#: domain_panel.html.twig
+msgid "Yes"
+msgstr ""
+
+#: domain_panel.html.twig
+msgid "No"
+msgstr ""
+
+#: domain_panel.html.twig
+msgid "Not reported"
+msgstr ""
+
+#: domain_panel.html.twig src/DomainState.php:168
+msgid "On file"
+msgstr ""
+
+#: domain_panel.html.twig src/DomainState.php:167
+msgid "Not on file"
+msgstr ""
+
+#: domain_panel.html.twig
+msgid "RDAP cross-check"
+msgstr ""
+
+#: domain_panel.html.twig
+msgid "RDAP reports"
+msgstr ""
+
+#: domain_panel.html.twig
+msgid "Supplier on file"
+msgstr ""
+
+#: domain_panel.html.twig
+msgid "Nameserver mismatch"
+msgstr ""
+
+#: domain_panel.html.twig
+msgid "RDAP"
+msgstr ""
+
+#: domain_panel.html.twig
+msgid "Live"
+msgstr ""
+
+#: domain_panel.html.twig
+msgid ""
+"Registrar and DNS provider information is available after the domain is "
+"created."
+msgstr ""
+
+#: domain_panel.html.twig
+msgid "Update Now"
+msgstr ""
+
+#: domain_panel.html.twig
+msgid "Unlink this domain's registrar?"
+msgstr ""
+
+#: domain_panel.html.twig
+msgid "Failed to unlink the registrar:"
+msgstr ""
+
+#: domain_panel.html.twig
+msgid "Force this synchronization anyway?"
+msgstr ""
+
+#: domain_panel.html.twig
+msgid "Synchronization request failed:"
+msgstr ""
+
+#: domainrecord_add_panel.html.twig
+msgid "Add a DNS record (Domain Manager)"
+msgstr ""
+
+#: domainrecord_add_panel.html.twig
+msgid ""
+"Domain Manager is in read-only mode (Setup > General > Domain Manager); no "
+"new record can be created here until it is turned off."
+msgstr ""
+
+#: domainrecord_add_panel.html.twig
+msgid ""
+"You do not hold write-back rights for any record type on this domain — ask "
+"an administrator for the \"Domain Manager\" per-type rights on your profile."
+msgstr ""
+
+#: domainrecord_add_panel.html.twig
+msgid "New record"
+msgstr ""
+
+#: domainrecord_add_panel.html.twig
+msgid "This creates the record live at the DNS provider. Continue?"
+msgstr ""
+
+#: supplier_tab.html.twig
+msgid "Domain Manager API access"
+msgstr ""
+
+#: supplier_tab.html.twig
+msgid ""
+"This Cloudflare configuration is missing an Account ID. Add it below and "
+"reissue this token as an Account API Token to continue using Cloudflare sync."
+msgstr ""
+
+#: supplier_tab.html.twig
+msgid "API driver"
+msgstr ""
+
+#: supplier_tab.html.twig
+msgid "●●●●●●●● (saved, leave empty to keep)"
+msgstr ""
+
+#: supplier_tab.html.twig
+msgid "Requires an Account API Token (not a personal token)."
+msgstr ""
+
+#: supplier_tab.html.twig
+msgid "Setup instructions"
+msgstr ""
+
+#: supplier_tab.html.twig
+msgid "Requires an API Key and Secret from the IONOS Cloud panel."
+msgstr ""
+
+#: supplier_tab.html.twig
+msgid ""
+"Requires the super-admin account's username and password — no scoped API "
+"token exists."
+msgstr ""
+
+#: supplier_tab.html.twig
+msgid ""
+"This supplier is inactive. Activate it to test its Domain Manager "
+"credentials."
+msgstr ""
+
+#: supplier_tab.html.twig
+msgid "Test"
+msgstr ""
+
+#: supplier_tab.html.twig
+msgid "This supplier is inactive. Activate it to import its domains."
+msgstr ""
+
+#: supplier_tab.html.twig
+msgid "Import"
+msgstr ""
+
+#: supplier_tab.html.twig
+msgid "Connection test request failed:"
+msgstr ""
 
 #: setup.php:174
 msgid ""
 "The intl PHP extension is required by Domain Manager (used for IDN/Punycode "
 "domain name conversion)."
-msgstr ""
-
-#: setup.php:200 setup.php:486 setup.php:574 src/HookHandler.php:229
-#: src/Service/SyncLogger.php:57 src/SupplierTab.php:55
-#: src/Config/Config.php:57 src/Profile.php:101 src/SupplierConfig.php:429
-#: src/SupplierConfig.php:469 templates/domain_panel.html.twig:44
-msgid "Domain Manager"
 msgstr ""
 
 #: setup.php:216 setup.php:515
@@ -50,48 +615,8 @@ msgstr ""
 msgid "DNS sync status"
 msgstr ""
 
-#: setup.php:310 templates/domain_panel.html.twig:115
-msgid "Last sync"
-msgstr ""
-
 #: setup.php:326
 msgid "Punycode name"
-msgstr ""
-
-#: setup.php:348 templates/domain_panel.html.twig:212
-msgid "WHOIS privacy"
-msgstr ""
-
-#: setup.php:360 templates/domain_panel.html.twig:213
-msgid "Transfer lock"
-msgstr ""
-
-#: setup.php:372 templates/domain_panel.html.twig:215
-msgid "Domain lock"
-msgstr ""
-
-#: setup.php:384 templates/domain_panel.html.twig:216
-msgid "Auto-renew"
-msgstr ""
-
-#: setup.php:396 templates/domain_panel.html.twig:217
-msgid "DNSSEC"
-msgstr ""
-
-#: setup.php:415 templates/domain_panel.html.twig:113
-msgid "Last changed"
-msgstr ""
-
-#: setup.php:427 templates/domain_panel.html.twig:114
-msgid "Last transfer"
-msgstr ""
-
-#: setup.php:439 templates/domain_panel.html.twig:219
-msgid "Pending delete"
-msgstr ""
-
-#: setup.php:451 templates/domain_panel.html.twig:220
-msgid "Pending transfer"
 msgstr ""
 
 #: setup.php:473
@@ -100,11 +625,6 @@ msgstr ""
 
 #: setup.php:541
 msgid "Proxy status"
-msgstr ""
-
-#: setup.php:611 templates/supplier_domains_list.html.twig:73
-#: templates/domain_panel.html.twig:104 templates/domain_panel.html.twig:179
-msgid "Registrar"
 msgstr ""
 
 #: setup.php:637
@@ -143,37 +663,49 @@ msgstr ""
 msgid "Password"
 msgstr ""
 
-#: src/DomainState.php:105
+#: src/DomainState.php:114
 msgid "Domain sync state"
 msgstr ""
 
-#: src/DomainState.php:148 src/Service/DomainStatusResolver.php:56
-#: templates/domain_panel.html.twig:129
-msgid "Never synchronized"
-msgstr ""
-
-#: src/DomainState.php:158 templates/domain_panel.html.twig:260
-msgid "Not on file"
-msgstr ""
-
-#: src/DomainState.php:159 templates/domain_panel.html.twig:258
-msgid "On file"
-msgstr ""
-
-#: src/DomainState.php:194 src/SupplierTab.php:417
-msgid "Unknown"
-msgstr ""
-
-#: src/DomainState.php:482
+#: src/DomainState.php:491
 msgid "Manual"
 msgstr ""
 
-#: src/DomainState.php:483
+#: src/DomainState.php:492
 msgid "Managed — read-only"
 msgstr ""
 
-#: src/DomainState.php:484
+#: src/DomainState.php:493
 msgid "Managed — editable"
+msgstr ""
+
+#: src/LockEnforcer.php:96
+#, php-format
+msgid ""
+"These fields are locked by Domain Manager synchronization and were not "
+"changed: %s"
+msgstr ""
+
+#: src/LockEnforcer.php:162
+msgid ""
+"This record is imported by Domain Manager synchronization and cannot be "
+"modified"
+msgstr ""
+
+#: src/LockEnforcer.php:209
+msgid ""
+"The registrar is locked by Domain Manager synchronization and was not changed"
+msgstr ""
+
+#: src/LockEnforcer.php:284
+msgid ""
+"This record is imported by Domain Manager synchronization and cannot be "
+"removed"
+msgstr ""
+
+#: src/LockEnforcer.php:285
+msgid ""
+"Purging this record requires the \"Purge\" right for its DNS record type"
 msgstr ""
 
 #: src/MassiveActionHandler.php:65
@@ -195,317 +727,6 @@ msgstr ""
 msgid "Sync failed unexpectedly for %s — see the plugin error log"
 msgstr ""
 
-#: src/Driver/DinahostingDriver.php:188 src/Dto/ConnectionTestResult.php:99
-#, php-format
-msgid "The provider's API is currently unavailable (HTTP %d)."
-msgstr ""
-
-#: src/Driver/DinahostingDriver.php:200
-msgid "Unexpected response from the provider API."
-msgstr ""
-
-#: src/Driver/DinahostingDriver.php:219 src/Dto/ConnectionTestResult.php:74
-msgid "Connection successful."
-msgstr ""
-
-#: src/Driver/DinahostingDriver.php:231
-msgid "Authentication failed — the username or password was rejected."
-msgstr ""
-
-#: src/Driver/DinahostingDriver.php:235 src/Dto/ConnectionTestResult.php:87
-msgid ""
-"Authentication succeeded but the credentials lack the required permission/"
-"scope."
-msgstr ""
-
-#: src/Driver/DinahostingDriver.php:239 src/Dto/ConnectionTestResult.php:147
-msgid "The connection to the provider API timed out."
-msgstr ""
-
-#: src/Driver/DinahostingDriver.php:243
-#, php-format
-msgid "Unexpected response from the provider API (code %d)."
-msgstr ""
-
-#: src/Driver/DinahostingDriver.php:455
-msgid "Dinahosting no longer reports this record"
-msgstr ""
-
-#: src/Driver/DinahostingDriver.php:487 src/Driver/DinahostingDriver.php:494
-#: src/Driver/DinahostingDriver.php:533 src/Driver/DinahostingDriver.php:616
-#: src/Driver/CloudflareDriver.php:609 src/Driver/IonosDriver.php:566
-#, php-format
-msgid "Record type %s is not writable through Domain Manager"
-msgstr ""
-
-#: src/Driver/DinahostingDriver.php:501
-msgid "Dinahosting did not report the newly created record"
-msgstr ""
-
-#: src/Driver/DinahostingDriver.php:581
-#, php-format
-msgid ""
-"Domain Manager cannot safely edit this record: Dinahosting already has one "
-"or more %s records at %s, and its API can only delete all of them at once, "
-"not a single one"
-msgstr ""
-
-#: src/Driver/DinahostingDriver.php:647
-msgid "This record reference is no longer valid"
-msgstr ""
-
-#: src/Driver/DinahostingDriver.php:678 src/Driver/CloudflareDriver.php:389
-#, php-format
-msgid "Expires %s"
-msgstr ""
-
-#: src/Driver/DinahostingDriver.php:736
-msgid "Dinahosting API is unreachable"
-msgstr ""
-
-#: src/Driver/DinahostingDriver.php:744
-#, php-format
-msgid "Dinahosting API unavailable (HTTP %d)"
-msgstr ""
-
-#: src/Driver/DinahostingDriver.php:751
-msgid "Unexpected response from the Dinahosting API"
-msgstr ""
-
-#: src/Driver/DinahostingDriver.php:758
-msgid "Dinahosting authentication failed, check the username/password"
-msgstr ""
-
-#: src/Driver/DinahostingDriver.php:771
-msgid ""
-"Dinahosting authentication succeeded, but this account is not authorized to "
-"manage this domain"
-msgstr ""
-
-#: src/Driver/DinahostingDriver.php:776
-msgid "Domain is not managed by this Dinahosting account"
-msgstr ""
-
-#: src/Driver/DinahostingDriver.php:783
-#, php-format
-msgid "Dinahosting API error: %s"
-msgstr ""
-
-#: src/Driver/DinahostingDriver.php:805
-msgid "Dinahosting username/password are not configured"
-msgstr ""
-
-#: src/Driver/DinahostingDriver.php:874 src/Driver/CloudflareDriver.php:1001
-#: src/Driver/IonosDriver.php:870
-msgid "Domain name is not a valid FQDN"
-msgstr ""
-
-#: src/Driver/CloudflareDriver.php:171 src/Driver/CloudflareDriver.php:981
-msgid "Cloudflare Account ID is not configured"
-msgstr ""
-
-#: src/Driver/CloudflareDriver.php:175 src/Driver/CloudflareDriver.php:957
-msgid "Cloudflare API token is not configured"
-msgstr ""
-
-#: src/Driver/CloudflareDriver.php:281 src/Driver/CloudflareDriver.php:910
-msgid "This Cloudflare API token lacks DNS:Read permission for this zone"
-msgstr ""
-
-#: src/Driver/CloudflareDriver.php:322
-msgid "Domain is not managed by Cloudflare Registrar on this account"
-msgstr ""
-
-#: src/Driver/CloudflareDriver.php:503
-msgid "Cloudflare did not return the created record"
-msgstr ""
-
-#: src/Driver/CloudflareDriver.php:550 src/Driver/CloudflareDriver.php:705
-msgid "Cloudflare did not return the updated record"
-msgstr ""
-
-#: src/Driver/CloudflareDriver.php:593
-msgid "Cloudflare did not return this record"
-msgstr ""
-
-#: src/Driver/CloudflareDriver.php:772
-msgid "This Cloudflare API token lacks DNS:Edit permission for this zone"
-msgstr ""
-
-#: src/Driver/CloudflareDriver.php:786
-#, php-format
-msgid "Cloudflare %1$s failed: %2$s"
-msgstr ""
-
-#: src/Driver/CloudflareDriver.php:813 src/Driver/CloudflareDriver.php:883
-msgid "Cloudflare API is unreachable"
-msgstr ""
-
-#: src/Driver/CloudflareDriver.php:822 src/Driver/CloudflareDriver.php:922
-msgid "Unexpected response from the Cloudflare API"
-msgstr ""
-
-#: src/Driver/CloudflareDriver.php:860
-#, php-format
-msgid "No Cloudflare zone found for %s under this account"
-msgstr ""
-
-#: src/Driver/CloudflareDriver.php:902
-msgid "Cloudflare authentication failed, check the API token"
-msgstr ""
-
-#: src/Driver/CloudflareDriver.php:916
-#, php-format
-msgid "Cloudflare API unavailable (HTTP %d)"
-msgstr ""
-
-#: src/Driver/CloudflareDriver.php:936
-#, php-format
-msgid "Cloudflare API error: %s"
-msgstr ""
-
-#: src/Driver/IonosDriver.php:168
-msgid "Not yet implemented for this driver"
-msgstr ""
-
-#: src/Driver/IonosDriver.php:310
-#, php-format
-msgid "No IONOS domain item found for %s with this account"
-msgstr ""
-
-#: src/Driver/IonosDriver.php:494
-msgid "IONOS did not return the created record"
-msgstr ""
-
-#: src/Driver/IonosDriver.php:634
-#, php-format
-msgid "No IONOS DNS zone found for %s with this key"
-msgstr ""
-
-#: src/Driver/IonosDriver.php:656
-msgid "IONOS API is unreachable"
-msgstr ""
-
-#: src/Driver/IonosDriver.php:663 src/Driver/IonosDriver.php:725
-msgid "IONOS authentication failed, check the API key"
-msgstr ""
-
-#: src/Driver/IonosDriver.php:668
-#, php-format
-msgid "IONOS API unavailable (HTTP %d)"
-msgstr ""
-
-#: src/Driver/IonosDriver.php:677
-#, php-format
-msgid "IONOS API error: %s"
-msgstr ""
-
-#: src/Driver/IonosDriver.php:691
-msgid "Unexpected response from the IONOS API"
-msgstr ""
-
-#: src/Driver/IonosDriver.php:718
-msgid "IONOS Domains API is unreachable"
-msgstr ""
-
-#: src/Driver/IonosDriver.php:729
-msgid "Domain is not managed by this IONOS account"
-msgstr ""
-
-#: src/Driver/IonosDriver.php:734
-#, php-format
-msgid "IONOS Domains API unavailable (HTTP %d)"
-msgstr ""
-
-#: src/Driver/IonosDriver.php:745
-#, php-format
-msgid "IONOS Domains API error: %s"
-msgstr ""
-
-#: src/Driver/IonosDriver.php:753
-msgid "Unexpected response from the IONOS Domains API"
-msgstr ""
-
-#: src/Driver/IonosDriver.php:799
-msgid "IONOS API key/secret are not configured"
-msgstr ""
-
-#: src/Controller/DomainRegistrarReassignController.php:68
-#: src/Controller/ConnectionTestController.php:63
-#: src/Controller/DomainDiscoveryController.php:69
-#: src/Controller/DomainImportController.php:69
-msgid "Supplier not found"
-msgstr ""
-
-#: src/Controller/DomainRegistrarReassignController.php:72
-#: src/Controller/ConnectionTestController.php:67
-#: src/Controller/DomainDiscoveryController.php:73
-#: src/Controller/DomainImportController.php:73
-msgid "You do not have permission to update this supplier"
-msgstr ""
-
-#: src/Controller/DomainRegistrarReassignController.php:77
-#: src/Controller/SyncController.php:58
-#: src/Controller/DomainRegistrarUnlinkController.php:65
-msgid "Domain not found"
-msgstr ""
-
-#: src/Controller/DomainRegistrarReassignController.php:88
-msgid "Failed to reassign the registrar"
-msgstr ""
-
-#: src/Controller/SyncController.php:53
-msgid "You do not have permission to synchronize domains"
-msgstr ""
-
-#: src/Controller/SyncController.php:62
-msgid "You do not have permission to synchronize this domain"
-msgstr ""
-
-#: src/Controller/ConnectionTestController.php:76
-msgid "This supplier is inactive; connection testing is disabled"
-msgstr ""
-
-#: src/Controller/ConnectionTestController.php:81
-msgid "Invalid API driver"
-msgstr ""
-
-#: src/Controller/ConnectionTestController.php:95
-msgid "This driver does not support connection testing"
-msgstr ""
-
-#: src/Controller/ConnectionTestController.php:107
-msgid "Unexpected error while testing the connection, see the plugin error log"
-msgstr ""
-
-#: src/Controller/DomainDiscoveryController.php:80
-msgid "This supplier is inactive; domain discovery is disabled"
-msgstr ""
-
-#: src/Controller/DomainDiscoveryController.php:86
-msgid "This driver does not support domain discovery"
-msgstr ""
-
-#: src/Controller/DomainDiscoveryController.php:99
-msgid "Unexpected error while listing domains, see the plugin error log"
-msgstr ""
-
-#: src/Controller/DomainImportController.php:77
-msgid "This supplier is inactive; domain import is disabled"
-msgstr ""
-
-#: src/Controller/DomainImportController.php:83
-msgid "You do not have permission to create domains"
-msgstr ""
-
-#: src/Controller/DomainRegistrarUnlinkController.php:69
-msgid "You do not have permission to update this domain"
-msgstr ""
-
-#: src/Controller/DomainRegistrarUnlinkController.php:91
-msgid "Failed to unlink the registrar"
-msgstr ""
-
 #: src/HookHandler.php:220
 #, php-format
 msgid "Registrar supplier set to %s"
@@ -520,12 +741,18 @@ msgstr ""
 msgid "Registrar supplier changed from %1$s to %2$s"
 msgstr ""
 
-#: src/DomainForm.php:434
+#: src/ImportedRecord.php:58
+msgid "Imported DNS record"
+msgid_plural "Imported DNS records"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/DomainForm.php:465
 #, php-format
 msgid "This creates the record live at %s. There is no undo."
 msgstr ""
 
-#: src/DomainForm.php:435
+#: src/DomainForm.php:466
 msgid "This creates the record live at the DNS provider. There is no undo."
 msgstr ""
 
@@ -561,295 +788,15 @@ msgstr ""
 msgid "No API driver configured for this supplier"
 msgstr ""
 
-#: src/Dto/ConnectionTestResult.php:83
-msgid "Authentication failed — the API token or credentials were rejected."
-msgstr ""
-
-#: src/Dto/ConnectionTestResult.php:91
-msgid ""
-"The API endpoint was not found — check the account/zone identifier or base "
-"URL."
-msgstr ""
-
-#: src/Dto/ConnectionTestResult.php:95
-msgid "The provider is rate-limiting requests — try again shortly."
-msgstr ""
-
-#: src/Dto/ConnectionTestResult.php:103
-#, php-format
-msgid "Unexpected response from the provider API (HTTP %d)."
-msgstr ""
-
-#: src/Dto/ConnectionTestResult.php:133
-msgid ""
-"Could not reach the provider API — check network/firewall egress and the API "
-"base URL."
-msgstr ""
-
-#: src/Dto/ConnectionTestResult.php:157
-msgid ""
-"Unexpected error while testing the connection — see the plugin error log."
-msgstr ""
-
-#: src/Service/DnsRecordWriteback.php:148
-#: src/Service/DnsRecordWriteback.php:352
-msgid "Invalid record data"
-msgstr ""
-
-#: src/Service/DnsRecordWriteback.php:168
-msgid "An error occurred while creating the record at the provider"
-msgstr ""
-
-#: src/Service/DnsRecordWriteback.php:173
-#, php-format
-msgid "Could not create this record at %s: %s"
-msgstr ""
-
-#: src/Service/DnsRecordWriteback.php:218
-#, php-format
-msgid "Record created from GLPI: %s %s → %s (TTL %d)"
-msgstr ""
-
-#: src/Service/DnsRecordWriteback.php:270
-#: src/Service/DnsRecordWriteback.php:458
-#: src/Service/DnsRecordWriteback.php:510
-msgid "an error occurred"
-msgstr ""
-
-#: src/Service/DnsRecordWriteback.php:273
-#, php-format
-msgid "Could not set the comment at %s: %s"
-msgstr ""
-
-#: src/Service/DnsRecordWriteback.php:358
-#, php-format
-msgid "Record has no remote ID; cannot push to %s"
-msgstr ""
-
-#: src/Service/DnsRecordWriteback.php:384
-#, php-format
-msgid "Record updated from GLPI: %s %s — data %s → %s"
-msgstr ""
-
-#: src/Service/DnsRecordWriteback.php:389
-msgid "An error occurred while updating the record at the provider"
-msgstr ""
-
-#: src/Service/DnsRecordWriteback.php:394
-#, php-format
-msgid "Could not update this record at %s: %s"
-msgstr ""
-
-#: src/Service/DnsRecordWriteback.php:451
-#, php-format
-msgid "Proxy status changed from GLPI: %s %s → %s"
-msgstr ""
-
-#: src/Service/DnsRecordWriteback.php:454
-#: templates/domainrecord_edit_panel.html.twig:74
-msgid "Proxied"
-msgstr ""
-
-#: src/Service/DnsRecordWriteback.php:454
-msgid "DNS only"
-msgstr ""
-
-#: src/Service/DnsRecordWriteback.php:461
-#, php-format
-msgid "Could not update proxy status at %s: %s"
-msgstr ""
-
-#: src/Service/DnsRecordWriteback.php:513
-#, php-format
-msgid "Could not update the comment at %s: %s"
-msgstr ""
-
-#: src/Service/DnsRecordWriteback.php:569
-#, php-format
-msgid "Record deleted from GLPI: %s %s"
-msgstr ""
-
-#: src/Service/DnsRecordWriteback.php:577
-msgid "An error occurred while deleting the record at the provider"
-msgstr ""
-
-#: src/Service/DnsRecordWriteback.php:582
-#, php-format
-msgid "Could not delete this record at %s: %s"
-msgstr ""
-
-#: src/Service/DnsRecordWriteback.php:658
-#, php-format
-msgid ""
-"Record restored from GLPI trash and recreated at %s: %s %s → %s (TTL %d)"
-msgstr ""
-
-#: src/Service/DnsRecordWriteback.php:669
-msgid "An error occurred while recreating the record at the provider"
-msgstr ""
-
-#: src/Service/DnsRecordWriteback.php:674
-#, php-format
-msgid "Could not recreate this record at %s: %s"
-msgstr ""
-
-#: src/Service/DnsRecordWriteback.php:918
-msgid "Supplier configuration not found"
-msgstr ""
-
-#: src/Service/DnsRecordWriteback.php:922
-msgid "Driver does not support DNS record write-back"
-msgstr ""
-
-#: src/Service/DnsRecordWriteback.php:950
-msgid "Unable to resolve record type"
-msgstr ""
-
-#: src/Service/DnsRecordWriteback.php:955
-#, php-format
-msgid ""
-"Your profile's \"Manageable domain record types\" setting does not include %s"
-msgstr ""
-
-#: src/Service/DnsRecordWriteback.php:986
-#, php-format
-msgid ""
-"Domain nameservers have changed since last sync; cannot verify %s is still "
-"authoritative"
-msgstr ""
-
-#: src/Service/DnsRecordWriteback.php:991
-msgid "Unable to re-check domain nameservers"
-msgstr ""
-
-#: src/Service/DnsRecordWriteback.php:1028
-msgid "the configured provider"
-msgstr ""
-
-#: src/Service/RdapClient.php:73
-msgid "RDAP lookup failed: connection error"
-msgstr ""
-
-#: src/Service/RdapClient.php:85
-#, php-format
-msgid "RDAP lookup failed: HTTP %d"
-msgstr ""
-
-#: src/Service/RdapClient.php:91
-msgid "RDAP lookup failed: invalid response body"
-msgstr ""
-
-#: src/Service/RdapClient.php:97
-msgid "RDAP lookup failed: unable to parse response"
-msgstr ""
-
-#: src/Service/SyncEngine.php:146
-msgid "No registrar supplier configured"
-msgstr ""
-
-#: src/Service/SyncEngine.php:151
-msgid "NS lookup failed"
-msgstr ""
-
-#: src/Service/SyncEngine.php:158
-#, php-format
-msgid "DNS provider not recognized from nameservers: %s"
-msgstr ""
-
-#: src/Service/SyncEngine.php:165
-#, php-format
-msgid "API integration for %s is not currently supported"
-msgstr ""
-
-#: src/Service/SyncEngine.php:174
-#, php-format
-msgid "No supplier is configured with the %s driver"
-msgstr ""
-
-#: src/Service/SyncEngine.php:206
-#, php-format
-msgid ""
-"DNS provider changed from supplier #%1$d to #%2$d; records were left "
-"untouched. Re-run synchronization to confirm and apply this change."
-msgstr ""
-
-#: src/Service/SyncEngine.php:364
-msgid "Registrar supplier is inactive; synchronization skipped"
-msgstr ""
-
-#: src/Service/SyncEngine.php:380
-msgid "No supplier with API access configured"
-msgstr ""
-
-#: src/Service/SyncEngine.php:427
-#, php-format
-msgid "Lifecycle synchronized (status: %s)"
-msgstr ""
-
-#: src/Service/SyncEngine.php:437
-msgid "Unexpected registrar synchronization error"
-msgstr ""
-
-#: src/Service/SyncEngine.php:457
-msgid "DNS supplier is inactive; synchronization skipped"
-msgstr ""
-
-#: src/Service/SyncEngine.php:471
-#, php-format
-msgid ""
-"Your profile cannot manage these record types: %s. Set \"Manageable domain "
-"record types\" accordingly."
-msgstr ""
-
-#: src/Service/SyncEngine.php:488
-#, php-format
-msgid "%1$d added, %2$d updated, %3$d restored, %4$d trashed, %5$d unchanged"
-msgstr ""
-
-#: src/Service/SyncEngine.php:502
-msgid "Unexpected DNS synchronization error"
-msgstr ""
-
-#: src/Service/DomainStatusResolver.php:57
-msgid "OK"
-msgstr ""
-
-#: src/Service/DomainStatusResolver.php:58
-msgid "Error"
-msgstr ""
-
-#: src/Service/DomainStatusResolver.php:59
-msgid "Not configured"
-msgstr ""
-
-#: src/Service/DomainStatusResolver.php:60
-msgid "Provider not supported"
-msgstr ""
-
-#: src/Service/DomainStatusResolver.php:61
-msgid "Unknown provider"
-msgstr ""
-
-#: src/Service/DomainStatusResolver.php:62
-msgid "Supplier inactive"
-msgstr ""
-
-#: src/Service/DomainStatusResolver.php:63
-msgid "Registrar changed, not yet verified"
-msgstr ""
-
-#: src/Service/DomainStatusResolver.php:64
-msgid "DNS provider changed, records untouched pending confirmation"
-msgstr ""
+#: src/ImportLock.php:58
+msgid "Imported field lock"
+msgid_plural "Imported field locks"
+msgstr[0] ""
+msgstr[1] ""
 
 #: src/SupplierTab.php:174
 #, php-format
 msgid "Import Domains — %s"
-msgstr ""
-
-#: src/SupplierTab.php:420 templates/domain_panel.html.twig:154
-#: templates/domain_panel.html.twig:271
-msgid "Not yet checked"
 msgstr ""
 
 #: src/Profile.php:135
@@ -878,6 +825,19 @@ msgstr ""
 
 #: src/SupplierConfig.php:64
 msgid "Domain Manager supplier configuration"
+msgstr ""
+
+#: src/SupplierConfig.php:234
+msgid "A supplier is mandatory"
+msgstr ""
+
+#: src/SupplierConfig.php:306 src/Controller/ConnectionTestController.php:81
+msgid "Invalid API driver"
+msgstr ""
+
+#: src/SupplierConfig.php:320
+#, php-format
+msgid "%s is already assigned to another supplier"
 msgstr ""
 
 #: src/SupplierConfig.php:372
@@ -910,394 +870,776 @@ msgstr ""
 msgid "API configuration removed (was %s)"
 msgstr ""
 
-#: templates/domain_discovery_modal.html.twig:40
-msgid ""
-"You do not have permission to create domains, so none of the domains "
-"discovered below can be imported."
+#: src/Driver/DinahostingDriver.php:143
+msgid "Dinahosting username"
 msgstr ""
 
-#: templates/domain_discovery_modal.html.twig:46
-msgid "No pending domains to import: this supplier's account has no domains."
+#: src/Driver/DinahostingDriver.php:144
+msgid "Dinahosting password"
 msgstr ""
 
-#: templates/domain_discovery_modal.html.twig:52
-msgid ""
-"No pending domains to import: every domain found in this supplier's account "
-"already exists in GLPI."
-msgstr ""
-
-#: templates/domain_discovery_modal.html.twig:59
-msgid "Import into entity"
-msgstr ""
-
-#: templates/domain_discovery_modal.html.twig:70
-#: templates/supplier_domains_list.html.twig:72
-msgid "Domain"
-msgstr ""
-
-#: templates/domain_discovery_modal.html.twig:71
-msgid "Status"
-msgstr ""
-
-#: templates/domain_discovery_modal.html.twig:91
-msgid "Not yet in GLPI"
-msgstr ""
-
-#: templates/domain_discovery_modal.html.twig:96
-#: templates/domain_panel.html.twig:303
-msgid "Registrar mismatch"
-msgstr ""
-
-#: templates/domain_discovery_modal.html.twig:101
+#: src/Driver/DinahostingDriver.php:201 src/Dto/ConnectionTestResult.php:99
 #, php-format
-msgid "Reassign registrar to %s"
+msgid "The provider's API is currently unavailable (HTTP %d)."
 msgstr ""
 
-#: templates/domain_discovery_modal.html.twig:103
+#: src/Driver/DinahostingDriver.php:213
+msgid "Unexpected response from the provider API."
+msgstr ""
+
+#: src/Driver/DinahostingDriver.php:232 src/Dto/ConnectionTestResult.php:74
+msgid "Connection successful."
+msgstr ""
+
+#: src/Driver/DinahostingDriver.php:244
+msgid "Authentication failed — the username or password was rejected."
+msgstr ""
+
+#: src/Driver/DinahostingDriver.php:248 src/Dto/ConnectionTestResult.php:87
+msgid ""
+"Authentication succeeded but the credentials lack the required permission/"
+"scope."
+msgstr ""
+
+#: src/Driver/DinahostingDriver.php:252 src/Dto/ConnectionTestResult.php:147
+msgid "The connection to the provider API timed out."
+msgstr ""
+
+#: src/Driver/DinahostingDriver.php:256
 #, php-format
-msgid "Set registrar to %s"
+msgid "Unexpected response from the provider API (code %d)."
 msgstr ""
 
-#: templates/domain_discovery_modal.html.twig:107
-msgid "Already exists"
+#: src/Driver/DinahostingDriver.php:471
+msgid "Dinahosting no longer reports this record"
 msgstr ""
 
-#: templates/domain_discovery_modal.html.twig:120
-msgid "Import selected domains"
-msgstr ""
-
-#: templates/domain_discovery_modal.html.twig:170
-msgid "Reassigned"
-msgstr ""
-
-#: templates/domain_discovery_modal.html.twig:177
-msgid "Registrar reassigned"
-msgstr ""
-
-#: templates/config.html.twig:16
-msgid "Domain type to apply to imported domains"
-msgstr ""
-
-#: templates/config.html.twig:20
-msgid ""
-"Applied once, only when the plugin creates a new domain (bulk import). Left "
-"empty, imported domains get no type, same as one created by hand. Never "
-"changes an existing domain's type on a later sync."
-msgstr ""
-
-#: templates/config.html.twig:39
+#: src/Driver/DinahostingDriver.php:503 src/Driver/DinahostingDriver.php:564
+#: src/Driver/DinahostingDriver.php:662 src/Driver/CloudflareDriver.php:604
+#: src/Driver/IonosDriver.php:600
 #, php-format
-msgid "%d domain(s) pending RDAP enrichment, last processed at %s"
+msgid "Record type %s is not writable through Domain Manager"
 msgstr ""
 
-#: templates/config.html.twig:41
+#: src/Driver/DinahostingDriver.php:529
+msgid "Dinahosting did not report the newly created record"
+msgstr ""
+
+#: src/Driver/DinahostingDriver.php:627
 #, php-format
-msgid "%d domain(s) pending RDAP enrichment, none processed yet"
-msgstr ""
-
-#: templates/domainrecord_proxy_indicators.html.twig:39
-msgid "Proxied through Cloudflare"
-msgstr ""
-
-#: templates/domainrecord_new_notice.html.twig:38
 msgid ""
-"If the domain you select above is managed by Domain Manager with DNS write-"
-"back enabled, creating this record here pushes it live to the provider "
-"immediately, with no undo."
+"Domain Manager cannot safely edit this record: Dinahosting already has one "
+"or more %s records at %s, and its API can only delete all of them at once, "
+"not a single one"
 msgstr ""
 
-#: templates/supplier_domains_list.html.twig:49
-msgid "Domains"
+#: src/Driver/DinahostingDriver.php:693
+msgid "This record reference is no longer valid"
 msgstr ""
 
-#: templates/supplier_domains_list.html.twig:59
-msgid "Review and sync"
-msgstr ""
-
-#: templates/supplier_domains_list.html.twig:66
-msgid ""
-"No domain currently references this supplier as its registrar or DNS "
-"provider."
-msgstr ""
-
-#: templates/supplier_domains_list.html.twig:74
-#: templates/domain_panel.html.twig:105
-msgid "DNS Provider"
-msgstr ""
-
-#: templates/supplier_domains_list.html.twig:91
-msgid "None"
-msgstr ""
-
-#: templates/domainrecord_edit_panel.html.twig:42
-#: templates/domain_managed_indicator.html.twig:49
-msgid "Managed by Domain Manager"
-msgstr ""
-
-#: templates/domainrecord_edit_panel.html.twig:47
+#: src/Driver/DinahostingDriver.php:753 src/Driver/CloudflareDriver.php:372
 #, php-format
-msgid "Saving this form updates the record live at %s. There is no undo."
+msgid "Expires %s"
 msgstr ""
 
-#: templates/domainrecord_edit_panel.html.twig:49
-msgid ""
-"Saving this form updates the record live at the DNS provider. There is no "
-"undo."
+#: src/Driver/DinahostingDriver.php:886
+msgid "Dinahosting API is unreachable"
 msgstr ""
 
-#: templates/domainrecord_edit_panel.html.twig:81
-msgid ""
-"This record is imported by Domain Manager synchronization and cannot be "
-"edited here."
-msgstr ""
-
-#: templates/domainrecord_edit_panel.html.twig:111
-#: templates/domain_panel.html.twig:414
-msgid "Locked by Domain Manager synchronization"
-msgstr ""
-
-#: templates/domainrecord_edit_panel.html.twig:166
-msgid "This updates the record live at the DNS provider. Continue?"
-msgstr ""
-
-#: templates/domainrecord_edit_panel.html.twig:180
-msgid "This deletes the record live at the DNS provider. Continue?"
-msgstr ""
-
-#: templates/connection_test_panel.html.twig:63
-msgid "Connection diagnostics"
-msgstr ""
-
-#: templates/connection_test_panel.html.twig:77
-msgid "RDAP registrar of record"
-msgstr ""
-
-#: templates/connection_test_panel.html.twig:85
-msgid "IANA number"
-msgstr ""
-
-#: templates/connection_test_panel.html.twig:95
-msgid ""
-"This supplier is inactive. Activate it to test or use its Domain Manager "
-"credentials."
-msgstr ""
-
-#: templates/connection_test_panel.html.twig:102 templates/supplier_tab.html.twig:238
-msgid "Connection"
-msgstr ""
-
-#: templates/connection_test_panel.html.twig:119
-msgid "Last checked"
-msgstr ""
-
-#: templates/connection_test_panel.html.twig:121
-#: templates/domain_panel.html.twig:165
-msgid "Never"
-msgstr ""
-
-#: templates/connection_test_panel.html.twig:127
-msgid "This driver has nothing to test."
-msgstr ""
-
-#: templates/domain_panel.html.twig:61
-msgid "Copy Punycode form"
-msgstr ""
-
-#: templates/domain_panel.html.twig:70
-msgid "Visit"
-msgstr ""
-
-#: templates/domain_panel.html.twig:74
-msgid "WHOIS"
-msgstr ""
-
-#: templates/domain_panel.html.twig:77 templates/domain_panel.html.twig:78
-msgid "Unlink registrar"
-msgstr ""
-
-#: templates/domain_panel.html.twig:95
-msgid ""
-"Not managed by Domain Manager: no registrar or DNS supplier with API access "
-"is configured for this domain."
-msgstr ""
-
-#: templates/domain_panel.html.twig:97 templates/domain_panel.html.twig:174
-msgid "Set the Registrar via the Financial and administrative information tab"
-msgstr ""
-
-#: templates/domain_panel.html.twig:106
-msgid "Registrar sync"
-msgstr ""
-
-#: templates/domain_panel.html.twig:107
-msgid "DNS sync"
-msgstr ""
-
-#: templates/domain_panel.html.twig:124
-msgid "No registrar supplier set"
-msgstr ""
-
-#: templates/domain_panel.html.twig:161
-msgid "Not yet checked, or never transferred"
-msgstr ""
-
-#: templates/domain_panel.html.twig:181
-msgid "DNS"
-msgstr ""
-
-#: templates/domain_panel.html.twig:189
+#: src/Driver/DinahostingDriver.php:894
 #, php-format
-msgid "API integration for %s is not currently supported."
+msgid "Dinahosting API unavailable (HTTP %d)"
 msgstr ""
 
-#: templates/domain_panel.html.twig:191
-msgid "The DNS provider of this domain could not be identified."
+#: src/Driver/DinahostingDriver.php:901
+msgid "Unexpected response from the Dinahosting API"
 msgstr ""
 
-#: templates/domain_panel.html.twig:195
-msgid "Help us support this provider"
+#: src/Driver/DinahostingDriver.php:908
+msgid "Dinahosting authentication failed, check the username/password"
 msgstr ""
 
-#: templates/domain_panel.html.twig:214
-msgid "Transfer / EPP auth code"
-msgstr ""
-
-#: templates/domain_panel.html.twig:227
-msgid "Not reported by this driver"
-msgstr ""
-
-#: templates/domain_panel.html.twig:229 templates/domain_panel.html.twig:250
-#: templates/domain_panel.html.twig:273
-msgid "Yes"
-msgstr ""
-
-#: templates/domain_panel.html.twig:231 templates/domain_panel.html.twig:252
-#: templates/domain_panel.html.twig:275
-msgid "No"
-msgstr ""
-
-#: templates/domain_panel.html.twig:248
-msgid "Not reported"
-msgstr ""
-
-#: templates/domain_panel.html.twig:299
-msgid "RDAP cross-check"
-msgstr ""
-
-#: templates/domain_panel.html.twig:304
-msgid "RDAP reports"
-msgstr ""
-
-#: templates/domain_panel.html.twig:307
-msgid "Supplier on file"
-msgstr ""
-
-#: templates/domain_panel.html.twig:312
-msgid "Nameserver mismatch"
-msgstr ""
-
-#: templates/domain_panel.html.twig:313
-msgid "RDAP"
-msgstr ""
-
-#: templates/domain_panel.html.twig:315
-msgid "Live"
-msgstr ""
-
-#: templates/domain_panel.html.twig:325
+#: src/Driver/DinahostingDriver.php:921
 msgid ""
-"Registrar and DNS provider information is available after the domain is "
-"created."
+"Dinahosting authentication succeeded, but this account is not authorized to "
+"manage this domain"
 msgstr ""
 
-#: templates/domain_panel.html.twig:343
-msgid "Update Now"
+#: src/Driver/DinahostingDriver.php:926
+msgid "Domain is not managed by this Dinahosting account"
 msgstr ""
 
-#: templates/domain_panel.html.twig:428
-msgid "Unlink this domain's registrar?"
+#: src/Driver/DinahostingDriver.php:933
+#, php-format
+msgid "Dinahosting API error: %s"
 msgstr ""
 
-#: templates/domain_panel.html.twig:450
-msgid "Failed to unlink the registrar:"
+#: src/Driver/DinahostingDriver.php:955
+msgid "Dinahosting username/password are not configured"
 msgstr ""
 
-#: templates/domain_panel.html.twig:538
-msgid "Synchronization request failed:"
+#: src/Driver/DinahostingDriver.php:1024 src/Driver/CloudflareDriver.php:998
+#: src/Driver/IonosDriver.php:904
+msgid "Domain name is not a valid FQDN"
 msgstr ""
 
-#: templates/domainrecord_add_panel.html.twig:48
-msgid "Add a DNS record (Domain Manager)"
+#: src/Driver/CloudflareDriver.php:137
+msgid "Cloudflare Account ID"
 msgstr ""
 
-#: templates/domainrecord_add_panel.html.twig:53
+#: src/Driver/CloudflareDriver.php:138
+msgid "Cloudflare API token"
+msgstr ""
+
+#: src/Driver/CloudflareDriver.php:264 src/Driver/CloudflareDriver.php:907
+msgid "This Cloudflare API token lacks DNS:Read permission for this zone"
+msgstr ""
+
+#: src/Driver/CloudflareDriver.php:305
+msgid "Domain is not managed by Cloudflare Registrar on this account"
+msgstr ""
+
+#: src/Driver/CloudflareDriver.php:496
+msgid "Cloudflare did not return the created record"
+msgstr ""
+
+#: src/Driver/CloudflareDriver.php:544 src/Driver/CloudflareDriver.php:701
+msgid "Cloudflare did not return the updated record"
+msgstr ""
+
+#: src/Driver/CloudflareDriver.php:588
+msgid "Cloudflare did not return this record"
+msgstr ""
+
+#: src/Driver/CloudflareDriver.php:769
+msgid "This Cloudflare API token lacks DNS:Edit permission for this zone"
+msgstr ""
+
+#: src/Driver/CloudflareDriver.php:783
+#, php-format
+msgid "Cloudflare %1$s failed: %2$s"
+msgstr ""
+
+#: src/Driver/CloudflareDriver.php:810 src/Driver/CloudflareDriver.php:880
+msgid "Cloudflare API is unreachable"
+msgstr ""
+
+#: src/Driver/CloudflareDriver.php:819 src/Driver/CloudflareDriver.php:919
+msgid "Unexpected response from the Cloudflare API"
+msgstr ""
+
+#: src/Driver/CloudflareDriver.php:857
+#, php-format
+msgid "No Cloudflare zone found for %s under this account"
+msgstr ""
+
+#: src/Driver/CloudflareDriver.php:899
+msgid "Cloudflare authentication failed, check the API token"
+msgstr ""
+
+#: src/Driver/CloudflareDriver.php:913
+#, php-format
+msgid "Cloudflare API unavailable (HTTP %d)"
+msgstr ""
+
+#: src/Driver/CloudflareDriver.php:933
+#, php-format
+msgid "Cloudflare API error: %s"
+msgstr ""
+
+#: src/Driver/CloudflareDriver.php:954
+msgid "Cloudflare API token is not configured"
+msgstr ""
+
+#: src/Driver/CloudflareDriver.php:978
+msgid "Cloudflare Account ID is not configured"
+msgstr ""
+
+#: src/Driver/IonosDriver.php:162
+msgid "IONOS API key"
+msgstr ""
+
+#: src/Driver/IonosDriver.php:163
+msgid "IONOS API secret"
+msgstr ""
+
+#: src/Driver/IonosDriver.php:178
+msgid "Not yet implemented for this driver"
+msgstr ""
+
+#: src/Driver/IonosDriver.php:320
+#, php-format
+msgid "No IONOS domain item found for %s with this account"
+msgstr ""
+
+#: src/Driver/IonosDriver.php:526
+msgid "IONOS did not return the created record"
+msgstr ""
+
+#: src/Driver/IonosDriver.php:668
+#, php-format
+msgid "No IONOS DNS zone found for %s with this key"
+msgstr ""
+
+#: src/Driver/IonosDriver.php:690
+msgid "IONOS API is unreachable"
+msgstr ""
+
+#: src/Driver/IonosDriver.php:697 src/Driver/IonosDriver.php:759
+msgid "IONOS authentication failed, check the API key"
+msgstr ""
+
+#: src/Driver/IonosDriver.php:702
+#, php-format
+msgid "IONOS API unavailable (HTTP %d)"
+msgstr ""
+
+#: src/Driver/IonosDriver.php:711
+#, php-format
+msgid "IONOS API error: %s"
+msgstr ""
+
+#: src/Driver/IonosDriver.php:725
+msgid "Unexpected response from the IONOS API"
+msgstr ""
+
+#: src/Driver/IonosDriver.php:752
+msgid "IONOS Domains API is unreachable"
+msgstr ""
+
+#: src/Driver/IonosDriver.php:763
+msgid "Domain is not managed by this IONOS account"
+msgstr ""
+
+#: src/Driver/IonosDriver.php:768
+#, php-format
+msgid "IONOS Domains API unavailable (HTTP %d)"
+msgstr ""
+
+#: src/Driver/IonosDriver.php:779
+#, php-format
+msgid "IONOS Domains API error: %s"
+msgstr ""
+
+#: src/Driver/IonosDriver.php:787
+msgid "Unexpected response from the IONOS Domains API"
+msgstr ""
+
+#: src/Driver/IonosDriver.php:833
+msgid "IONOS API key/secret are not configured"
+msgstr ""
+
+#: src/Controller/DomainRegistrarReassignController.php:68
+#: src/Controller/ConnectionTestController.php:63
+#: src/Controller/DomainDiscoveryController.php:69
+#: src/Controller/DomainImportController.php:69
+msgid "Supplier not found"
+msgstr ""
+
+#: src/Controller/DomainRegistrarReassignController.php:72
+#: src/Controller/ConnectionTestController.php:67
+#: src/Controller/DomainDiscoveryController.php:73
+#: src/Controller/DomainImportController.php:73
+msgid "You do not have permission to update this supplier"
+msgstr ""
+
+#: src/Controller/DomainRegistrarReassignController.php:77
+#: src/Controller/SyncController.php:59
+#: src/Controller/DomainRegistrarUnlinkController.php:65
+msgid "Domain not found"
+msgstr ""
+
+#: src/Controller/DomainRegistrarReassignController.php:88
+msgid "Failed to reassign the registrar"
+msgstr ""
+
+#: src/Controller/SyncController.php:54
+msgid "You do not have permission to synchronize domains"
+msgstr ""
+
+#: src/Controller/SyncController.php:63
+msgid "You do not have permission to synchronize this domain"
+msgstr ""
+
+#: src/Controller/ConfigController.php:99
+msgid "Configuration saved"
+msgstr ""
+
+#: src/Controller/ConnectionTestController.php:76
+msgid "This supplier is inactive; connection testing is disabled"
+msgstr ""
+
+#: src/Controller/ConnectionTestController.php:95
+msgid "This driver does not support connection testing"
+msgstr ""
+
+#: src/Controller/ConnectionTestController.php:107
+msgid "Unexpected error while testing the connection, see the plugin error log"
+msgstr ""
+
+#: src/Controller/DomainDiscoveryController.php:80
+msgid "This supplier is inactive; domain discovery is disabled"
+msgstr ""
+
+#: src/Controller/DomainDiscoveryController.php:86
+msgid "This driver does not support domain discovery"
+msgstr ""
+
+#: src/Controller/DomainDiscoveryController.php:99
+msgid "Unexpected error while listing domains, see the plugin error log"
+msgstr ""
+
+#: src/Controller/DomainImportController.php:77
+msgid "This supplier is inactive; domain import is disabled"
+msgstr ""
+
+#: src/Controller/DomainImportController.php:83
+msgid "You do not have permission to create domains"
+msgstr ""
+
+#: src/Controller/DomainImportController.php:97
+msgid "No domain selected"
+msgstr ""
+
+#: src/Controller/DomainImportController.php:213
+#, php-format
+msgid "%d domain imported"
+msgid_plural "%d domains imported"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/Controller/DomainImportController.php:216
+#, php-format
+msgid "%d restored from trash"
+msgid_plural "%d restored from trash"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/Controller/DomainImportController.php:220
+#, php-format
+msgid "%d already existed"
+msgid_plural "%d already existed"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/Controller/DomainImportController.php:225
+#, php-format
+msgid "%d could not be created, see the plugin error log"
+msgid_plural "%d could not be created, see the plugin error log"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/Controller/DomainImportController.php:232
+#, php-format
+msgid "%d could not be synced yet, see the plugin error log"
+msgid_plural "%d could not be synced yet, see the plugin error log"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/Controller/DomainRegistrarUnlinkController.php:69
+msgid "You do not have permission to update this domain"
+msgstr ""
+
+#: src/Controller/DomainRegistrarUnlinkController.php:91
+msgid "Failed to unlink the registrar"
+msgstr ""
+
+#: src/Dto/ConnectionTestResult.php:83
+msgid "Authentication failed — the API token or credentials were rejected."
+msgstr ""
+
+#: src/Dto/ConnectionTestResult.php:91
 msgid ""
-"You do not hold write-back rights for any record type on this domain — ask "
-"an administrator for the \"Domain Manager\" per-type rights on your profile."
+"The API endpoint was not found — check the account/zone identifier or base "
+"URL."
 msgstr ""
 
-#: templates/domainrecord_add_panel.html.twig:97
-msgid "New record"
+#: src/Dto/ConnectionTestResult.php:95
+msgid "The provider is rate-limiting requests — try again shortly."
 msgstr ""
 
-#: templates/domainrecord_add_panel.html.twig:130
-msgid "This creates the record live at the DNS provider. Continue?"
+#: src/Dto/ConnectionTestResult.php:103
+#, php-format
+msgid "Unexpected response from the provider API (HTTP %d)."
 msgstr ""
 
-#: templates/supplier_tab.html.twig:38
-msgid "Domain Manager API access"
-msgstr ""
-
-#: templates/supplier_tab.html.twig:48
+#: src/Dto/ConnectionTestResult.php:133
 msgid ""
-"This Cloudflare configuration is missing an Account ID. Add it below and "
-"reissue this token as an Account API Token to continue using Cloudflare sync."
+"Could not reach the provider API — check network/firewall egress and the API "
+"base URL."
 msgstr ""
 
-#: templates/supplier_tab.html.twig:53 templates/supplier_tab.html.twig:291
-msgid "API driver"
-msgstr ""
-
-#: templates/supplier_tab.html.twig:83
-msgid "●●●●●●●● (saved, leave empty to keep)"
-msgstr ""
-
-#: templates/supplier_tab.html.twig:92
-msgid "Requires an Account API Token (not a personal token)."
-msgstr ""
-
-#: templates/supplier_tab.html.twig:94 templates/supplier_tab.html.twig:101 templates/supplier_tab.html.twig:108
-msgid "Setup instructions"
-msgstr ""
-
-#: templates/supplier_tab.html.twig:99
-msgid "Requires an API Key and Secret from the IONOS Cloud panel."
-msgstr ""
-
-#: templates/supplier_tab.html.twig:106
+#: src/Dto/ConnectionTestResult.php:157
 msgid ""
-"Requires the super-admin account's username and password — no scoped API "
-"token exists."
+"Unexpected error while testing the connection — see the plugin error log."
 msgstr ""
 
-#: templates/supplier_tab.html.twig:125
+#: src/Service/DnsRecordWriteback.php:215
+#: src/Service/DnsRecordWriteback.php:469
+msgid "Invalid record data"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:237
+msgid "An error occurred while creating the record at the provider"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:242
+#: src/Service/DnsRecordWriteback.php:293
+msgid "create"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:243
+#, php-format
+msgid "Could not create this record at %s: %s"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:295
+#, php-format
+msgid "%s → %s (TTL %d)"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:342
+#: src/Service/DnsRecordWriteback.php:594
+#: src/Service/DnsRecordWriteback.php:655
+msgid "an error occurred"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:345
+#, php-format
+msgid "Could not set the comment at %s: %s"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:485
+#, php-format
+msgid "Record has no remote ID; cannot push to %s"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:515
+#: src/Service/DnsRecordWriteback.php:527
+msgid "update"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:517
+#, php-format
+msgid "data %s → %s"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:522
+msgid "An error occurred while updating the record at the provider"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:528
+#, php-format
+msgid "Could not update this record at %s: %s"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:589
+#: src/Service/DnsRecordWriteback.php:601
+msgid "proxy toggle"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:591
+msgid "DNS only"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:606
+#, php-format
+msgid "Could not update proxy status at %s: %s"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:658
+#, php-format
+msgid "Could not update the comment at %s: %s"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:731
+#: src/Service/DnsRecordWriteback.php:743
+msgid "delete"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:733
+msgid "record removed"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:738
+msgid "An error occurred while deleting the record at the provider"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:744
+#, php-format
+msgid "Could not delete this record at %s: %s"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:868
+#: src/Service/DnsRecordWriteback.php:880
+msgid "restore"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:870
+#, php-format
+msgid "recreated → %s (TTL %d)"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:875
+msgid "An error occurred while recreating the record at the provider"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:881
+#, php-format
+msgid "Could not recreate this record at %s: %s"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:982
+#, php-format
 msgid ""
-"This supplier is inactive. Activate it to test its Domain Manager "
-"credentials."
+"A record of type %1$s named \"%2$s\" already exists for this domain; Domain "
+"Manager does not allow duplicate records"
 msgstr ""
 
-#: templates/supplier_tab.html.twig:128
-msgid "Check Connection"
+#: src/Service/DnsRecordWriteback.php:1026
+#, php-format
+msgid ""
+"\"%s\" already has another DNS record; a CNAME cannot coexist with any other "
+"record type at the same name (RFC 1034)"
 msgstr ""
 
-#: templates/supplier_tab.html.twig:137
-msgid "This supplier is inactive. Activate it to import its domains."
+#: src/Service/DnsRecordWriteback.php:1040
+#, php-format
+msgid ""
+"\"%s\" already has a CNAME record; no other record type may coexist with a "
+"CNAME at the same name (RFC 1034)"
 msgstr ""
 
-#: templates/supplier_tab.html.twig:140
-msgid "Import Domains"
+#: src/Service/DnsRecordWriteback.php:1101
+#, php-format
+msgid ""
+"\"%s\" already has an SPF (v=spf1) TXT record; RFC 7208 forbids more than "
+"one per name"
 msgstr ""
 
-#: templates/supplier_tab.html.twig:276
-msgid "Connection test request failed:"
+#: src/Service/DnsRecordWriteback.php:1183
+msgid "succeeded"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:1183
+msgid "failed"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:1185
+#, php-format
+msgid "%1$s %2$s %3$s at %4$s %5$s: %6$s"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:1228 src/Config/Config.php:175
+msgid ""
+"Domain Manager is in read-only mode (Setup > General > Domain Manager); no "
+"DNS record change can be pushed to the provider"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:1484
+msgid "Supplier configuration not found"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:1488
+msgid "Driver does not support DNS record write-back"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:1516
+msgid "Unable to resolve record type"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:1521
+#, php-format
+msgid ""
+"Your profile's \"Manageable domain record types\" setting does not include %s"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:1552
+#, php-format
+msgid ""
+"Domain nameservers have changed since last sync; cannot verify %s is still "
+"authoritative"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:1557
+msgid "Unable to re-check domain nameservers"
+msgstr ""
+
+#: src/Service/DnsRecordWriteback.php:1594
+msgid "the configured provider"
+msgstr ""
+
+#: src/Service/RecordValidator.php:70
+#, php-format
+msgid "\"%s\" is not a valid %s address"
+msgstr ""
+
+#: src/Service/RecordValidator.php:115
+#, php-format
+msgid ""
+"%s is a private/reserved address; make sure this is intentional (e.g. split-"
+"horizon DNS)"
+msgstr ""
+
+#: src/Service/RecordValidator.php:168
+#, php-format
+msgid "\"%s\" is not a valid hostname for a CNAME target"
+msgstr ""
+
+#: src/Service/RecordValidator.php:175
+#, php-format
+msgid "A CNAME record cannot point to itself (\"%s\")"
+msgstr ""
+
+#: src/Service/RecordValidator.php:244
+#, php-format
+msgid "TXT content is %d octets, over the 255-octet character-string limit"
+msgstr ""
+
+#: src/Service/RecordValidator.php:273
+#, php-format
+msgid ""
+"This SPF record needs %d DNS lookups; RFC 7208 caps evaluation at 10 and a "
+"resolver will treat the whole record as a permanent error past that"
+msgstr ""
+
+#: src/Service/RecordValidator.php:283
+msgid ""
+"This looks like a DMARC record but its name is not \"_dmarc\"; DMARC is only "
+"honoured there"
+msgstr ""
+
+#: src/Service/RecordValidator.php:286
+msgid "This DMARC record has no \"p=\" tag; without one no policy is applied"
+msgstr ""
+
+#: src/Service/RecordValidator.php:293
+msgid ""
+"This DKIM record has no \"p=\" tag; without one the key cannot be validated"
+msgstr ""
+
+#: src/Service/RdapClient.php:73
+msgid "RDAP lookup failed: connection error"
+msgstr ""
+
+#: src/Service/RdapClient.php:85
+#, php-format
+msgid "RDAP lookup failed: HTTP %d"
+msgstr ""
+
+#: src/Service/RdapClient.php:91
+msgid "RDAP lookup failed: invalid response body"
+msgstr ""
+
+#: src/Service/RdapClient.php:97
+msgid "RDAP lookup failed: unable to parse response"
+msgstr ""
+
+#: src/Service/RecordReconciler.php:293
+#, php-format
+msgid ""
+"Synchronization refused: this run would move %1$d of %2$d owned record(s) "
+"(%3$d%%) to the trash bin, above the configured sync safety guard threshold "
+"(max %4$d records or %5$d%%). No change was applied. Force this "
+"synchronization only after confirming the upstream zone genuinely emptied."
+msgstr ""
+
+#: src/Service/SyncEngine.php:154
+msgid "No registrar supplier configured"
+msgstr ""
+
+#: src/Service/SyncEngine.php:159
+msgid "NS lookup failed"
+msgstr ""
+
+#: src/Service/SyncEngine.php:166
+#, php-format
+msgid "DNS provider not recognized from nameservers: %s"
+msgstr ""
+
+#: src/Service/SyncEngine.php:173
+#, php-format
+msgid "API integration for %s is not currently supported"
+msgstr ""
+
+#: src/Service/SyncEngine.php:182
+#, php-format
+msgid "No supplier is configured with the %s driver"
+msgstr ""
+
+#: src/Service/SyncEngine.php:214
+#, php-format
+msgid ""
+"DNS provider changed from supplier #%1$d to #%2$d; records were left "
+"untouched. Re-run synchronization to confirm and apply this change."
+msgstr ""
+
+#: src/Service/SyncEngine.php:372
+msgid "Registrar supplier is inactive; synchronization skipped"
+msgstr ""
+
+#: src/Service/SyncEngine.php:388
+msgid "No supplier with API access configured"
+msgstr ""
+
+#: src/Service/SyncEngine.php:435
+#, php-format
+msgid "Lifecycle synchronized (status: %s)"
+msgstr ""
+
+#: src/Service/SyncEngine.php:445
+msgid "Unexpected registrar synchronization error"
+msgstr ""
+
+#: src/Service/SyncEngine.php:465
+msgid "DNS supplier is inactive; synchronization skipped"
+msgstr ""
+
+#: src/Service/SyncEngine.php:479
+#, php-format
+msgid ""
+"Your profile cannot manage these record types: %s. Set \"Manageable domain "
+"record types\" accordingly."
+msgstr ""
+
+#: src/Service/SyncEngine.php:496
+#, php-format
+msgid "%1$d added, %2$d updated, %3$d restored, %4$d trashed, %5$d unchanged"
+msgstr ""
+
+#: src/Service/SyncEngine.php:517
+msgid "Unexpected DNS synchronization error"
+msgstr ""
+
+#: src/Service/DomainStatusResolver.php:57
+msgid "OK"
+msgstr ""
+
+#: src/Service/DomainStatusResolver.php:60
+msgid "Provider not supported"
+msgstr ""
+
+#: src/Service/DomainStatusResolver.php:61
+msgid "Unknown provider"
+msgstr ""
+
+#: src/Service/DomainStatusResolver.php:62
+msgid "Supplier inactive"
+msgstr ""
+
+#: src/Service/DomainStatusResolver.php:63
+msgid "Registrar changed, not yet verified"
+msgstr ""
+
+#: src/Service/DomainStatusResolver.php:64
+msgid "DNS provider changed, records untouched pending confirmation"
+msgstr ""
+
+#: src/Service/DomainStatusResolver.php:65
+msgid "Blocked: too many records would be trashed"
+msgstr ""
+
+#: src/Driver/Concern/ValidatesCredentialsTrait.php:52
+#, php-format
+msgid "%s is not configured"
 msgstr ""

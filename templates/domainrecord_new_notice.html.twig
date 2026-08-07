@@ -28,12 +28,51 @@
  #}
 {#
  # Rendered from `DomainForm::injectDomainRecord()` (§9 Phase 37 addendum) on
- # GLPI's own generic, blank "New Domain record" form — reachable from the
- # global Domains-records list / top-nav "+", independently of the Domain's
- # own Records tab custom add panel. The domain isn't known yet here (still a
- # dropdown), so this is a generic notice, not a domain-specific one.
+ # GLPI's own generic, blank "New Domain record" form — reachable both from
+ # the global Domains-records list / top-nav "+" (domain truly unpicked yet,
+ # a dropdown) and from a specific Domain's own Records tab quick-add (domain
+ # already fixed there, via a hidden field the POST_ITEM_FORM hook has no
+ # visibility into). Either way this PHP side can't tell whether the domain
+ # is managed-with-write-back at render time, so the banner starts hidden and
+ # is shown/hidden client-side by `domainwritebackstatus` once a domain value
+ # is known — never left showing a warning for a domain it hasn't checked.
+ # Moved to the very top of the enclosing form (instead of wherever this
+ # hook happens to render, normally last) so it's seen before any field is
+ # touched, not after scrolling past the whole form.
  #}
-<div class="alert alert-warning d-flex align-items-center mb-3" role="alert">
+<div class="alert alert-warning d-flex align-items-center mb-3 d-none" id="domainmanager_writeback_notice{{ rand }}" role="alert">
     <i class="ti ti-world-cog me-2"></i>
-    <div>{{ __('If the domain you select above is managed by Domain Manager with DNS write-back enabled, creating this record here pushes it live to the provider immediately, with no undo.', 'domainmanager') }}</div>
+    <div>{{ __('This domain is managed by Domain Manager with DNS write-back enabled: creating this record here pushes it live to the provider immediately, with no undo.', 'domainmanager') }}</div>
 </div>
+<script>
+    (() => {
+        const notice = document.getElementById('domainmanager_writeback_notice{{ rand }}');
+        if (!notice) {
+            return;
+        }
+        const form = notice.closest('form');
+        if (form && form.firstElementChild !== notice) {
+            form.insertBefore(notice, form.firstElementChild);
+        }
+        const field = form ? form.querySelector('[name="domains_id"]') : null;
+        if (!field) {
+            return;
+        }
+
+        const check = (domains_id) => {
+            if (!domains_id || domains_id <= 0) {
+                notice.classList.add('d-none');
+                return;
+            }
+            fetch('{{ path('/plugins/domainmanager/domainwritebackstatus') }}/' + domains_id, {
+                headers: {'X-Glpi-Csrf-Token': '{{ csrf_token() }}'},
+            })
+                .then((response) => response.ok ? response.json() : {managed_writeback: false})
+                .then((data) => notice.classList.toggle('d-none', !data.managed_writeback))
+                .catch(() => notice.classList.add('d-none'));
+        };
+
+        check(field.value);
+        field.addEventListener('change', () => check(field.value));
+    })();
+</script>

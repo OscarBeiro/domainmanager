@@ -76,15 +76,15 @@ final class Config extends CommonGLPI
             // §0.10: explicit int, never a raw PHP bool. 0 = writes allowed
             // (default) — a fresh install must never come up read-only.
             'read_only_mode' => 0,
-            // ARCHITECTURE.md §15.3 Phase 55: blast-radius guard on
+            // ARCHITECTURE.md §15.3 Phase 55: sync safety guard on
             // reconciliation. A single sync run is refused (and the domain
             // left untouched) once it would trash more than this many
-            // records, OR more than blast_radius_max_percent of the
+            // records, OR more than sync_safety_max_percent of the
             // domain's currently-owned records — whichever trips first.
             // Conservative defaults: a genuinely emptied zone is rare, a
             // wrongly-scoped credential or truncated upstream page is not.
-            'blast_radius_max_count'   => 20,
-            'blast_radius_max_percent' => 50,
+            'sync_safety_max_count'   => 20,
+            'sync_safety_max_percent' => 50,
         ];
     }
 
@@ -131,31 +131,31 @@ final class Config extends CommonGLPI
     }
 
     /**
-     * @return int absolute record count above which the Phase 55 blast-radius
+     * @return int absolute record count above which the Phase 55 sync safety
      *             guard refuses a reconciliation run
      */
-    public static function getBlastRadiusMaxCount(): int
+    public static function getSyncSafetyMaxCount(): int
     {
-        return (int) self::getConfig()['blast_radius_max_count'];
+        return (int) self::getConfig()['sync_safety_max_count'];
     }
 
-    public static function setBlastRadiusMaxCount(int $max_count): void
+    public static function setSyncSafetyMaxCount(int $max_count): void
     {
-        CoreConfig::setConfigurationValues(self::CONTEXT, ['blast_radius_max_count' => max(0, $max_count)]);
+        CoreConfig::setConfigurationValues(self::CONTEXT, ['sync_safety_max_count' => max(0, $max_count)]);
     }
 
     /**
      * @return int percentage (0-100) of a domain's owned records above which
-     *             the Phase 55 blast-radius guard refuses a reconciliation run
+     *             the Phase 55 sync safety guard refuses a reconciliation run
      */
-    public static function getBlastRadiusMaxPercent(): int
+    public static function getSyncSafetyMaxPercent(): int
     {
-        return (int) self::getConfig()['blast_radius_max_percent'];
+        return (int) self::getConfig()['sync_safety_max_percent'];
     }
 
-    public static function setBlastRadiusMaxPercent(int $max_percent): void
+    public static function setSyncSafetyMaxPercent(int $max_percent): void
     {
-        CoreConfig::setConfigurationValues(self::CONTEXT, ['blast_radius_max_percent' => max(0, min(100, $max_percent))]);
+        CoreConfig::setConfigurationValues(self::CONTEXT, ['sync_safety_max_percent' => max(0, min(100, $max_percent))]);
     }
 
     /**
@@ -248,8 +248,8 @@ final class Config extends CommonGLPI
         TemplateRenderer::getInstance()->display('@domainmanager/config.html.twig', [
             'domaintypes_id'           => self::getDomainTypeId(),
             'read_only_mode'           => self::isReadOnlyMode(),
-            'blast_radius_max_count'   => self::getBlastRadiusMaxCount(),
-            'blast_radius_max_percent' => self::getBlastRadiusMaxPercent(),
+            'sync_safety_max_count'   => self::getSyncSafetyMaxCount(),
+            'sync_safety_max_percent' => self::getSyncSafetyMaxPercent(),
             'can_edit'             => Session::haveRight(self::$rightname, UPDATE),
             'rdap_enrichment'      => DomainState::getRdapEnrichmentStatus(),
         ]);

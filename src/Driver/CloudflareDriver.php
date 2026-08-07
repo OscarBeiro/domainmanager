@@ -40,6 +40,7 @@ use GlpiPlugin\Domainmanager\Contract\DnsRecordProxyToggleInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsRecordWriterInterface;
 use GlpiPlugin\Domainmanager\Contract\DomainDiscoveryInterface;
 use GlpiPlugin\Domainmanager\Contract\RegistrarDriverInterface;
+use GlpiPlugin\Domainmanager\Driver\Concern\ValidatesCredentialsTrait;
 use GlpiPlugin\Domainmanager\Dto\ConnectionTestResult;
 use GlpiPlugin\Domainmanager\Dto\ConnectionTestStatus;
 use GlpiPlugin\Domainmanager\Dto\DiscoveredDomain;
@@ -87,6 +88,8 @@ use Toolbox;
  */
 class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface, ConnectionTestableInterface, DomainDiscoveryInterface, DnsRecordWriterInterface, DnsRecordProxyToggleInterface, DnsRecordCommentSyncInterface
 {
+    use ValidatesCredentialsTrait;
+
     private const BASE_URI = 'https://api.cloudflare.com/client/v4/';
 
     private const REQUEST_TIMEOUT = 15;
@@ -130,7 +133,10 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
         $this->client       = null;
 
         try {
-            $missing = self::missingConfigMessage($credentials);
+            $missing = self::missingConfigMessage($credentials, [
+                'account_id' => __('Cloudflare Account ID', 'domainmanager'),
+                'token'      => __('Cloudflare API token', 'domainmanager'),
+            ]);
             $result  = $missing !== null
                 ? ConnectionTestResult::notConfigured('dns', $missing)
                 : $this->probeTokenVerify();
@@ -153,30 +159,6 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
         }
 
         return ['dns' => $result];
-    }
-
-    /**
-     * Checked explicitly before attempting any network call, rather than
-     * left to throw and fall into fromException()'s generic classifier —
-     * a missing Account ID is a distinct, actionable "you haven't finished
-     * configuring this" state, not the same thing as an invalid/rejected
-     * token (§addendum "Switch Cloudflare Driver to Account-Scoped API
-     * Tokens").
-     *
-     * @param  array<string, string> $credentials
-     * @return string|null null when both required fields are present
-     */
-    private static function missingConfigMessage(array $credentials): ?string
-    {
-        if (trim((string) ($credentials['account_id'] ?? '')) === '') {
-            return __('Cloudflare Account ID is not configured', 'domainmanager');
-        }
-
-        if (trim((string) ($credentials['token'] ?? '')) === '') {
-            return __('Cloudflare API token is not configured', 'domainmanager');
-        }
-
-        return null;
     }
 
     /**

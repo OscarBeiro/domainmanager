@@ -2416,7 +2416,7 @@ explicit `1`/`0`/`null` int, never a raw PHP bool.
 **Verifications required before code:** each provider's own documented write rate limits, to set
 defaults that are conservative rather than invented.
 
-### Phase 55 — Blast-radius guard on reconciliation
+### Phase 55 — Sync safety guard on reconciliation
 
 §5.6 establishes that a fetch *failure* throws before `reconcile()` runs. A *successful* fetch of
 the wrong or empty zone does not — a token scoped to a different account, or a provider returning an
@@ -2429,12 +2429,12 @@ operator action to proceed. A genuinely emptied zone is rare; a wrongly-scoped c
 
 **Outcome, 2026-08-03 (TESTING.md Phase 55):** `RecordReconciler::doReconcile()` counts, after its
 existing match/claim pass but before the trash loop runs, how many currently-owned (non-deleted)
-records this run would newly trash. Refuses (throws `Exception\BlastRadiusExceededException`, before
-any trash-bin mutation) once that count exceeds `Config::getBlastRadiusMaxCount()` (default 20) or
-exceeds `Config::getBlastRadiusMaxPercent()` (default 50) of the domain's owned records — an OR, either
+records this run would newly trash. Refuses (throws `Exception\SyncSafetyExceededException`, before
+any trash-bin mutation) once that count exceeds `Config::getSyncSafetyMaxCount()` (default 20) or
+exceeds `Config::getSyncSafetyMaxPercent()` (default 50) of the domain's owned records — an OR, either
 threshold alone trips it. Both configurable on the Setup tab, same `plugin:domainmanager` config
 context as Phase 53's kill switch. `SyncEngine::syncDnsLeg()` catches this exception distinctly and
-sets the new `DomainState::STATUS_BLAST_RADIUS_GUARD` rather than `STATUS_ERROR` — a guard doing its
+sets the new `DomainState::STATUS_SYNC_SAFETY_GUARD` rather than `STATUS_ERROR` — a guard doing its
 job, not a failure, mirroring how `STATUS_SOURCE_CONFLICT` (Phase 47) already treats a deliberate pause
 as its own status rather than an error. "Requires explicit operator action to proceed": `reconcile()`
 and `sync()` gained a `$force` parameter (default `false`, every existing caller unaffected); the
@@ -2942,3 +2942,334 @@ the cron may trigger these lookups.
    presumes `9432`–`9436` and makes `search-options-registry.json` the single source of truth for the
    ceiling, with the prose in §3.7.4/§14.2 reduced to a pointer. Confirm the file's actual highest
    value, and confirm the enforcement check is wanted rather than just the corrected number.
+
+---
+
+## 16. Research (2026-08-07) — DomainSync fair rotation, Part 1
+
+Investigating a report that `Cron::cronDomainSync()` with `param = 3` syncs domains 1–3 on every
+run and never advances to domain 4+. Research-only pass; no code changed. Cites `11.0/bugfixes`
+GLPI source read via `raw.githubusercontent.com/glpi-project/glpi/11.0/bugfixes/...` (Trap 1
+branch pin) since no local GLPI checkout was available on this machine (no `docker`, no
+bind-mounted install found under common paths).
+
+### 16.1 Headline finding — the reported bug's stated cause does not match current code
+
+`Cron::cronDomainSync()`'s candidate query (`src/Cron.php:99-117`) already does:
+
+```php
+$iterator = $DB->request([
+    'SELECT'    => ['glpi_domains.id', 'glpi_domains.entities_id'],
+    'FROM'      => 'glpi_domains',
+    'LEFT JOIN' => [
+        DomainState::getTable() => [
+            'ON' => [
+                DomainState::getTable() => 'domains_id',
+                'glpi_domains'          => 'id',
+            ],
+        ],
+    ],
+    'WHERE'     => [
+        'glpi_domains.is_deleted'  => 0,
+        'glpi_domains.is_template' => 0,
+        'glpi_domains.is_active'   => 1,
+    ],
+    'ORDER'     => DomainState::getTable() . '.last_sync_date ASC',
+    'LIMIT'     => $batch_size,
+]);
+```
+
+This is a `LEFT JOIN` (never-synced domains, which have no `glpi_plugin_domainmanager_states` row
+at all, are included) ordered oldest-/never-synced-first — the same shape `cronRdapEnrichment()`
+uses (§16.2 below). `git blame` (`73d01f3a`, "Phase 4: domain panel, Update Now endpoint, cron
+batching loop", 2026-07-18) shows this `ORDER BY`/`LEFT JOIN` has been present since this method's
+original implementation; it was never a bare unordered `SELECT`. **The brief's premise — "selects
+its batch of domains without a meaningful `ORDER BY`" — does not hold against this codebase's
+current `develop`-branch state.** This is the one disagreement-with-the-brief to flag before
+anything else: implementing a from-scratch rotation fix on top of this would be solving a bug that
+isn't where the report says it is. See §16.9 for what, if anything, remains worth doing.
+
+### 16.2 Block A — the two candidate queries side by side
+
+1. `cronDomainSync()` — quoted above, `src/Cron.php:99-117`. Ordering: `LEFT JOIN` +
+   `ORDER BY glpi_plugin_domainmanager_states.last_sync_date ASC`, `LIMIT $batch_size`. No
+   secondary tie-break column.
+2. `cronRdapEnrichment()` — `src/Cron.php:229-250`:
+   ```php
+   $iterator = $DB->request([
+       'SELECT'    => ['glpi_domains.id', 'glpi_domains.name', 'glpi_domains.entities_id'],
+       'FROM'      => 'glpi_domains',
+       'LEFT JOIN' => [
+           DomainState::getTable() => [
+               'ON' => [
+                   DomainState::getTable() => 'domains_id',
+                   'glpi_domains'          => 'id',
+               ],
+           ],
+       ],
+       'WHERE'     => [
+           'glpi_domains.is_deleted'  => 0,
+           'glpi_domains.is_template' => 0,
+           'OR'                       => [
+               [DomainState::getTable() . '.last_rdap_check_date' => null],
+               [DomainState::getTable() . '.last_rdap_check_date' => ['<', $today . ' 00:00:00']],
+           ],
+       ],
+       'ORDER'     => DomainState::getTable() . '.last_rdap_check_date ASC',
+       'LIMIT'     => self::RDAP_CANDIDATE_SCAN_LIMIT,
+   ]);
+   ```
+   Same `LEFT JOIN`/`ORDER BY ... ASC` shape as `cronDomainSync()`, plus an extra `OR` clause
+   excluding rows already checked today (not needed by `cronDomainSync()`, which has no
+   once-per-day gate) and no secondary tie-break either — it doesn't need one, since it scans up
+   to 50 rows and stops at the first genuine gap (`RdapGapChecker::hasGap()`) rather than needing
+   every one of the 50 to make individual forward progress.
+3. `last_sync_date` column: `glpi_plugin_domainmanager_states.last_sync_date`, `timestamp NULL
+   DEFAULT NULL` (`src/Installer.php:183`), with `KEY last_sync_date` (`src/Installer.php:207`) —
+   also documented in ARCHITECTURE.md §2's schema table. Confirmed indexed and nullable, matching
+   §2's claim.
+
+### 16.3 Block B trap 1 — join type
+
+Confirmed: a domain that has never synced has no `glpi_plugin_domainmanager_states` row at all
+(the row is only created in `SyncEngine::sync()`'s own step-5 upsert, `src/Service/SyncEngine.php:
+348-356`, on the *first* sync attempt). `cronDomainSync()`'s query already uses `LEFT JOIN`
+(§16.1/§16.2), so never-synced domains are included and — since MySQL sorts `NULL` first in an
+`ASC` ordering — sort ahead of every already-synced row. No `INNER JOIN` starvation bug exists
+here.
+
+### 16.4 Block B trap 2 — deterministic tie-break
+
+`last_sync_date` is a `timestamp` column: second granularity, not sub-second. With `SyncEngine::
+sync()` writing `$now = $_SESSION['glpi_currenttime'] ?? date('Y-m-d H:i:s')` per domain
+(`src/Service/SyncEngine.php:97`, reused unchanged into the step-5 upsert at line 277), three
+domains processed in the same cron tick can plausibly finish within the same wall-clock second and
+end up with an identical `last_sync_date`. Neither query has a secondary `ORDER BY id` (or
+anything else) to break such a tie deterministically.
+
+**Does this actually starve anything?** Reasoned through, not just asserted: NULLs sort before
+every non-NULL timestamp in MySQL `ASC` order, so the *never-synced* population (all `NULL`, i.e.
+tied with each other, not with anyone else) always drains first and monotonically — a synced
+batch's newly-non-NULL `last_sync_date` sorts after every remaining `NULL` row regardless of tie
+order among the just-synced batch itself. Once every domain has synced at least once, ties can
+recur among domains with genuinely close sync times, but the effect is *local reordering within a
+similarly-aged cohort*, not a domain permanently stuck at the head or tail. This is not the
+mechanism behind the reported "domains 4+ never sync" symptom. It's still worth adding an `id`
+tie-break to remove any doubt and to mirror the general engineering posture the brief asks for
+("mirror `cronRdapEnrichment()`'s existing shape") — recommended as a small, low-risk addition in
+§16.9, not because it's load-bearing for the reported bug.
+
+### 16.5 Block B trap 3 (THE CRITICAL ONE) — is `last_sync_date` written on a failed sync?
+
+Traced every failure path in `SyncEngine::sync()` (`src/Service/SyncEngine.php`):
+
+- DNS resolution failure (§5 step 1, `NsResolver::getNameservers()` returning `[]`) — handled
+  inline at lines 156-159, sets `dns_status = 'error'`, does **not** throw, does **not** skip
+  step 5.
+- No matching registry entry / unsupported provider / no matching supplier config (lines
+  161-186) — same: sets a status/message, no throw, step 5 still runs.
+- Unconfigured or inactive registrar supplier (`syncRegistrarLeg()`, lines 370-390) — returns
+  early from the *leg method*, not from `sync()` itself; `sync()`'s own step 5 (lines 268-356)
+  runs unconditionally after the leg calls return, whatever their outcome.
+- Driver exception on either leg — both `syncRegistrarLeg()` (lines 439-450) and `syncDnsLeg()`
+  (lines 504-522) catch `DriverException` and every other `Throwable`, set `*_status = 'error'`,
+  and return normally; they never let an exception propagate out of `sync()`.
+- §5.6 fetch-failure throw — this is exactly the `DriverException` path above; caught the same
+  way, no propagation.
+
+**Answer: `SyncEngine::sync()`'s step-5 state upsert (`src/Service/SyncEngine.php:268-278`,
+committed at line 348 or 355 depending on whether a state row already exists) sets
+`last_sync_date = $now` unconditionally, on every outcome** — `STATUS_OK`, `STATUS_ERROR`,
+`STATUS_UNCONFIGURED`, `STATUS_SUPPLIER_INACTIVE`, `STATUS_SOURCE_CONFLICT` alike. It is not
+gated on success. A domain whose registrar/DNS API is permanently broken still gets its
+`last_sync_date` bumped to "now" every time it's processed, so it moves to the back of the
+oldest-first queue exactly like a successful sync would. **No starvation risk from this
+mechanism**, on current code.
+
+The one gap: this only holds if `sync()` itself returns normally. Everything between
+`LockEnforcer::$sync_in_progress = true` (line 144) and the `finally` (line 226) that could throw
+uncaught is: `DomainState::getForDomain()`, the `Infocom::getFromDBByCrit()` lookup, and
+`NsResolver::getNameservers()` (line 156, outside every try/catch in this method — it's called
+before `syncRegistrarLeg()`'s own try block starts). `NsResolver::getNameservers()`
+(`src/Service/NsResolver.php:46-66`) was read in full: `dns_get_record()` is called with `@`
+(error-suppressed) and any non-array result returns `[]` — it cannot throw. So the realistic
+residual risk is only a genuine GLPI-framework-level failure (a DB error mid-transaction, etc.),
+which `Cron::cronDomainSync()`'s own outer `catch (Throwable $e)` (`src/Cron.php:150-156`) already
+anticipates and logs — but that catch only increments the error tally; it does not itself write
+`last_sync_date`, so a domain that fails at that level keeps its old `last_sync_date` and *would*
+stay at the head of the queue on the next tick. This is a real but narrow edge case (framework/DB
+failure, not a driver/API failure), already implicitly acknowledged by the outer try/catch's
+existence. **Recommendation:** no schema change needed; if this edge case is worth closing, the
+cheapest fix is for `Cron::cronDomainSync()`'s catch block to also stamp `last_sync_date` on the
+domain's `DomainState` row (creating one if absent) so a single anomalous failure can't repeat
+every tick — see §16.9.
+
+### 16.6 Block C — registration, upgrade path, hour range, modes, overlap
+
+7. `CronTask::register()` call (`src/Installer.php:1225-1261`), quoted in full:
+   ```php
+   CronTask::register(
+       Cron::class,
+       'DomainSync',
+       DAY_TIMESTAMP,
+       [
+           'state'         => CronTask::STATE_WAITING,
+           'hourmin'       => 23,
+           'hourmax'       => 24,
+           'param'         => 20,
+           'logs_lifetime' => 30,
+       ],
+   );
+
+   CronTask::register(
+       Cron::class,
+       'RdapEnrichment',
+       10 * MINUTE_TIMESTAMP,
+       [
+           'state'         => CronTask::STATE_WAITING,
+           'logs_lifetime' => 30,
+       ],
+   );
+   ```
+8. Confirmed on `11.0/bugfixes` `src/CronTask.php`: `register()` opens with
+   `$temp = new self(); if ($temp->getFromDBbyName($itemtype, $name)) { return false; }` — it
+   short-circuits with **no changes whatsoever** the moment a task row for that
+   itemtype+name already exists. Editing the registration call's option array in `Installer.php`
+   therefore only affects **fresh installs**; every already-installed instance keeps whatever
+   `frequency`/`param`/`hourmin`/`hourmax` values its `glpi_crontasks` row already has — including
+   `DAY_TIMESTAMP`/`param=20`/`hourmin=23`/`hourmax=24` today — forever, until something else
+   updates that row. An upgrade path needs an explicit `Migration`-driven `UPDATE` against
+   `glpi_crontasks WHERE itemtype = 'GlpiPlugin\\Domainmanager\\Cron' AND name = 'DomainSync'`, and
+   it must decide what to do about an admin who deliberately retuned `param`/`hourmin`/`hourmax`
+   away from the shipped defaults — blindly overwriting every column would silently discard that
+   tuning. The safer shape: only overwrite a column whose *current* stored value still equals the
+   *old* shipped default (e.g. `frequency = DAY_TIMESTAMP AND param = 20 AND hourmin = 23 AND
+   hourmax = 24`, i.e. "looks untouched"), leaving any instance that differs from that exact tuple
+   alone and simply logging that manual reconciliation may be wanted.
+9. Confirmed via `11.0/bugfixes` `src/CronTask.php`'s `getNeedToRun()`: the hour-range `WHERE`
+   builds (paraphrased from the fetched source) an `hourmin <= hour AND hourmax > hour` check for
+   the normal (non-overnight) case. `hourmin => 0, hourmax => 24` makes that `0 <= hour AND 24 >
+   hour`, true for every integer hour 0–23 — i.e. unrestricted, confirming the brief's assumption.
+10. **Determined 2026-08-07, `~/containers/testing/compose-glpi-65108-persistent.yml` (a running
+    `podman` GLPI 11.0.8 test instance, `testing_glpi_1`/`testing_db_1`)** — direct query:
+    ```
+    SELECT itemtype,name,mode,state,frequency,param,hourmin,hourmax FROM glpi_crontasks
+    WHERE itemtype LIKE '%Domainmanager%';
+
+    itemtype                              name            mode  state  frequency  param  hourmin  hourmax
+    GlpiPlugin\Domainmanager\Cron         DomainSync      1     1      900        2      0        24
+    GlpiPlugin\Domainmanager\Cron         RdapEnrichment  1     1      600        NULL   0        24
+    ```
+    Both tasks are `mode = 1` = `MODE_INTERNAL` ("GLPI") on this instance — confirming the concern:
+    `RdapEnrichment`'s 10-minute (`600`s) cadence only fires on a user page load under
+    `MODE_INTERNAL`, not on a real wall-clock timer, so it has likely been under-running already,
+    independent of this rotation investigation. Continuous operation for `DomainSync` needs
+    `MODE_EXTERNAL` (2) with a real system-cron invocation of `bin/console glpi:cron` — a mode
+    change is an admin action (Setup > Automatic actions, or a direct `glpi_crontasks.mode`
+    update), out of scope for what a plugin's own `Installer`/migration can set, since GLPI treats
+    `mode` as an operator/infrastructure choice, not a plugin default.
+    **Bonus live confirmation of §16.6 point 8's short-circuit claim:** this instance's stored
+    `DomainSync` row already has `frequency = 900` (15 min) and `param = 2` — neither matches
+    `Installer.php`'s shipped defaults (`DAY_TIMESTAMP` / `param = 20`) nor the brief's proposed
+    new ones (`600`s / `param = 3`). This is exactly the "admin/dev already retuned this row away
+    from whatever `Installer.php` says" case §16.6 point 8 warned about — concrete evidence (not
+    just a reading of GLPI's source) that a blind `UPDATE` in an upgrade migration would silently
+    clobber real, already-diverged tuning on at least this instance, reinforcing the "only touch a
+    row that still matches the *previous* shipped default" recommendation.
+11. Confirmed on `11.0/bugfixes`: `getNeedToRun()`'s own query filters to `state = STATE_WAITING`
+    (excluding anything already `STATE_RUNNING`), plus a file-lock check —
+    `is_file(GLPI_CRON_DIR . '/all.lock')` short-circuits everything, and a per-task
+    `GLPI_CRON_DIR/*.lock` file excludes that specific task. A tick whose predecessor is still
+    running is therefore **skipped, not queued** — it simply won't be selected as eligible by the
+    next invocation's `getNeedToRun()` call until the running one finishes and flips its state
+    back to `STATE_WAITING`. No queueing/backlog mechanism exists.
+
+### 16.7 Block D — consequences to report, not fix
+
+12. At 144 runs/day (every 10 minutes) versus 1/day, per-run `$task->log()` volume (§9 Phase 24's
+    per-entity/per-supplier breakdown, `src/Cron.php:168-185`) multiplies accordingly — a run
+    touching several entities and several registrar suppliers already emits multiple log lines
+    per tick, times 144. `logs_lifetime => 30` (`src/Installer.php:1236`, in days per GLPI's own
+    convention) bounds `glpi_crontasklogs` row count/age but not `domainmanager.log`'s own
+    file-based growth (§3.6), which has no built-in rotation in this codebase as far as this
+    research pass found — worth a log-rotation check (e.g. `logrotate`) before going continuous,
+    not attempted here.
+13. Concurrency between a cron tick and a manual "Update Now" on the same domain:
+    `LockEnforcer::$sync_in_progress` (`src/LockEnforcer.php:54`) is a **static, process-local**
+    boolean — it exists to bypass the record pre-delete lock check during a reconciliation pass
+    within *one* PHP process/request, not to serialize access across processes. A cron worker
+    process and a web request handling "Update Now" are separate PHP processes; nothing in
+    `SyncController`/`SyncEngine`/`LockEnforcer` takes a DB-level or file-level per-domain lock.
+    At once-daily cadence, a cron tick and a manual click overlapping on the *same* domain within
+    the same few seconds was already possible but rare; at every-10-minutes it becomes a routine
+    occurrence for any actively-managed portfolio. Both would run `SyncEngine::sync()`
+    concurrently against the same `Domain`/`DomainState` rows with no mutual exclusion — a genuine
+    unguarded race, reported here per the brief's "report, don't fix" instruction.
+14. Phase 54 (per-supplier write rate limiter/circuit breaker) is **not yet implemented** (§15.3
+    describes it as a plan, no "Outcome" note like Phase 55 has). Phase 55 (reconciliation
+    sync-safety guard) **is implemented** (§15.3, `SyncSafetyExceededException`,
+    `Config::getSyncSafetyMaxCount()`/`getSyncSafetyMaxPercent()`). Raising sync frequency from
+    1/day to up to 144/day directly multiplies exposure to §5.6's still-unguarded path — a
+    *successful* fetch of a wrong/empty zone (e.g. a credential silently re-scoped to a different
+    account) reads as "every record vanished" — for as many ticks as it takes an operator to
+    notice, now potentially 144x more often per day than before. Phase 55's safety guard already
+    mitigates the *reconciliation* half of this (it refuses to mass-trash), but nothing yet caps
+    *how often* a misbehaving supplier gets retried (Phase 54's job). Not fixed here, per the
+    brief.
+
+### 16.8 Disagreements found between the code and this document
+
+- **The task brief's own premise** ("`cronDomainSync()` selects its batch of domains without a
+  meaningful `ORDER BY`") does not match `src/Cron.php:99-117}` as it stands on this branch — see
+  §16.1. This is a disagreement with the *brief*, not with ARCHITECTURE.md itself; no discrepancy
+  was found between this document's own existing text (§5, §9 Phase 21-24) and the code.
+
+### 16.9 Recommendation on verification 6 (§16.5), since it gates everything else
+
+Verification 6 does **not** show a starvation bug in the sync-outcome sense the brief worried
+about — `last_sync_date` is already written unconditionally on every reachable outcome. The only
+real residual gap is the narrow "`sync()` itself throws before reaching step 5" case (framework/DB
+failure, not a driver failure), and it is small enough that a dedicated new column
+(`last_attempt_date`) or a failure-backoff column would be over-engineering relative to the actual
+risk. **Recommendation: close the narrow gap by having `Cron::cronDomainSync()`'s existing outer
+`catch (Throwable $e)` also stamp `last_sync_date = now` on that domain's `DomainState` (creating
+the row if absent, same upsert shape `Cron::upsertState()` already uses for RDAP) before continuing
+the loop** — cheapest fix, no schema change, and it converges with the already-unconditional
+behavior everywhere else in `SyncEngine::sync()`.
+
+### 16.10 Proposed Part 2 scope, revised in light of §16.1–16.9
+
+Given the rotation mechanism itself is already correct, Part 2 (pending explicit approval) narrows
+to:
+
+1. Add a deterministic secondary `ORDER BY ... , glpi_domains.id ASC` to `cronDomainSync()`'s query
+   (§16.4) — small, matches the brief's "mirror `cronRdapEnrichment()`'s shape" instruction in
+   spirit, removes any doubt about tie behavior even though it isn't load-bearing today.
+2. Close §16.5/§16.9's narrow gap: stamp `last_sync_date` in `cronDomainSync()`'s own outer
+   `catch (Throwable $e)` block.
+3. New registration defaults for fresh installs (`frequency` 10 minutes, `param => 3`, `hourmin =>
+   0`, `hourmax => 24`) in `Installer::registerCronTasks()`.
+4. An upgrade migration that updates an existing `DomainSync` `glpi_crontasks` row **only when its
+   current values still match the old shipped defaults** (§16.6 point 8), logging when it declines
+   to touch a manually-tuned row.
+5. `TESTING.md`: a rotation regression case running enough consecutive ticks to exceed one full
+   cycle, asserting every domain's `last_sync_date` advances (not just the first batch), plus a
+   case for a domain whose sync fails, asserting it does not monopolize the queue (given §16.5,
+   this should already pass without further code changes — the test is what proves it, not a new
+   mechanism).
+6. `CHANGELOG-dev.md` entries under `[Unreleased]` (`### Features`/`### Bugs` only) for the above.
+
+Likely **one commit**, since items 1–2 are small and 3–4 are tightly coupled (the upgrade path only
+makes sense alongside the new defaults) — but could be split into "rotation determinism + failure
+gap" and "continuous-mode defaults + upgrade path" if preferred, since they're logically separable
+and the second carries more operational risk (Block D consequences, §16.7) worth its own review.
+
+### 16.11 Anything not determined
+
+- Whether `domainmanager.log`/`domainmanager-errors.log` have any log-rotation in place at the
+  infrastructure level outside this plugin's own code (§16.7 point 12).
+- Whether the `~/containers/testing` instance's already-diverged `DomainSync` row (`frequency =
+  900`, `param = 2`, §16.6 point 10) reflects deliberate tuning or leftover state from an earlier
+  version of this same feature request being test-driven on that instance — worth asking before
+  treating it as a representative "admin tuned this" example versus disposable test-instance
+  state.

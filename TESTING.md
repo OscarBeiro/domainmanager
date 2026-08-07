@@ -3416,21 +3416,21 @@ amendment.
   live-configured domain and confirming a create/update/delete/restore is refused with the
   expected message, then confirming it resumes once turned back off)
 
-### Phase 55 Blast-radius guard on reconciliation (ARCHITECTURE.md §15.3)
+### Phase 55 Sync safety guard on reconciliation (ARCHITECTURE.md §15.3)
 - **Requirement:** abort a reconciliation run and set a distinct `DomainState` status when it would
   trash more than N records or more than X% of a domain's owned records, whichever is hit first;
   requires explicit operator action to proceed.
 - **Implementation:** `RecordReconciler::doReconcile()` counts, after its existing match/claim pass
   but before the trash loop, how many currently-owned (non-deleted) records this run would newly
-  trash, against `Config::getBlastRadiusMaxCount()`/`getBlastRadiusMaxPercent()` (new
-  `blast_radius_max_count`/`blast_radius_max_percent` keys on the existing `plugin:domainmanager`
+  trash, against `Config::getSyncSafetyMaxCount()`/`getSyncSafetyMaxPercent()` (new
+  `sync_safety_max_count`/`sync_safety_max_percent` keys on the existing `plugin:domainmanager`
   config context, editable on the Setup tab, defaults 20/50). Crossing either throws
-  `Exception\BlastRadiusExceededException` before any trash-bin mutation runs.
+  `Exception\SyncSafetyExceededException` before any trash-bin mutation runs.
   `SyncEngine::syncDnsLeg()` catches it distinctly from `DriverException`/`Throwable` and sets the
-  new `DomainState::STATUS_BLAST_RADIUS_GUARD` (its own label/badge class in
+  new `DomainState::STATUS_SYNC_SAFETY_GUARD` (its own label/badge class in
   `DomainStatusResolver`). `reconcile()`/`sync()` gained a `$force` parameter (default `false`);
   `POST /plugins/domainmanager/sync/{id}` accepts a `force` field, and the domain panel's "Update
-  Now" button, on receiving `STATUS_BLAST_RADIUS_GUARD`, shows a `window.confirm()` naming the exact
+  Now" button, on receiving `STATUS_SYNC_SAFETY_GUARD`, shows a `window.confirm()` naming the exact
   counts and re-issues the request with `force=1` only if the operator confirms.
 - **Verified by code inspection, 2026-08-03:**
   - Confirmed the count is computed strictly before the trash loop, so a run that trips the guard
@@ -3445,3 +3445,48 @@ amendment.
 - [ ] Not yet verified live (code audit only, 2026-08-03; requires a live-configured domain, a
   synthetic near-empty upstream snapshot, and confirming the sync is refused with the expected
   message/status, then confirming the "force" override actually reconciles when confirmed)
+
+### DomainSync fair rotation (ARCHITECTURE.md §16, Part 2)
+- **Requirement:** every domain's `last_sync_date` must advance across enough consecutive cron
+  ticks to exceed one full rotation cycle — not merely the first batch — and a domain whose sync
+  fails must not monopolize the queue (§16.5/§16.9).
+- **Regression case — full-cycle rotation.** Create 10 active, non-deleted, non-template domains
+  with no `DomainState` row (never synced). Set the `DomainSync` automatic action's `param` to 3.
+  Run `Cron::cronDomainSync()` 4 times in sequence (a full CLI/console-triggered run each time, not
+  a single call). Expected: after run 1, domains 1–3 (lowest `id`, per the new secondary `ORDER BY
+  glpi_domains.id ASC`, §16.4) have a fresh `last_sync_date`; after run 2, domains 4–6 do; after
+  run 3, domains 7–9; after run 4, domain 10 plus a re-sync of domain 1 (the batch wraps once every
+  domain has been touched once, since domain 1 is now the oldest again). Assert every one of the
+  10 domains' `last_sync_date` is non-null and has changed at least once by the end of run 4 — not
+  just the first 3.
+  - [ ] Not yet verified live (requires a throwaway console-command/cron-trigger harness against
+    `~/containers/testing`; code review + `php -l`/`phpcs`/`php-cs-fixer` only so far)
+- **Regression case — a permanently failing domain does not starve the queue.** Among the 10
+  domains above, configure one (e.g. domain #2) so its registrar/DNS sync always throws (an
+  invalid/unreachable driver config is enough — no test-only code path needed, since
+  `SyncEngine::sync()` already catches every leg-internal exception and still stamps
+  `last_sync_date`, §16.5). Run `cronDomainSync()` across enough ticks to complete two full
+  rotation cycles. Expected: domain #2's `last_sync_date` advances on the same schedule as every
+  other domain (i.e. once per cycle) rather than being reselected on every single tick; the other 9
+  domains still each get exactly one sync per cycle.
+  - [ ] Not yet verified live (same harness as above; also confirms §16.5's "no starvation from a
+    driver/API failure" finding rather than just asserting it from a code read)
+- **Verified by code inspection, 2026-08-07:**
+  - Confirmed the query's `LEFT JOIN` (never-synced domains have no state row at all, §16.3) and
+    `ORDER BY last_sync_date ASC, glpi_domains.id ASC` (new secondary tie-break, §16.4) in
+    `src/Cron.php`.
+  - Confirmed `SyncEngine::sync()`'s step-5 state upsert writes `last_sync_date = $now`
+    unconditionally on every reachable outcome (`src/Service/SyncEngine.php:268-278`), and that
+    `Cron::cronDomainSync()`'s own outer `catch (Throwable $e)` now also stamps it via
+    `self::upsertState()`, closing the one narrow gap identified in §16.5/§16.9 (a `sync()` call
+    throwing before reaching its own upsert).
+  - Confirmed `Installer::registerCronTasks()`'s new defaults (10 min / `param = 3` / `hourmin = 0`
+    / `hourmax = 24`) only apply to a fresh install, and `Installer::upgradeDomainSyncContinuousDefaults()`
+    only rewrites an existing `DomainSync` `glpi_crontasks` row when it still holds exactly the
+    *previous* shipped default (`DAY_TIMESTAMP` / `param = 20` / `hourmin = 23` / `hourmax = 24`) —
+    confirmed against the live `~/containers/testing` instance's actual stored row (`frequency =
+    900`, `param = 2`, ARCHITECTURE.md §16.6 point 10), which does **not** match that tuple, so the
+    upgrade guard correctly leaves it untouched.
+- [ ] Not yet verified live end-to-end (the two regression cases above and a real upgrade run
+  against `~/containers/testing`'s existing diverged `DomainSync` row, confirming it is left
+  untouched rather than overwritten)

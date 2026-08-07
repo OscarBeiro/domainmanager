@@ -87,6 +87,7 @@ class Installer
         self::renormalizeMxTrailingDot();
         self::clearRdapEnrichmentComment();
         self::clearDomainSyncComment();
+        self::upgradeDomainSyncContinuousDefaults();
 
         $migration->executeMigration();
 
@@ -188,9 +189,9 @@ class Installer
                     `is_managed` tinyint NOT NULL DEFAULT '0',
                     `is_glpi_created` tinyint NOT NULL DEFAULT '1',
                     `name_ascii` varchar(255) NOT NULL DEFAULT '',
-                    `last_rdap_check_date` datetime NULL DEFAULT NULL,
-                    `last_changed_date` datetime NULL DEFAULT NULL,
-                    `transfer_date` datetime NULL DEFAULT NULL,
+                    `last_rdap_check_date` timestamp NULL DEFAULT NULL,
+                    `last_changed_date` timestamp NULL DEFAULT NULL,
+                    `transfer_date` timestamp NULL DEFAULT NULL,
                     `pending_delete` tinyint NULL DEFAULT NULL,
                     `pending_transfer` tinyint NULL DEFAULT NULL,
                     `rdap_registrar_name` varchar(255) NULL DEFAULT NULL,
@@ -278,7 +279,11 @@ class Installer
             $migration->addField($table, "{$prefix}_test_status", 'string', ['value' => null]);
             $migration->addField($table, "{$prefix}_test_message", 'text', ['value' => null]);
             $migration->addField($table, "{$prefix}_test_http_code", 'INT NULL DEFAULT NULL');
-            $migration->addField($table, "{$prefix}_test_date", 'datetime', ['value' => null]);
+            $migration->addField($table, "{$prefix}_test_date", 'timestamp', ['value' => null]);
+            // §7 datetime->timestamp normalization: addField() above is a no-op
+            // once the column exists, so an install that created this column
+            // back when it was 'datetime' never gets converted without this.
+            $migration->changeField($table, "{$prefix}_test_date", "{$prefix}_test_date", 'timestamp', ['value' => null]);
         }
     }
 
@@ -699,7 +704,10 @@ class Installer
 
         $table = 'glpi_plugin_domainmanager_states';
 
-        $migration->addField($table, 'last_rdap_check_date', 'datetime', ['value' => null]);
+        $migration->addField($table, 'last_rdap_check_date', 'timestamp', ['value' => null]);
+        // §7 datetime->timestamp normalization: no-op via addField() alone
+        // once the column already exists as 'datetime'.
+        $migration->changeField($table, 'last_rdap_check_date', 'last_rdap_check_date', 'timestamp', ['value' => null]);
 
         // §9 Phase 27: renamed away from the "rdap_"-prefixed/shadow-column
         // naming this feature briefly had (never in a real release, only on
@@ -720,8 +728,8 @@ class Installer
         // already matches.
         foreach (
             [
-                ['rdap_last_changed_date', 'last_changed_date', 'datetime', ['value' => null]],
-                ['rdap_transfer_date', 'transfer_date', 'datetime', ['value' => null]],
+                ['rdap_last_changed_date', 'last_changed_date', 'timestamp', ['value' => null]],
+                ['rdap_transfer_date', 'transfer_date', 'timestamp', ['value' => null]],
                 ['rdap_pending_delete', 'pending_delete', 'tinyint NULL DEFAULT NULL', []],
                 ['rdap_pending_transfer', 'pending_transfer', 'tinyint NULL DEFAULT NULL', []],
             ] as [$oldfield, $newfield, $type, $options]
@@ -730,6 +738,11 @@ class Installer
                 $migration->changeField($table, $oldfield, $newfield, $type, $options);
             } else {
                 $migration->addField($table, $newfield, $type, $options);
+                // §7 datetime->timestamp normalization: addField() is a
+                // no-op once $newfield already exists, so an install that
+                // already has it (under either name) as 'datetime' never
+                // gets converted without this.
+                $migration->changeField($table, $newfield, $newfield, $type, $options);
             }
         }
 
@@ -1206,7 +1219,56 @@ class Installer
     }
 
     /**
-     * Register the daily sync automatic action (idempotent, tunable in Setup > Automatic actions)
+     * ARCHITECTURE.md §16.6 point 8 / §16.10: `CronTask::register()`
+     * no-ops the moment a `DomainSync` task row already exists, so
+     * `registerCronTasks()`'s new continuous-mode defaults (10 min / 3
+     * domains per run / unrestricted hour range) never reach an
+     * already-installed instance on their own. Upgrades the stored row in
+     * place, but only when every one of its four tunable columns still
+     * holds exactly the *previous* shipped default
+     * (`frequency = DAY_TIMESTAMP`, `param = 20`, `hourmin = 23`,
+     * `hourmax = 24`) — confirmed live (`~/containers/testing`,
+     * ARCHITECTURE.md §16.6 point 10) that a real instance can already
+     * diverge from that tuple, so an admin (or a prior dev iteration) who
+     * retuned any one of these four away from the old default keeps their
+     * own values untouched; nothing is logged/flagged beyond that (same
+     * "silently leave it alone" posture as every other one-time, guarded
+     * migration in this file).
+     *
+     * @return void
+     */
+    private static function upgradeDomainSyncContinuousDefaults(): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $DB->update(
+            CronTask::getTable(),
+            [
+                'frequency' => 10 * MINUTE_TIMESTAMP,
+                'param'     => 3,
+                'hourmin'   => 0,
+                'hourmax'   => 24,
+            ],
+            [
+                'itemtype'  => Cron::class,
+                'name'      => 'DomainSync',
+                'frequency' => DAY_TIMESTAMP,
+                'param'     => 20,
+                'hourmin'   => 23,
+                'hourmax'   => 24,
+            ],
+        );
+    }
+
+    /**
+     * Register the continuous-mode sync automatic action (idempotent,
+     * tunable in Setup > Automatic actions). ARCHITECTURE.md §16.10: these
+     * defaults (10 min / 3 domains per run / unrestricted hour range) only
+     * take effect on a fresh install — `CronTask::register()` no-ops once a
+     * task row already exists (§16.6 point 8), so an already-installed
+     * instance is upgraded separately by
+     * {@see Installer::upgradeDomainSyncContinuousDefaults()}.
      *
      * @return void
      */
@@ -1215,12 +1277,12 @@ class Installer
         CronTask::register(
             Cron::class,
             'DomainSync',
-            DAY_TIMESTAMP,
+            10 * MINUTE_TIMESTAMP,
             [
                 'state'         => CronTask::STATE_WAITING,
-                'hourmin'       => 23,
+                'hourmin'       => 0,
                 'hourmax'       => 24,
-                'param'         => 20,
+                'param'         => 3,
                 'logs_lifetime' => 30,
                 // No 'comment' here — that field is the admin's own free-text
                 // note (Setup > Automatic actions), not this plugin's to

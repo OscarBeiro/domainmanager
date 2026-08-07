@@ -33,45 +33,36 @@ namespace GlpiPlugin\Domainmanager\Controller;
 
 use Domain;
 use Glpi\Controller\AbstractController;
-use GlpiPlugin\Domainmanager\Service\SyncEngine;
-use Session;
+use GlpiPlugin\Domainmanager\DomainState;
+use GlpiPlugin\Domainmanager\Service\DnsRecordWriteback;
 use Symfony\Component\HttpFoundation\JsonResponse;
-use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 
 /**
- * "Update Now" endpoint (§6.3): runs the sync synchronously for one domain.
- * URL: POST /plugins/domainmanager/sync/{domains_id}
- * CSRF is enforced by the core CheckCsrfListener (X-Glpi-Csrf-Token header).
+ * Backs the "creating this record here pushes it live" notice on
+ * `DomainRecord`'s own generic add form (`domainrecord_new_notice.html.twig`
+ * / `DomainForm::injectDomainRecord()`): the domain isn't known server-side
+ * at render time on that form (still a dropdown, or the tab's own hidden
+ * field isn't visible to the POST_ITEM_FORM hook either), so the banner's
+ * visibility is decided client-side, via this small read-only lookup, once
+ * a domain is actually picked.
+ * URL: GET /plugins/domainmanager/domainwritebackstatus/{domains_id}
  */
-class SyncController extends AbstractController
+class DomainWritebackStatusController extends AbstractController
 {
-    #[Route('/sync/{domains_id}', name: 'domainmanager_sync', methods: ['POST'], requirements: ['domains_id' => '\d+'])]
-    public function __invoke(int $domains_id, Request $request): Response
+    #[Route('/domainwritebackstatus/{domains_id}', name: 'domainmanager_domainwritebackstatus', methods: ['GET'], requirements: ['domains_id' => '\d+'])]
+    public function __invoke(int $domains_id): Response
     {
-        if (!Session::haveRight('domain', UPDATE)) {
-            return new JsonResponse(['error' => __('You do not have permission to synchronize domains', 'domainmanager')], 403);
-        }
-
         $domain = new Domain();
-        if (!$domain->getFromDB($domains_id)) {
-            return new JsonResponse(['error' => __('Domain not found', 'domainmanager')], 404);
+        if ($domains_id <= 0 || !$domain->getFromDB($domains_id) || !$domain->can($domains_id, READ)) {
+            return new JsonResponse(['managed_writeback' => false]);
         }
 
-        if (!$domain->can($domains_id, UPDATE)) {
-            return new JsonResponse(['error' => __('You do not have permission to synchronize this domain', 'domainmanager')], 403);
-        }
+        $state = DomainState::getForDomain($domains_id);
 
-        // ARCHITECTURE.md §15.3 Phase 55: explicit operator override of a
-        // previous run's sync safety guard refusal — only ever meaningful
-        // as a deliberate, one-off re-request from the domain panel's own
-        // "Update Now" button after it surfaced STATUS_SYNC_SAFETY_GUARD,
-        // never a default.
-        $force = (bool) $request->request->getBoolean('force', false);
-
-        $result = (new SyncEngine())->sync($domain, false, $force);
-
-        return new JsonResponse($result);
+        return new JsonResponse([
+            'managed_writeback' => $state !== null && DnsRecordWriteback::isDomainDnsEditable($state),
+        ]);
     }
 }

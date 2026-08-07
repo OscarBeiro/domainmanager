@@ -62,7 +62,7 @@ class DomainStatusResolver
             DomainState::STATUS_SUPPLIER_INACTIVE => __('Supplier inactive', 'domainmanager'),
             DomainState::STATUS_REASSIGNED        => __('Registrar changed, not yet verified', 'domainmanager'),
             DomainState::STATUS_SOURCE_CONFLICT   => __('DNS provider changed, records untouched pending confirmation', 'domainmanager'),
-            DomainState::STATUS_BLAST_RADIUS_GUARD => __('Blocked: too many records would be trashed', 'domainmanager'),
+            DomainState::STATUS_SYNC_SAFETY_GUARD => __('Blocked: too many records would be trashed', 'domainmanager'),
         ];
     }
 
@@ -94,7 +94,7 @@ class DomainStatusResolver
             // "re-sync to confirm" pause), this one means the run actually
             // found something alarming (a would-be mass deletion), so it
             // gets the warning color rather than info.
-            DomainState::STATUS_BLAST_RADIUS_GUARD => 'text-bg-warning',
+            DomainState::STATUS_SYNC_SAFETY_GUARD => 'text-bg-warning',
         ];
     }
 }
