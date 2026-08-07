@@ -112,7 +112,15 @@ class Cron
                 'glpi_domains.is_template' => 0,
                 'glpi_domains.is_active'   => 1,
             ],
-            'ORDER'     => DomainState::getTable() . '.last_sync_date ASC',
+            // ARCHITECTURE.md §16.4: last_sync_date has only second
+            // granularity, so a batch processed within the same
+            // wall-clock second can tie; the secondary `id` order makes
+            // batch selection deterministic across ticks instead of
+            // relying on MySQL's unspecified tie-break behavior.
+            'ORDER'     => [
+                DomainState::getTable() . '.last_sync_date ASC',
+                'glpi_domains.id ASC',
+            ],
             'LIMIT'     => $batch_size,
         ]);
 
@@ -152,6 +160,18 @@ class Cron
                 $is_error = true;
                 $logger->detail(
                     'Cron sync failed for domain #' . $domains_id . ': ' . $e::class . ': ' . $e->getMessage(),
+                );
+                // ARCHITECTURE.md §16.5/§16.9: SyncEngine::sync() itself
+                // already stamps last_sync_date unconditionally on every
+                // reachable outcome — this only covers the narrow case of
+                // sync() throwing before reaching its own state upsert
+                // (a framework/DB-level failure, not a driver/API one), so
+                // a single anomalous failure here can't leave this domain
+                // stuck at the head of the oldest-first queue forever.
+                self::upsertState(
+                    $domains_id,
+                    DomainState::getForDomain($domains_id),
+                    ['last_sync_date' => $_SESSION['glpi_currenttime'] ?? date('Y-m-d H:i:s')],
                 );
             }
 

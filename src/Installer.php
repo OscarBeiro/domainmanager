@@ -87,6 +87,7 @@ class Installer
         self::renormalizeMxTrailingDot();
         self::clearRdapEnrichmentComment();
         self::clearDomainSyncComment();
+        self::upgradeDomainSyncContinuousDefaults();
 
         $migration->executeMigration();
 
@@ -1218,7 +1219,56 @@ class Installer
     }
 
     /**
-     * Register the daily sync automatic action (idempotent, tunable in Setup > Automatic actions)
+     * ARCHITECTURE.md §16.6 point 8 / §16.10: `CronTask::register()`
+     * no-ops the moment a `DomainSync` task row already exists, so
+     * `registerCronTasks()`'s new continuous-mode defaults (10 min / 3
+     * domains per run / unrestricted hour range) never reach an
+     * already-installed instance on their own. Upgrades the stored row in
+     * place, but only when every one of its four tunable columns still
+     * holds exactly the *previous* shipped default
+     * (`frequency = DAY_TIMESTAMP`, `param = 20`, `hourmin = 23`,
+     * `hourmax = 24`) — confirmed live (`~/containers/testing`,
+     * ARCHITECTURE.md §16.6 point 10) that a real instance can already
+     * diverge from that tuple, so an admin (or a prior dev iteration) who
+     * retuned any one of these four away from the old default keeps their
+     * own values untouched; nothing is logged/flagged beyond that (same
+     * "silently leave it alone" posture as every other one-time, guarded
+     * migration in this file).
+     *
+     * @return void
+     */
+    private static function upgradeDomainSyncContinuousDefaults(): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $DB->update(
+            CronTask::getTable(),
+            [
+                'frequency' => 10 * MINUTE_TIMESTAMP,
+                'param'     => 3,
+                'hourmin'   => 0,
+                'hourmax'   => 24,
+            ],
+            [
+                'itemtype'  => Cron::class,
+                'name'      => 'DomainSync',
+                'frequency' => DAY_TIMESTAMP,
+                'param'     => 20,
+                'hourmin'   => 23,
+                'hourmax'   => 24,
+            ],
+        );
+    }
+
+    /**
+     * Register the continuous-mode sync automatic action (idempotent,
+     * tunable in Setup > Automatic actions). ARCHITECTURE.md §16.10: these
+     * defaults (10 min / 3 domains per run / unrestricted hour range) only
+     * take effect on a fresh install — `CronTask::register()` no-ops once a
+     * task row already exists (§16.6 point 8), so an already-installed
+     * instance is upgraded separately by
+     * {@see Installer::upgradeDomainSyncContinuousDefaults()}.
      *
      * @return void
      */
@@ -1227,12 +1277,12 @@ class Installer
         CronTask::register(
             Cron::class,
             'DomainSync',
-            DAY_TIMESTAMP,
+            10 * MINUTE_TIMESTAMP,
             [
                 'state'         => CronTask::STATE_WAITING,
-                'hourmin'       => 23,
+                'hourmin'       => 0,
                 'hourmax'       => 24,
-                'param'         => 20,
+                'param'         => 3,
                 'logs_lifetime' => 30,
                 // No 'comment' here — that field is the admin's own free-text
                 // note (Setup > Automatic actions), not this plugin's to

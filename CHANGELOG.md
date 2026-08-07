@@ -11,10 +11,12 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 
 ## [Unreleased]
 ### Features
+- Domain synchronization now runs continuously (every 10 minutes) instead of once a day, so newly added or changed domains are picked up much sooner. Existing installs are only switched over automatically if the automatic action's schedule hasn't been manually customized.
 - Renamed the "blast-radius guard" sync safety setting to "sync safety guard" for clarity, and added a warning on the Setup page marking its two thresholds as advanced settings best left at their defaults.
 - Shortened some overly long Setup page field labels (e.g. "Domain type to apply to imported domains" is now "Default domain type").
 
 ### Bugs
+- A domain sync that fails for an unusual internal reason (rather than a normal provider/connection error) no longer gets stuck at the front of the sync queue on every run.
 - Check Connection now clearly flags a missing IONOS or Dinahosting credential field before contacting the provider, the same way it already did for Cloudflare, instead of surfacing a generic error.
 - The "creating this record pushes it live to the provider" warning on the new DNS record form now only appears when the domain you actually pick is managed with write-back enabled, and is shown at the top of the form instead of the bottom.
 
