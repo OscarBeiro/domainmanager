@@ -564,8 +564,18 @@ class DnsRecordWriteback
             return;
         }
 
+        $domains_id = (int) $item->fields['domains_id'];
+        if (!self::hasProxyToggleRight($domains_id)) {
+            // §17.4/§17.6: silently ignore a crafted POST from a user
+            // without the right — defense-in-depth behind the UI
+            // exclusion in supportsProxyToggle(); the main record edit
+            // (name/data/ttl) still succeeds unaffected.
+            PluginLogger::warning("Rejected proxy toggle for DNS record #{$item->getID()}: user lacks " . Profile::DNS_RECORD_PROXY_RIGHT);
+            return;
+        }
+
         $domain = new Domain();
-        if (!$domain->getFromDB((int) $item->fields['domains_id'])) {
+        if (!$domain->getFromDB($domains_id)) {
             return;
         }
 
@@ -1340,6 +1350,33 @@ class DnsRecordWriteback
     public static function hasTypeRight(string $type, int $bit, int $domains_id): bool
     {
         return self::hasRight($type, $bit, $domains_id);
+    }
+
+    /**
+     * Whether the current user holds the dedicated proxy-toggle right for
+     * this domain's entity (ARCHITECTURE.md §17.3/§17.6, Phase 69) —
+     * distinct from the per-type write-back UPDATE right: toggling the
+     * Cloudflare proxy exposes the origin IP and drops WAF/DDoS protection
+     * when turned off, so it is gated independently.
+     *
+     * @param  int $domains_id target Domain whose entity gates this right
+     * @return bool
+     */
+    public static function hasProxyToggleRight(int $domains_id): bool
+    {
+        if (!Session::haveRight(Profile::DNS_RECORD_PROXY_RIGHT, UPDATE)) {
+            return false;
+        }
+
+        $domain = new Domain();
+        if (!$domain->getFromDB($domains_id)) {
+            return false;
+        }
+
+        return Session::haveAccessToEntity(
+            (int) $domain->fields['entities_id'],
+            (bool) ($domain->fields['is_recursive'] ?? false),
+        );
     }
 
     /**

@@ -3422,12 +3422,40 @@ Part A (proxy-toggle right) is straightforward and small — recommend as **Phas
 
 Part B (origin/proxy IP display) is deferred — recommend creating a **Phase 70** issue placeholder with the three cost-options outlined above, pending a decision on display strategy (lazy/async/cached).
 
-### 17.12 Open items awaiting approval
+### 17.12 Open items — resolved 2026-08-07
 
-1. Whether Phase 69 should include the search-option registration, or defer it alongside §15.3 Phase 57b's general profile-history effort (the two are not blocking each other, but might be coordinated).
-2. Whether to record the IP-display cost options now as a Phase 70 design note, or wait until the feature is prioritized to do the full investigation.
+1. **Resolved:** Phase 69 does **not** include search-option registration. On inspection, none of the four
+   existing per-type write-back rights have one either — Phase 57b (§15.3) is itself unimplemented for all
+   five Domain Manager rights, and its own ID allocation is a separate open item (§15.8 item 5). Adding a
+   search option for just the new right ahead of, and inconsistently with, the other four was rejected as
+   premature scope expansion; it will be picked up if/when Phase 57b is actually implemented for all rights
+   together.
+2. **Resolved:** Part B (origin/proxy IP display) stays a Phase 70 placeholder, as recorded in §17.9–§17.11.
+   No further design work now.
 
-### 17.13 Anything not determined
+### 17.14 Phase 69 — implemented 2026-08-07
+
+Added the dedicated `domainmanager:dns_record_proxy` right (single UPDATE bit, not per-type — see §17.5):
+
+- **Right constant + matrix entry:** `src/Profile.php` — `DNS_RECORD_PROXY_RIGHT` constant, wired into
+  `getAllRights()` as its own matrix row.
+- **Registration:** `src/Installer.php::registerRights()` — `$migration->addRight(Profile::DNS_RECORD_PROXY_RIGHT, 0)`,
+  not auto-granted to any existing profile, matching the per-type rights' posture. `install()` runs on every
+  plugin upgrade (idempotent `add*` calls), so existing installs pick this up without a dedicated migration step.
+- **Server-side enforcement:** `DnsRecordWriteback::hasProxyToggleRight(int $domains_id)` (new, mirrors
+  `hasRight()`'s entity-aware pattern) checked inside `pushProxiedIfRequested()` before the driver call — an
+  actor without the right has their toggle silently ignored and logged via `PluginLogger::warning()`; the
+  main record edit (name/data/ttl) still succeeds unaffected. No bypass: `is_proxied` is left untouched, so
+  the next Cloudflare update reads and preserves the live proxy state per §17.4's finding.
+- **UI exclusion (§17.11 point 4):** `DomainForm.php`'s `$can_toggle_proxy` now also requires
+  `DnsRecordWriteback::hasProxyToggleRight($domains_id)`, so the checkbox does not render at all for an
+  unprivileged actor — not merely rejected on submit. No template change needed (the existing
+  `{% if can_toggle_proxy %}` condition already covers it).
+
+Not done as part of this phase: `TESTING.md` test-case entries (§17.11 point 5) and live end-to-end
+verification against a real Cloudflare zone (§17.13) — both still open.
+
+### 17.15 Anything not determined
 
 - Live verification against a real Cloudflare zone that the proxy toggle actually works end-to-end (update + toggle + re-read). Phase 49's code is integrated and appears functional based on code review, but the §12.8 style "live account verification" has not been done.
 - Whether the NsResolver or a sibling resolver class is the right place for a public-IP fetcher (§17.10 open point 10), or whether the logic belongs inline in the domain form or in a separate service.

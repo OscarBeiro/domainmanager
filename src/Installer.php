@@ -953,6 +953,11 @@ class Installer
         foreach (Profile::getDnsRecordRights() as $field) {
             $migration->addRight($field, 0);
         }
+        // ARCHITECTURE.md §17.3/§17.5 (Phase 69): proxy toggling is
+        // sensitive enough (exposes origin IP, drops WAF/DDoS protection
+        // when turned off) to gate independently of the per-type rights
+        // above — likewise not auto-granted to any existing profile.
+        $migration->addRight(Profile::DNS_RECORD_PROXY_RIGHT, 0);
         // Migration::addRight() inserts rows directly: reset the rights cache
         ProfileRight::cleanAllPossibleRights();
     }

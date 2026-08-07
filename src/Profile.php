@@ -77,6 +77,18 @@ class Profile extends CoreProfile
     public const DNS_RECORDS_RIGHT_TXT   = 'domainmanager:dns_records_txt';
 
     /**
+     * Right gating whether a user can toggle a Cloudflare record's proxy
+     * ("orange cloud") state (ARCHITECTURE.md §17.3). Separate from the
+     * per-type write-back rights above: flipping proxy off exposes the
+     * origin IP and drops Cloudflare's WAF/DDoS protection, flipping it on
+     * changes TLS termination — sensitive enough to gate independently of
+     * general record UPDATE. Not per-type: proxy eligibility is read live
+     * from each record's `proxiable` flag, not fixed per `DomainRecordType`
+     * (§17.5), so a single UPDATE bit covers it.
+     */
+    public const DNS_RECORD_PROXY_RIGHT = 'domainmanager:dns_record_proxy';
+
+    /**
      * Map of writable `DomainRecordType` name to its per-type right, kept
      * here as the single source of truth (`DnsRecordWriteback` reads it
      * rather than duplicating the mapping).
@@ -160,6 +172,14 @@ class Profile extends CoreProfile
                 'field'  => $field,
             ];
         }
+
+        $rights[] = [
+            'rights' => [
+                UPDATE => __('Toggle Cloudflare proxy status', 'domainmanager'),
+            ],
+            'label'  => __('DNS Record: Proxy toggle', 'domainmanager'),
+            'field'  => self::DNS_RECORD_PROXY_RIGHT,
+        ];
 
         return $rights;
     }

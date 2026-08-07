@@ -17,6 +17,8 @@ Entries are grouped into **Features** (new capability, UI/UX change, refactor, d
 change) and **Bugs** (something that was actually broken, fixed) — one line each.
 
 ## [Unreleased]
+### Features
+- **New dedicated right `domainmanager:dns_record_proxy` gates Cloudflare proxy-toggle writes (Phase 69, ARCHITECTURE.md §17).** Previously the proxy checkbox on the `DomainRecord` edit form was gated only by the per-type UPDATE write-back right, treating proxy state like any other editable field even though flipping it off exposes the origin IP and drops WAF/DDoS protection. Added `Profile::DNS_RECORD_PROXY_RIGHT` (single UPDATE bit, not per-type — proxy eligibility is read live from each record's `proxiable` flag rather than fixed per type) registered via `Installer::registerRights()`, not auto-granted to any existing profile. `DnsRecordWriteback::hasProxyToggleRight(int $domains_id)` mirrors the existing entity-aware `hasRight()` pattern and is checked both in `DomainForm.php` (excludes the checkbox from rendering entirely for an unprivileged actor) and inside `pushProxiedIfRequested()` (server-side defense against a crafted POST bypassing the missing/disabled control — the toggle is silently ignored and logged via `PluginLogger::warning()`, while the rest of the record edit still succeeds). No search option registered for the new right, matching the four existing per-type rights, which also lack one — Phase 57b (rightname search-option support for Profile history) remains unimplemented for all five rights and is tracked separately.
 
 ## [1.5.2] - 2026-08-07
 ### Features

@@ -3490,3 +3490,53 @@ amendment.
 - [ ] Not yet verified live end-to-end (the two regression cases above and a real upgrade run
   against `~/containers/testing`'s existing diverged `DomainSync` row, confirming it is left
   untouched rather than overwritten)
+
+### Phase 69 — dedicated `domainmanager:dns_record_proxy` right (ARCHITECTURE.md §17)
+
+- **Right registered, not auto-granted.** After running the plugin's install/update, a fresh profile
+  (or an existing one) should show a new "DNS Record: Proxy toggle" row in the Domain Manager rights
+  matrix (`src/Profile.php::getAllRights()`), with the UPDATE bit unchecked by default for every
+  existing profile.
+- **Regression case — proxy checkbox absent without the right.** As a user with the per-type UPDATE
+  right for A/AAAA/CNAME but *without* `domainmanager:dns_record_proxy`, open the edit form for a
+  proxiable record on a Cloudflare-managed, write-back-editable domain. Expected: the "Proxied"
+  checkbox does not render in the HTML at all (verify via page source, not just visually) — the rest
+  of the edit form (name/data/ttl) still renders and remains editable.
+  - [ ] Not yet verified live.
+- **Regression case — proxy checkbox appears once the right is granted.** Grant the same user
+  `domainmanager:dns_record_proxy` (UPDATE) on their profile. Reload the same edit form. Expected: the
+  checkbox now renders, matching current `is_proxied` state, and toggling + saving pushes the change
+  to Cloudflare via the existing `setProxied()` path.
+  - [ ] Not yet verified live.
+- **Regression case — server-side rejection of a crafted POST.** As the unprivileged user from the
+  first case, submit a raw POST to the `DomainRecord` update endpoint including
+  `_domainmanager_proxied=1` (bypassing the absent client-side control). Expected: the main record
+  update (name/data/ttl) still succeeds; the proxy state is left untouched (`is_proxied` unchanged in
+  `ImportedRecord`, no `setProxied()` call reaches Cloudflare); a warning is written via
+  `PluginLogger::warning()` naming the rejected toggle.
+  - [ ] Not yet verified live.
+- **Regression case — entity-awareness.** As a user who holds `domainmanager:dns_record_proxy` only
+  on a different entity than the one the target `Domain` belongs to (non-recursive), confirm
+  `DnsRecordWriteback::hasProxyToggleRight()` returns `false` and both the UI exclusion and the
+  server-side rejection above apply, matching the entity-aware pattern already used by
+  `hasTypeRight()`/`hasPurgeRight()` (§15.2 Phase 52).
+  - [ ] Not yet verified live.
+- **Regression case — no starvation of cron/reconciler paths.** Confirm a scheduled `DomainSync` run
+  against a domain with a proxied record still completes normally (name/data/ttl reconciliation and
+  `is_proxied` refresh unaffected) regardless of which profiles hold the new right — the reconciler
+  path never sets `_domainmanager_proxied`, so `pushProxiedIfRequested()` bails before the right check
+  is even reached (§17.7).
+  - [ ] Not yet verified live.
+- **Verified by code inspection, 2026-08-07:**
+  - Confirmed `Installer::registerRights()` adds the new right with default bits `0` (not auto-granted),
+    matching the per-type rights' posture, and that `install()` runs on every plugin upgrade so existing
+    installs pick up the new row.
+  - Confirmed `hasProxyToggleRight()` mirrors `hasRight()`'s exact entity-aware shape
+    (`Session::haveRight()` + `Session::haveAccessToEntity()` against the target `Domain`'s entity).
+  - Confirmed `pushProxiedIfRequested()`'s new check sits after the existing driver-capability check and
+    before any Cloudflare call, and that its early return leaves `is_proxied` untouched — no bypass via
+    the next reconciliation cycle (§17.4's finding still holds).
+  - Confirmed `DomainForm.php`'s `$can_toggle_proxy` now ANDs in `hasProxyToggleRight($domains_id)`; no
+    template change was needed since the existing `{% if can_toggle_proxy %}` condition already covers it.
+- [ ] Not yet verified live end-to-end against `~/containers/testing` with a real Cloudflare-managed
+  domain and two profiles (with/without the new right).
