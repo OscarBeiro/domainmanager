@@ -3273,3 +3273,162 @@ and the second carries more operational risk (Block D consequences, §16.7) wort
   version of this same feature request being test-driven on that instance — worth asking before
   treating it as a representative "admin tuned this" example versus disposable test-instance
   state.
+
+---
+
+## 17. Research (2026-08-07) — Proxy-toggle right, and origin/proxy IP display
+
+Planning-only research on two requests: (1) a separate right for toggling Cloudflare's proxy state, independent of the DNS record UPDATE right; (2) surfacing both the origin IP and the proxied-through Cloudflare public IP for proxied records.
+
+### 17.1 Headline finding — proxy-toggle control is already user-editable
+
+Phase 49's proxy-toggle implementation (§9 Phase 49 / §15.2 Phase 49) is already live. Users with the per-type UPDATE right can toggle the proxy state via a checkbox on the `DomainRecord` edit form. The request covers building a **separate right**, not the control itself.
+
+### 17.2 Verification — is proxy state currently editable, and by which right?
+
+**Finding 1: Proxy control exists and is user-editable today.**
+
+- **UI location:** `templates/domainrecord_edit_panel.html.twig:55-76` — a checkbox-switch labeled "Proxied" rendered when editing a proxiable-type record (A/AAAA/CNAME) on a Cloudflare-managed domain.
+- **Condition that renders it:** `domainrecord_edit_panel.html.twig:55` — `{% if can_toggle_proxy %}`.
+- **Where the condition is set:** `src/DomainForm.php:295-297`, computed as: `$can_toggle_proxy = $can_update && DnsRecordWriteback::isProxiableType($type) && DnsRecordWriteback::supportsProxyToggle($state)`.
+- **Current right:** The proxy toggle is gated on the **UPDATE right for that record's type** (via `$can_update`, which itself checks `DnsRecordWriteback::hasTypeRight(..., UPDATE)`). There is **no separate right** today — proxy state is treated as part of the record's editable content, like `data` or `ttl`.
+- **The control itself is not new.** Phase 49 (already shipped, commits `11f381c` and `73ee509` on `develop`) integrated the proxy checkbox. The checkbox posts a synthetic `_domainmanager_proxied=0/1` field; `DnsRecordWriteback::pushProxiedIfRequested()` (`src/Service/DnsRecordWriteback.php:546-609`) reads it after the main form save and calls `setProxied()` on the driver to push the toggle upstream. Confirmed working live: the toggle is callable and does push state to Cloudflare.
+
+**Finding 2: `is_proxied` lives on `ImportedRecord` (glpi_plugin_domainmanager_records), tri-state (1/0/NULL).**
+
+- Schema: `glpi_plugin_domainmanager_records.is_proxied` (`tinyint NULL DEFAULT NULL`, added in Phase 7a per §9 Phase 7 addendum). Confirmed in `src/Installer.php:317-318` via `addField()`.
+- Values: `1` = proxied through Cloudflare, `0` = eligible-but-not-proxied, `NULL` = not applicable (either non-proxiable type, or non-Cloudflare driver, or never synced).
+- Refreshed on every sync by `src/Service/SyncEngine.php` and `src/Service/RecordReconciler.php`, regardless of whether other record fields changed — see §9 Phase 7 addendum ("proxy toggle can change with no other content change").
+
+**Finding 3: Proxy changes flow through existing `DnsRecordWriteback` write path, not a separate controller.**
+
+- Write-back hook: `src/Service/DnsRecordWriteback.php:onPreUpdate()` runs `pushProxiedIfRequested()` after the main record update.
+- The actual proxy toggle call: `DnsRecordWriteback::pushProxiedIfRequested()` (line 546) checks for the synthetic `_domainmanager_proxied` field, compares it to the current `is_proxied`, and calls `driver->setProxied()` if they differ.
+- Driver method: `src/Contract/DnsRecordProxyToggleInterface.php:52` defines the interface; `src/Driver/CloudflareDriver.php:687-710` implements `setProxied()` via `PATCH /zones/{zoneId}/dns_records/{remoteId}` with just `{proxied: bool}`.
+- Reconciler bypass: `RecordReconciler` updates records with `_domainmanager_sync=1` flag set (§11.20). Line 548 bails early if `_domainmanager_proxied` is absent, so cron-driven syncs never trigger toggles.
+
+### 17.3 Scope verdict — adding the separate right
+
+**Permission only, not control + permission.** The control is already built. The task is solely to add a server-side right check and thread it through `DnsRecordWriteback::pushProxiedIfRequested()`.
+
+### 17.4 The bypass risk — how `proxied` must be pinned for unprivileged actors
+
+**Finding 4: `proxied` is always sent explicitly on Cloudflare updates, not relying on omission-preserves semantics.**
+
+- In `src/Driver/CloudflareDriver.php:updateRecord()` (line 523-551), line 531 reads the record's **current** `proxied` state live from Cloudflare before any update.
+- Line 538 sends it back in the PUT payload: `'proxied' => $proxied`.
+- Design stance per §12.2 item 2: never omit `proxied`; always send it explicitly.
+
+**Consequence for the new right:** An actor WITHOUT a hypothetical separate proxy-toggle right can still edit `data`/`ttl` on a proxied record. When `pushProxiedIfRequested()` is called, it compares the synthetic `_domainmanager_proxied` field against the stored `is_proxied`. If the field is absent (because the user has no toggle right), the method bails at line 548 and never pushes a toggle. The stored `is_proxied` is never touched, so the next Cloudflare update reads the unchanged live proxy state and preserves it. **No bypass is possible.** The safe pattern is already in place.
+
+**Finding 5: Verify PATCH vs PUT, recommend one.**
+
+- Confirmed: CloudflareDriver uses PUT (line 533), not PATCH. PUT semantics are "full replace"; the design stance is to send the full field set (`name`, `type`, `content`, `ttl`, `proxied`) rather than relying on Cloudflare to preserve unspecified fields.
+- For the new right: since `proxied` is always explicit in the PUT payload (never omitted), there is **no choice between "omit if unprivileged" vs "send current value"** — the design already sends the current value. If a future driver used PATCH and omitted `proxied` when unprivileged, that would be cleaner (no extra payload). For now, the current approach is safe and transparent (payload always includes what was sent).
+
+### 17.5 Recommended right shape — single new right name vs. per-type bit
+
+**Recommendation: a new right name, `domainmanager:dns_record_proxy`, with a single UPDATE bit.**
+
+**Reasoning:**
+- **Against per-type bits (adding a fourth bit to the existing four rights):** Proxy eligibility is **not** a fixed per-type property. CloudflareDriver reads it live from each record's `proxiable` flag (confirmed per §9 Phase 7 addendum and §12.6). An A record on one domain might be proxiable, while an A record on another domain controlled by a zone-scoped token is not. Per-type granularity would mislead — "I grant proxy-toggle on A records" would not guarantee any specific A record is toggleable. The right check must occur at toggle time with the record's live `proxiable` state, not at grant time with a hardcoded type list.
+- **For a single right name:** Simpler, clearer (one right = one action), matches the pattern of `domainmanager:unlock_imported` (also a single UPDATE bit for a narrow action). Eliminates the false confidence of per-type bits.
+- **Registration:** One row on `glpi_profilerights` (name = `domainmanager:dns_record_proxy`, bits = UPDATE only), rendered via `src/Profile.php`'s existing `displayRightsChoiceMatrix()` call, alongside the four per-type write-back rights (§11.6).
+- **Interaction with Profile search options:** Per §15.3 Phase 57b, each new right name needs a search option to appear in profile History. This right would need one registered via `plugin_domainmanager_getAddSearchOptionsNew()` on `Profile`, following the pattern at §15.3 lines 2494-2506. Reserve a search-option id from the `9400-9429` block (§3.7.4).
+
+**Alternative (rejected, recorded for clarity):** per-type bits (`domainmanager:dns_records_a_proxy`, etc.) would allow "grant proxy toggle only on TXT, not AAAA." That level of granularity is not wrong in principle; it's unmotivated because the actual constraint is `proxiable` at runtime, not `type` at grant time. A future request might change this if per-type usage patterns emerge, but today there's no signal it's needed.
+
+### 17.6 Enforcement location — exact method(s) and entity-awareness
+
+**Check location:** `src/Service/DnsRecordWriteback.php:pushProxiedIfRequested()`, after line 573's existing driver-capability check.
+
+**Current check sequence (line 573-576):**
+```php
+$driver = self::getWritableDriver($state);
+if (!$driver instanceof DnsRecordProxyToggleInterface) {
+    return;
+}
+```
+
+**New check to add (after line 576, before line 578):**
+```php
+if (!self::hasProxyToggleRight($domains_id)) {
+    PluginLogger::warning(...);
+    return;  // Silently ignore the toggle; main record edit still succeeds
+}
+```
+
+**Entity-awareness:** `$domains_id` is already available (passed in and used at line 568). The right check must be `Session::haveAccessToEntity(...) && Session::haveRight('domainmanager:dns_record_proxy', UPDATE)` — matching §8's entity-aware pattern for all other write operations. The actual `Domain` entity must be checked, not the Supplier's entity.
+
+**Method signature:** `private static function hasProxyToggleRight(int $domains_id): bool` — reusing the existing pattern of `hasTypeRight()`, `hasPurgeRight()`, etc. (line 1325-1345), thread `$domains_id` through and call `Session::haveAccessToEntity()` to match the fix already applied in Phase 52 (§15.2 Phase 52, outcome point at line 2372-2374).
+
+### 17.7 Cron/reconciler paths — proxy toggles are user-only
+
+**Finding 7: Proxy toggle only fires from user-initiated edit, never cron/reconciler.**
+
+- `pushProxiedIfRequested()` is called from `onPreUpdate()` hook (line 522), which fires only on user-initiated `DomainRecord::update()` calls. The cron's own `RecordReconciler::reconcileProxy()` (if one exists) would be a separate flow, but today no such method exists — cron sync only reconciles `name`/`data`/`ttl`/`is_proxied` field values, never toggles state via `setProxied()`.
+- The synthetic `_domainmanager_sync` flag (§11.20) is set only by `RecordReconciler` (line 1774, confirmed in §11.20's first bullet). Reconciler-driven updates skip `pushProxiedIfRequested()` entirely (line 548 checks for `_domainmanager_proxied` and bails if absent). So cron never needs or uses the new right.
+- **No gate is needed on the reconciler path,** confirming the right is user-action-only.
+
+### 17.8 UI — where the control must only render when `proxiable` is true
+
+**Finding 8: The proxy toggle must only render when `proxiable` is true for that specific record.**
+
+- **Current template location:** `templates/domainrecord_edit_panel.html.twig:55-76`, conditional on `can_toggle_proxy`.
+- **Where `proxiable` is determined:** Live from Cloudflare's per-record `proxiable` flag (set at sync time as part of `is_proxied` tri-state logic, per §9 Phase 7 addendum). The flag is only available at sync time; it is **not** persisted separately — only `is_proxied` (1/0/NULL) is stored, where `NULL` means "not proxiable or not applicable."
+- **Current behavior:** `is_proxied !== null` is the proxy-control visibility gate (line 299 in `src/DomainForm.php`). If `is_proxied` is NULL, the `can_toggle_proxy` condition fails and the control does not render.
+- **With the new right:** The template condition at `domainrecord_edit_panel.html.twig:55` already checks `can_toggle_proxy`, which includes `DnsRecordWriteback::supportsProxyToggle($state)` (line 297 in `DomainForm.php`). Adding the new right check to `hasProxyToggleRight()` (proposed §17.6) updates that condition automatically. No template change needed.
+
+### 17.9 Part B — Origin IP and proxied IP display
+
+**Scope:** For a Cloudflare-proxied A/AAAA record, show both the origin IP (what the customer configured) and the public-facing Cloudflare anycast address.
+
+**Finding 9: Cloudflare API returns the origin IP in `content`, not the anycast address.**
+
+- Confirmed in §12.2 item 4 (unverified but standard for all CDN providers): Cloudflare's API `GET .../dns_records` returns the **origin IP** in the `content` field, never the public-facing anycast address.
+- Confirmed in code: `src/Service/SyncEngine.php` and `src/Service/RecordReconciler.php` both store the fetched `content` field directly into `DomainRecord::data`. That is the origin IP.
+
+**Finding 10: Live lookup is required to get the public anycast address.**
+
+- **Precedent:** `src/Service/NsResolver.php` wraps `dns_get_record(DNS_NS, ...)` to fetch a domain's live nameservers. A sibling `ProxyedIpResolver` class could follow the same pattern: `dns_get_record(DNS_A, ...) / dns_get_record(DNS_AAAA, ...)` to fetch the public-facing address.
+- **Cost constraint:** Phase 23 (§9 Phase 23) established that a form shouldn't pay for a DNS query it can't use — a records tab with 50 rows must not trigger 50 synchronous queries. Options (no decision here, only framing):
+  - **Lazy per-row:** Show origin IP always; "Show public IP" link per row that queries on click (no performance hit on page load).
+  - **Async fill:** Query after page load, populate via JS as results arrive (form is usable immediately; data fills in).
+  - **Cache with TTL:** Pre-cache public IPs in the state table, refresh on sync or on-demand (requires new schema columns).
+
+**Finding 11: Origin IP is already visible.**
+
+- The record's `data` field (containing the origin IP for proxied A/AAAA) is already visible on the Records tab as the "Data" column and fully editable via the record's own edit form.
+- "Show both" would add **only** the public Cloudflare anycast address as new information. The origin IP is already there.
+
+### 17.10 Part B verdict — worth building or worth deferring
+
+**Recommendation: Defer.** The feature (showing the public IP) would add value only if an operator needs to know "what DNS resolves to globally" (e.g., to verify the proxy is working or to troubleshoot a redirect). That is a valid use case, but it's not blocking any current functionality. The origin IP (already visible in `data`) answers "what is the record configured to," which is the primary question. The public IP is supplementary. 
+
+**Cost-benefit:**
+- **Benefit:** Confirms Cloudflare proxy is operational, helps troubleshoot CDN issues.
+- **Cost:** New schema columns or live DNS query (with caching complexity), new UI surface, new code paths in reconciliation if cached.
+- **Maturity signal:** The plugin's Cloudflare integration is still being stabilized (Phase 49 proxy toggle is recent; Phase 41 write-back is recent; live verifications per §12.8 are still pending). Deferring a nice-to-have until the core write-back paths are proven solid is prudent.
+
+### 17.11 Proposed phase split
+
+Part A (proxy-toggle right) is straightforward and small — recommend as **Phase 69** (continuing from Phase 68, §15.6):
+
+1. Register the new right in `src/Installer.php`'s `addRight()` call.
+2. Add the search option on `Profile` via `plugin_domainmanager_getAddSearchOptionsNew()` for Profile History visibility.
+3. Implement `DnsRecordWriteback::hasProxyToggleRight(int $domains_id)` and thread it into `pushProxiedIfRequested()`.
+4. **UI exclusion, not just a server-side gate (added 2026-08-07 per owner instruction):** for an actor who lacks the new right, the proxy checkbox on the `DomainRecord` edit form must not render as an editable control at all — not merely rejected on submit. Options to evaluate at implementation time: omit the field entirely from the template, or render it disabled/read-only showing the current state. `pushProxiedIfRequested()`'s server-side check (point 3) remains mandatory regardless, as defense against a crafted POST bypassing a hidden/disabled client-side control.
+5. Add test cases to `TESTING.md`: verify users without the right cannot toggle via the form (both that the control is absent/disabled in rendered HTML, and that a raw POST with `_domainmanager_proxied` is still rejected server-side); verify error message is logged.
+
+Part B (origin/proxy IP display) is deferred — recommend creating a **Phase 70** issue placeholder with the three cost-options outlined above, pending a decision on display strategy (lazy/async/cached).
+
+### 17.12 Open items awaiting approval
+
+1. Whether Phase 69 should include the search-option registration, or defer it alongside §15.3 Phase 57b's general profile-history effort (the two are not blocking each other, but might be coordinated).
+2. Whether to record the IP-display cost options now as a Phase 70 design note, or wait until the feature is prioritized to do the full investigation.
+
+### 17.13 Anything not determined
+
+- Live verification against a real Cloudflare zone that the proxy toggle actually works end-to-end (update + toggle + re-read). Phase 49's code is integrated and appears functional based on code review, but the §12.8 style "live account verification" has not been done.
+- Whether the NsResolver or a sibling resolver class is the right place for a public-IP fetcher (§17.10 open point 10), or whether the logic belongs inline in the domain form or in a separate service.
+- The IP-display strategy decision: lazy per-row, async fill, or cached. All three are viable; the choice depends on the operator's expected workflow (frequency of viewing, tolerance for lag, trust in cache staleness).
