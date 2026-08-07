@@ -291,14 +291,10 @@ class DomainForm
         // §9 Phase 49: the proxy-status checkbox is only worth injecting
         // when this specific record could ever be proxied (A/AAAA/CNAME —
         // TXT/MX/NS never are) *and* the user can actually push a change
-        // (same $can_update gate as name/data/ttl above). §17.6/§17.8
-        // (Phase 69): also requires the dedicated proxy-toggle right, so
-        // an actor without it never sees the control at all, not merely
-        // a rejection on submit.
+        // (same $can_update gate as name/data/ttl above).
         $can_toggle_proxy = $can_update
             && DnsRecordWriteback::isProxiableType($type)
-            && DnsRecordWriteback::supportsProxyToggle($state)
-            && DnsRecordWriteback::hasProxyToggleRight($domains_id);
+            && DnsRecordWriteback::supportsProxyToggle($state);
         $imported = ImportedRecord::getForDomainRecord($records_id);
         $current_proxied = $imported !== null && $imported->fields['is_proxied'] !== null
             ? (bool) $imported->fields['is_proxied']

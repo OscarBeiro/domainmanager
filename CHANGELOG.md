@@ -10,8 +10,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Entries are grouped into **Features** and **Bugs**, one line each.
 
 ## [Unreleased]
-### Features
-- Toggling a DNS record's Cloudflare proxy status now requires a dedicated permission, separate from general record editing. Existing profiles keep their current record-editing access but must be granted this new permission explicitly before the proxy toggle appears on the edit form.
 
 ## [1.5.2] - 2026-08-07
 ### Features

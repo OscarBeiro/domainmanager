@@ -3455,6 +3455,30 @@ Added the dedicated `domainmanager:dns_record_proxy` right (single UPDATE bit, n
 Not done as part of this phase: `TESTING.md` test-case entries (§17.11 point 5) and live end-to-end
 verification against a real Cloudflare zone (§17.13) — both still open.
 
+### 17.14b Phase 69 reverted — folded back into per-type UPDATE, 2026-08-07
+
+**Owner decision, same day as implementation:** don't gate proxy toggling behind a separate right at
+all. Reasoning offered against the separate right: reusing the existing per-type write-back UPDATE
+bit is simpler, and the argument for a dedicated right (§17.3/§17.5 — proxy toggling is materially
+riskier than an ordinary field edit, and not fixed per record type so a per-type bit would be
+misleading) was judged not worth the extra right for now.
+
+**Reverted:**
+- `src/Profile.php` — removed `DNS_RECORD_PROXY_RIGHT` constant and its `getAllRights()` matrix row.
+- `src/Installer.php::registerRights()` — removed the `addRight()` call.
+- `src/Service/DnsRecordWriteback.php` — removed `hasProxyToggleRight()` and its check inside
+  `pushProxiedIfRequested()`.
+- `src/DomainForm.php` — `$can_toggle_proxy` no longer ANDs in the right check; back to
+  `$can_update && isProxiableType($type) && supportsProxyToggle($state)`, i.e. Finding 1's original
+  status quo (§17.2) — gated solely by the per-type write-back UPDATE right.
+
+Net effect: proxy toggling behaves exactly as it did before Phase 69 (per-type UPDATE governs it, no
+separate permission). §17.2's bypass-risk analysis (Finding 4: `proxied` is always sent explicitly on
+Cloudflare writes, so an unprivileged edit can never smuggle a toggle through) still applies and was
+never dependent on the now-removed right. §17.3–§17.6's reasoning is left in place above as the record
+of what was considered and why it was ultimately not adopted, in case a future report of unwanted
+proxy-toggle access revisits this.
+
 ### 17.15 Anything not determined
 
 - Live verification against a real Cloudflare zone that the proxy toggle actually works end-to-end (update + toggle + re-read). Phase 49's code is integrated and appears functional based on code review, but the §12.8 style "live account verification" has not been done.
