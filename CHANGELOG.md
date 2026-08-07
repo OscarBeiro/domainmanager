@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Entries are grouped into **Features** and **Bugs**, one line each.
 
 ## [Unreleased]
+
+## [1.5.2] - 2026-08-07
 ### Features
 - Domain synchronization now runs continuously (every 10 minutes) instead of once a day, so newly added or changed domains are picked up much sooner. Existing installs are only switched over automatically if the automatic action's schedule hasn't been manually customized.
 - Renamed the "blast-radius guard" sync safety setting to "sync safety guard" for clarity, and added a warning on the Setup page marking its two thresholds as advanced settings best left at their defaults.

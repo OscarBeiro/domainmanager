@@ -16,7 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Entries are grouped into **Features** (new capability, UI/UX change, refactor, doc/config
 change) and **Bugs** (something that was actually broken, fixed) — one line each.
 
-## [Unreleased] (1.5.1-beta2)
+## [Unreleased]
+
+## [1.5.2] - 2026-08-07
 ### Features
 - **`DomainSync` automatic action switched to continuous-mode defaults.** `Installer::registerCronTasks()` now registers `DomainSync` at 10 minutes / `param = 3` / `hourmin = 0` / `hourmax = 24` (was daily / `param = 20` / `hourmin = 23`) on fresh installs. New `Installer::upgradeDomainSyncContinuousDefaults()` updates an already-installed instance's stored `glpi_crontasks` row to the same values, but only when it still holds exactly the previous shipped default tuple — an admin-tuned or otherwise diverged row is left untouched (ARCHITECTURE.md §16.6, §16.10).
 - **`cronDomainSync()`'s candidate query gained a deterministic secondary `ORDER BY glpi_domains.id ASC`** after the existing `last_sync_date ASC` ordering, removing any ambiguity from same-second ties (ARCHITECTURE.md §16.4).
