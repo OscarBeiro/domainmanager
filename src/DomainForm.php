@@ -399,11 +399,27 @@ class DomainForm
         global $DB;
 
         $iterator = $DB->request([
-            'SELECT' => ['domainrecords_id', 'is_proxied', 'proxy_addresses', 'is_ttl_auto'],
+            'SELECT' => ['glpi_plugin_domainmanager_records.domainrecords_id', 'is_proxied', 'proxy_addresses', 'is_ttl_auto'],
             'FROM'   => 'glpi_plugin_domainmanager_records',
+            // Phase 78 (ARCHITECTURE.md §19.8): join native DomainRecord and
+            // require is_deleted = 0. Without this, a record trashed by
+            // RecordReconciler (upstream deletion) keeps whatever
+            // is_proxied/proxy_addresses it last had here — untouched by the
+            // trash path, which only soft-deletes the native row — and if
+            // GLPI's own trash-bin view for this tab is toggled on, the
+            // deleted row still gets overlaid with that stale proxy state.
+            'INNER JOIN' => [
+                DomainRecord::getTable() => [
+                    'FKEY' => [
+                        DomainRecord::getTable()                 => 'id',
+                        'glpi_plugin_domainmanager_records'      => 'domainrecords_id',
+                    ],
+                ],
+            ],
             'WHERE'  => [
-                'domains_id' => $domains_id,
-                'OR'         => [
+                'glpi_plugin_domainmanager_records.domains_id' => $domains_id,
+                DomainRecord::getTable() . '.is_deleted'       => 0,
+                'OR'                                           => [
                     'is_proxied'  => 1,
                     'is_ttl_auto' => 1,
                 ],

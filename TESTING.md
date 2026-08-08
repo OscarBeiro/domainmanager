@@ -3738,3 +3738,17 @@ don't rely on the "click date" UI in this GLPI version.
   Expected: still hard-aborts exactly as before this phase — the skip-with-log behavior is scoped
   to sync-driven TXT duplicates only.
   - [ ] Not yet verified live
+
+### Phase 78: deleted proxied record no longer shows stale proxy state
+
+- **Proxy a record, sync, delete it upstream, sync again, then view the Records tab's native
+  trash bin.** Set up a Cloudflare-proxied A record, run "Update Now" so the cloud icon and
+  proxied-IP line appear; delete that record at Cloudflare; run "Update Now" again so the local
+  row moves to the trash bin. Toggle the Records tab's native "show deleted" view. Expected: the
+  trashed row appears with no cloud icon and no leftover proxied-IP line — just its last-known
+  plain data.
+  - [ ] Not yet verified live
+- **Confirm live (non-deleted) proxy indicators are unaffected.** With the trash-bin view back
+  off, confirm every still-live proxied record still shows its cloud icon and proxied-IP line as
+  before this phase.
+  - [ ] Not yet verified live

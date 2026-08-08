@@ -3822,6 +3822,10 @@ Files: `src/Service/SyncEngine.php`, `src/Controller/SyncController.php`,
   `domainmanager.log` should show the "Skipped mirroring duplicate upstream TXT record" line;
   confirm a genuine user-initiated duplicate TXT add (not sync-driven) still hard-aborts with its
   original error message.
+- 78: proxy (Cloudflare) a record, sync, confirm the cloud icon and proxied-IP line show; delete
+  that record upstream and sync again so it's trashed locally; toggle the Records tab's native
+  "show trash bin" view and confirm the trashed row shows with no proxy icon/IP overlay; toggle
+  trash-bin view off and confirm the still-live records' proxy indicators are unaffected.
 
 ### 19.7 Phase 77 (new, user-reported 2026-08-08; implemented) — Reconciler sync blocked by a genuine upstream TXT duplicate
 
@@ -3863,7 +3867,7 @@ is unchanged.
 
 Files: `src/Service/DnsRecordWriteback.php`.
 
-### 19.8 Phase 78 (new, user-reported 2026-08-08, deferred — not yet planned in detail) — Deleted proxied record leaves stale proxy state
+### 19.8 Phase 78 (new, user-reported 2026-08-08; implemented) — Deleted proxied record leaves stale proxy state
 
 Bug report: user observed a record row like:
 
@@ -3872,22 +3876,30 @@ x    Automatic    4.5.7.9
 104.21.47.37, 172.67.170.91
 ```
 
-Interpretation, needs confirming at implementation time: a proxied (Cloudflare orange-cloud) A
-record was deleted upstream, but the local row still shows proxied IPs
-(`104.21.47.37, 172.67.170.91` look like Cloudflare edge IPs, not the origin) and possibly still
-shows a proxy indicator. Expected: once the record is gone, it should read as "not proxied" (no
-proxy symbol / revert to "no") and the stale proxied-IP display should be cleared, not carried
-over from the last-known state.
+Interpretation, confirmed at implementation time: this is a display-only artifact, not stale data
+persisting forever. `DomainForm::renderProxyIndicators()` (`src/DomainForm.php:396-`) queries
+`glpi_plugin_domainmanager_records` for `is_proxied`/`proxy_addresses` keyed only by `domains_id`,
+with no join back to the native `glpi_domainrecords` row's `is_deleted` flag — while
+`RecordReconciler::doReconcile()`'s trash loop (`src/Service/RecordReconciler.php:332-353`)
+soft-deletes the native `DomainRecord` when a record disappears upstream, it never touches the
+`ImportedRecord` row's `is_proxied`/`proxy_addresses`, which is otherwise correct (the next sync
+that either recreates or restores-and-updates the record refreshes both fields unconditionally,
+per the "is_proxied is refreshed on every sync" comment at `RecordReconciler.php:268-271`). The
+gap is narrow but real: if GLPI's own trash-bin toggle for the Records tab is on, the now-trashed
+row still renders (core's own list, unaffected by this plugin), and the overlay query — having no
+`is_deleted` filter — still attaches the last-known proxied state and IPs to it, exactly matching
+the report.
 
-User was unsure about the proxy-symbol half but confident the leftover proxied-IP display is
-wrong regardless.
+Fix: `renderProxyIndicators()`'s query now inner-joins `DomainRecord::getTable()` on
+`domainrecords_id` and requires `is_deleted = 0`, so a trashed record's row never gets a proxy
+overlay regardless of the trash-bin toggle. The underlying `ImportedRecord` fields are left
+as-is (not cleared) — the next real sync of that domain already refreshes them unconditionally
+whether the record is recreated fresh or restored, per the comment above; clearing them on trash
+would be redundant with that and was rejected mainly to keep this a single, narrowly-scoped
+display-layer fix rather than touching `RecordReconciler`'s trash path too. Not part of this
+phase: any relation to the pending proxy-toggle-right + origin/proxied-IP display work already
+tracked for branch "8" (see project memory `project_proxy_toggle_right_plan`) — that work is
+about origin-vs-proxied IP presentation on *live* records, not deleted ones, and wasn't touched
+here.
 
-Not yet planned: where the stale state lives (is it cached on the local DB row and only cleared
-on the next successful sync of that name, or is it a display-only artifact composed at render
-time from now-orphaned data) and whether the fix is in `RecordReconciler`/`SyncEngine` (clear
-proxy fields when a record disappears upstream) or in the template composing the origin/proxied-IP
-display. Needs its own research pass before implementation. May relate to the pending
-proxy-toggle-right + origin/proxied-IP display work already tracked for branch "8" (see project
-memory `project_proxy_toggle_right_plan`).
-
-Files: not yet surveyed.
+Files: `src/DomainForm.php`.
