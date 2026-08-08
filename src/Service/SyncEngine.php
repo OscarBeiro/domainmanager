@@ -84,7 +84,8 @@ class SyncEngine
      *                          every other caller leaves this false.
      * @return array{registrar_status: string, dns_status: string,
      *               registrar_message: string, dns_message: string,
-     *               detected_provider: string, last_sync_date: string,
+     *               detected_provider: string, dns_suppliers_id: int,
+     *               last_sync_date: string,
      *               registrar_auth_info: ?string, registrar_privacy_enabled: ?int,
      *               registrar_domain_lock: ?int, registrar_transfer_lock: ?int,
      *               registrar_auto_renew: ?int, registrar_domain_type: ?string,
