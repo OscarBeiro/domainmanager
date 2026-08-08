@@ -97,7 +97,7 @@ class Cron
         $batch_size = max(1, (int) ($task->fields['param'] ?? 20));
 
         $iterator = $DB->request([
-            'SELECT'    => ['glpi_domains.id', 'glpi_domains.entities_id'],
+            'SELECT'    => ['glpi_domains.id', 'glpi_domains.name', 'glpi_domains.entities_id'],
             'FROM'      => 'glpi_domains',
             'LEFT JOIN' => [
                 DomainState::getTable() => [
@@ -141,6 +141,7 @@ class Cron
             $domains_id  = (int) $row['id'];
             $entities_id = (int) $row['entities_id'];
             $is_error    = false;
+            $outcome     = 'synced';
 
             try {
                 $domain = new Domain();
@@ -154,10 +155,16 @@ class Cron
                 ) {
                     $errors++;
                     $is_error = true;
+                    $outcome  = sprintf(
+                        'error (registrar: %s, dns: %s)',
+                        $result['registrar_status'],
+                        $result['dns_status'],
+                    );
                 }
             } catch (Throwable $e) {
                 $errors++;
                 $is_error = true;
+                $outcome  = 'error: ' . $e::class . ': ' . $e->getMessage();
                 $logger->detail(
                     'Cron sync failed for domain #' . $domains_id . ': ' . $e::class . ': ' . $e->getMessage(),
                 );
@@ -180,6 +187,14 @@ class Cron
             if ($state !== null && (int) $state->fields['registrar_suppliers_id'] > 0) {
                 self::tally($per_supplier, (int) $state->fields['registrar_suppliers_id'], $is_error);
             }
+
+            $task->log(sprintf(
+                '%s: domain #%d (%s) — %s',
+                Dropdown::getDropdownName('glpi_entities', $entities_id),
+                $domains_id,
+                $row['name'],
+                $outcome,
+            ));
 
             $processed++;
             $task->addVolume(1);

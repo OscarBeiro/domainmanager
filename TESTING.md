@@ -3607,3 +3607,182 @@ blocked IP — every 403 branch in `CloudflareDriver` previously discarded that 
   (but independent of) the existing write-back warning banner, regardless of which domain ends up
   selected.
   - [ ] Not yet verified live
+
+### Phase 72: per-domain logging on cronDomainSync
+
+- **Trigger `cronDomainSync` manually against a batch of test domains** (Setup > Automatic
+  actions > "domainmanager - domainsync" > Execute, or CLI). Expected: the run's Logs entry shows
+  one line per domain processed (`<entity>: domain #<id> (<name>) — synced`, or `— error (...)`
+  on failure), in addition to the existing run summary and per-entity/per-registrar breakdown
+  lines.
+  - [ ] Not yet verified live
+- **Force one domain in the batch to fail** (e.g. temporarily break its Supplier credentials).
+  Expected: that domain's per-domain log line shows an `error (...)` outcome distinct from the
+  synced ones, and the run summary's error count still matches.
+  - [ ] Not yet verified live
+
+### Phase 74: no duplicate history entry on write-back create/update
+
+- **On a write-back-managed domain (Cloudflare/IONOS/Dinahosting driver configured and
+  write-eligible), add a new writable-type record (A/AAAA/CNAME/TXT) via the native "New Domain
+  record" form.** Expected: the Domain's Historical tab shows exactly one entry for the add (the
+  native "Domain record added" / subitem line) — no second "[Domain Manager] Create ... at
+  \<provider\>: succeeded" line alongside it.
+  - [ ] Not yet verified live
+- **Edit that record's data or TTL.** Expected: exactly one Historical entry per changed field
+  (e.g. "Data updated: ... → ..."), still no separate "[Domain Manager] Update ... succeeded"
+  line.
+  - [ ] Not yet verified live
+- **Force a create or update failure** (e.g. temporarily break the driver's credentials or
+  trigger a validation error at the provider). Expected: still see the plugin's own
+  "[Domain Manager] Create/Update ... at \<provider\>: failed: ..." Historical-tab line — the
+  failure-path logging is unchanged.
+  - [ ] Not yet verified live
+- **Trash a write-back-managed record, then restore it.** Expected: unchanged from before this
+  phase — a "[Domain Manager] Delete ... succeeded"/"Restore ... succeeded" line for each, since
+  native soft-delete/restore logging doesn't fire for non-dynamic items.
+  - [ ] Not yet verified live
+- **Toggle a Cloudflare record's proxy status.** Expected: unchanged — a
+  "[Domain Manager] Proxy toggle ... succeeded" line still appears (this path never had a native
+  duplicate).
+  - [ ] Not yet verified live
+
+### Known upstream GLPI 11 bug: cron task "Logs" detail view never shows per-item lines
+
+Not a Domain Manager bug — confirmed as a genuine GLPI 11 core regression, still present on
+`main` (unreleased next major) as of this check. Affects every plugin's/core's cron task the
+same way, including this plugin's `cronDomainSync`/`cronRdapEnrichment` (Phase 72).
+
+**Symptom:** Setup > Automatic actions > [any task] > Logs lists one row per run (e.g. "Action
+completed, fully processed"). Clicking that row's date to drill into per-item detail reloads the
+tab with the exact same single row — no per-item lines ever appear, even though they exist.
+
+**Root cause (confirmed by diffing `src/CronTask.php` across branches):** `showHistory()`
+builds each run's date link. On GLPI 10.0/bugfixes it correctly links using
+`$data['crontasklogs_id']` (the shared group key every child log row's own `crontasklogs_id`
+column points at). Somewhere in GLPI 11's Twig rewrite of this method, that became
+`(int) $data['id']` — the STOP row's *own* primary key, not the shared group key. Since
+`showHistoryDetail($logid)` queries `WHERE id=$logid OR crontasklogs_id=$logid`, and every
+per-item/summary child row's `crontasklogs_id` points at the run's *start* row (a different id
+than the stop row you clicked), the detail query can never find them. Confirmed still present
+on GLPI 11.0/bugfixes (the pinned target branch) and on `main` (next major, unreleased) as of
+2026-08-08; not present on 10.0/bugfixes. No matching GitHub issue found in
+`glpi-project/glpi` as of this check — worth filing upstream if it still isn't fixed by the
+time this is revisited.
+
+**How to verify this plugin's own cron logging is actually correct despite the broken UI:**
+query `glpi_crontasklogs` directly —
+```sql
+SELECT id, crontasks_id, crontasklogs_id, date, state, volume, content
+FROM glpi_crontasklogs WHERE crontasks_id = <id> ORDER BY id DESC LIMIT 30;
+```
+Every run's rows sharing the same `crontasklogs_id` (the START row's id) are the full picture;
+don't rely on the "click date" UI in this GLPI version.
+
+### Phase 73: batched supplier import no longer syncs inline
+
+- **Import a batch of several new domains from a supplier's discovery modal.** Expected: the
+  request returns quickly (no long wait proportional to batch size), the summary message reports
+  "N domains imported" with no "could not be synced yet" line, and every new `Domain` shows as
+  never-synced (state "Never"/no registrar or DNS info yet) immediately after the redirect.
+  - [ ] Not yet verified live
+- **Trigger `cronDomainSync` manually right after that import** (Setup > Automatic actions >
+  "domainmanager - domainsync" > Execute, or CLI). Expected: the just-imported domains are
+  processed first (or among the first, if the batch exceeds the cron's per-run limit), since they
+  have no `last_sync_date` and sort ahead of every previously-synced domain; each one ends up with
+  real registrar/DNS state afterward, and `is_glpi_created` reads as "not Native" for them.
+  - [ ] Not yet verified live
+- **Re-import a previously-trashed domain (restore path).** Expected: unaffected by this phase —
+  the restored domain already carries its old state row, no new bare state row is created for it,
+  and it simply gets picked up again by the normal oldest-first sync ordering.
+  - [ ] Not yet verified live
+
+### Phase 75: consistent warning styling
+
+- **Open the generic blank "New Domain record" form on a write-back-managed domain** (top-nav
+  "+" or global Domains-records list, then pick a Cloudflare/IONOS/Dinahosting-managed domain).
+  Expected: the write-back warning banner shows the `ti-world-cog` icon inline with its text (no
+  visible layout change from before), in both light and dark theme.
+  - [ ] Not yet verified live
+- **Open the DNS record edit panel while Domain Manager is in read-only mode**, and separately
+  **on an imported/locked record with the read-only mode off**. Expected: each shows its
+  respective banner (`ti-lock` / `ti-cloud-lock`) with no layout regression, in both themes.
+  - [ ] Not yet verified live
+- **Open a domain form whose DNS provider is unsupported or unidentified.** Expected: the
+  `ti-alert-triangle` provider warning (with its "Help us support this provider" link) still
+  renders correctly in both themes.
+  - [ ] Not yet verified live
+- **Open a Supplier's config tab with a Cloudflare configuration missing an Account ID.**
+  Expected: the warning banner renders correctly in both themes.
+  - [ ] Not yet verified live
+- **Screen-reader/accessibility spot check**: confirm all four banners above are announced as
+  alerts (`role="alert"` now present on every one, including the two that previously lacked it —
+  `domain_panel.html.twig`'s provider warning and `supplier_tab.html.twig`'s Cloudflare notice).
+  - [ ] Not yet verified live
+
+### Phase 76: DNS Provider hyperlink survives "Update Now"
+
+- **Load a domain with a live, resolvable Supplier as its DNS provider.** Expected: the DNS
+  Provider field renders as a real hyperlink to that Supplier's own page.
+  - [ ] Not yet verified live
+- **Delete that Supplier, then reload the domain form.** Expected: the DNS Provider field now
+  renders as plain text (no link) — a deleted Supplier genuinely isn't linkable, this is the
+  correct baseline, not a regression.
+  - [ ] Not yet verified live
+- **On a domain with a live Supplier, click "Update Now" and watch the DNS Provider field without
+  reloading the page.** Expected: the field stays (or becomes) a working hyperlink immediately
+  after the sync completes — it should not collapse to plain text and then only become a link
+  again after a manual page reload.
+  - [ ] Not yet verified live
+
+### Phase 77: reconciler sync no longer aborts on a genuine upstream TXT duplicate
+
+- **Create two TXT records with identical name and content at the provider** (Cloudflare/IONOS/
+  Dinahosting) for a write-back-managed domain, then run "Update Now" twice in a row. Expected:
+  the first sync mirrors one of them in locally as usual; the second sync completes successfully
+  (no user-facing abort message) instead of stalling on the duplicate, and `domainmanager.log`
+  shows a "Skipped mirroring duplicate upstream TXT record ..." activity line.
+  - [ ] Not yet verified live
+- **Confirm a genuine user-initiated duplicate TXT add is still rejected.** Manually add a DNS
+  record via the UI with the same type+name+content as an existing TXT record on the same
+  domain (not via sync). Expected: still hard-aborts with the original "already exists for this
+  domain" error message — this phase only changes reconciler-driven (sync) adds.
+  - [ ] Not yet verified live
+- **Confirm A/AAAA/CNAME duplicate protection is unchanged.** Attempt to create a second A record
+  at the same name (manually, or by letting a reconciler sync mirror one in if reproducible).
+  Expected: still hard-aborts exactly as before this phase — the skip-with-log behavior is scoped
+  to sync-driven TXT duplicates only.
+  - [ ] Not yet verified live
+
+### Phase 78: deleted proxied record no longer shows stale proxy state
+
+- **Proxy a record, sync, delete it upstream, sync again, then view the Records tab's native
+  trash bin.** Set up a Cloudflare-proxied A record, run "Update Now" so the cloud icon and
+  proxied-IP line appear; delete that record at Cloudflare; run "Update Now" again so the local
+  row moves to the trash bin. Toggle the Records tab's native "show deleted" view. Expected: the
+  trashed row appears with no cloud icon and no leftover proxied-IP line — just its last-known
+  plain data.
+  - [ ] Not yet verified live
+- **Confirm live (non-deleted) proxy indicators are unaffected.** With the trash-bin view back
+  off, confirm every still-live proxied record still shows its cloud icon and proxied-IP line as
+  before this phase.
+  - [ ] Not yet verified live
+
+### Phase 79: three more warning notices normalized (missed by Phase 75)
+
+- **Open an existing DNS record's edit form on a write-back-managed domain.** Expected: the
+  "Managed by Domain Manager" ribbon-card's "Saving this form updates the record live at ...
+  There is no undo." line now renders as an `alert-warning` banner (icon + visible border/
+  background, `role="alert"`), not plain muted text — matching the identical message already
+  shown that way on the generic "New Domain record" form. Check both light and dark theme.
+  - [ ] Not yet verified live
+- **Open that same domain's Records tab and open its own quick-add panel** (not the generic
+  top-nav "+" form). Expected: its "This creates the record live at <Supplier>. There is no
+  undo." notice now also renders as an `alert-warning` banner, in both themes.
+  - [ ] Not yet verified live
+- **Open a Supplier's Domain Manager tab and select each of Cloudflare, IONOS, and Dinahosting
+  as the API driver in turn.** Expected: each driver's credential-requirement hint ("Requires an
+  Account API Token…" / "Requires an API Key and Secret…" / "Requires the super-admin account's
+  username and password…") now renders as an `alert-warning` banner instead of a plain muted
+  hint, with its "Setup instructions" link still present and working. Check both themes.
+  - [ ] Not yet verified live

@@ -41,9 +41,9 @@
  # touched, not after scrolling past the whole form.
  #}
 <div id="domainmanager_new_record_notices{{ rand }}">
-    <div class="alert alert-warning d-flex align-items-center mb-3 d-none" id="domainmanager_writeback_notice{{ rand }}" role="alert">
-        <i class="ti ti-world-cog me-2"></i>
-        <div>{{ __('This domain is managed by Domain Manager with DNS write-back enabled: creating this record here pushes it live to the provider immediately, with no undo.', 'domainmanager') }}</div>
+    <div class="alert alert-warning mb-3 d-none" id="domainmanager_writeback_notice{{ rand }}" role="alert">
+        <i class="ti ti-world-cog me-1"></i>
+        {{ __('This domain is managed by Domain Manager with DNS write-back enabled: creating this record here pushes it live to the provider immediately, with no undo.', 'domainmanager') }}
     </div>
     {#
      # §9 research "persist proxy addresses + TTL-auto flag": unlike the

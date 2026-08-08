@@ -43,7 +43,7 @@
         <form method="post" action="{{ form_url }}" autocomplete="off">
             <div class="card-body">
                 {% if cloudflare_missing_account_id %}
-                    <div class="alert alert-warning">
+                    <div class="alert alert-warning" role="alert">
                         <i class="ti ti-alert-triangle me-1"></i>
                         {{ __('This Cloudflare configuration is missing an Account ID. Add it below and reissue this token as an Account API Token to continue using Cloudflare sync.', 'domainmanager') }}
                     </div>
@@ -87,22 +87,32 @@
                                     </div>
                                 </div>
                             {% endfor %}
+                            {# Phase 79: same alert-warning shape as every
+                             # other warning banner (config.html.twig's
+                             # reference), instead of a plain Bootstrap
+                             # form-text hint — these carry a real credential
+                             # requirement (Dinahosting's especially, a
+                             # super-admin account rather than a scoped
+                             # token), not routine field help. #}
                             {% if driver == 'cloudflare' %}
-                                <div class="form-text mb-3">
+                                <div class="alert alert-warning mb-3" role="alert">
+                                    <i class="ti ti-alert-triangle me-1"></i>
                                     {{ __('Requires an Account API Token (not a personal token).', 'domainmanager') }}
                                     <a href="https://github.com/ticgal/domainmanager#cloudflare" target="_blank" rel="noopener">
                                         {{ __('Setup instructions', 'domainmanager') }}
                                     </a>
                                 </div>
                             {% elseif driver == 'ionos' %}
-                                <div class="form-text mb-3">
+                                <div class="alert alert-warning mb-3" role="alert">
+                                    <i class="ti ti-alert-triangle me-1"></i>
                                     {{ __('Requires an API Key and Secret from the IONOS Cloud panel.', 'domainmanager') }}
                                     <a href="https://github.com/ticgal/domainmanager#ionos" target="_blank" rel="noopener">
                                         {{ __('Setup instructions', 'domainmanager') }}
                                     </a>
                                 </div>
                             {% elseif driver == 'dinahosting' %}
-                                <div class="form-text mb-3">
+                                <div class="alert alert-warning mb-3" role="alert">
+                                    <i class="ti ti-alert-triangle me-1"></i>
                                     {{ __('Requires the super-admin account\'s username and password — no scoped API token exists.', 'domainmanager') }}
                                     <a href="https://github.com/ticgal/domainmanager#dinahosting" target="_blank" rel="noopener">
                                         {{ __('Setup instructions', 'domainmanager') }}

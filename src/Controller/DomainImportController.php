@@ -34,9 +34,9 @@ namespace GlpiPlugin\Domainmanager\Controller;
 use Domain;
 use Glpi\Controller\AbstractController;
 use GlpiPlugin\Domainmanager\Config\Config;
+use GlpiPlugin\Domainmanager\DomainState;
 use GlpiPlugin\Domainmanager\Service\DomainDiscoveryMatcher;
 use GlpiPlugin\Domainmanager\Service\PluginLogger;
-use GlpiPlugin\Domainmanager\Service\SyncEngine;
 use GlpiPlugin\Domainmanager\SupplierTab;
 use Infocom;
 use Session;
@@ -45,7 +45,6 @@ use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
-use Throwable;
 
 /**
  * Bulk-creates `Domain` items from the Import Domains modal's submitted
@@ -54,9 +53,12 @@ use Throwable;
  * rendered must not be trusted) — already-existing names are skipped and
  * counted, never treated as a batch failure. Sets no `ImportLock` rows
  * (locking only ever starts after a domain's first real sync, an existing
- * rule — §0.3/§5). Each created domain gets `SyncEngine::sync()` enqueued
- * immediately, non-fatally, same call SyncController/MassiveActionHandler
- * already make.
+ * rule — §0.3/§5). §9 Phase 73: no domain is synced inline here — a bulk
+ * import of N domains would mean N synchronous provider API calls in one
+ * HTTP request. Each created domain instead gets a bare state row
+ * (`is_glpi_created = 0`, no `last_sync_date`) so `Cron::cronDomainSync`'s
+ * existing least-recently-synced-first ordering picks it up on its very
+ * next tick without any special-casing.
  * URL: POST /plugins/domainmanager/domainimport/{suppliers_id}
  */
 class DomainImportController extends AbstractController
@@ -107,12 +109,10 @@ class DomainImportController extends AbstractController
         $existing       = DomainDiscoveryMatcher::loadExistingDomains();
         $trashed        = DomainDiscoveryMatcher::loadTrashedDomains();
 
-        $created      = 0;
-        $restored     = 0;
-        $skipped      = 0;
-        $failed       = 0;
-        $sync_failed  = 0;
-        $engine       = new SyncEngine();
+        $created  = 0;
+        $restored = 0;
+        $skipped  = 0;
+        $failed   = 0;
 
         foreach ($names as $normalized => $name) {
             if (isset($existing[$normalized])) {
@@ -163,6 +163,17 @@ class DomainImportController extends AbstractController
                 }
 
                 $created++;
+
+                // §14.2 (Phase 47): every domain reaching here was
+                // discovered via supplier import, not created by hand — its
+                // state row is marked not "Native" up front. §9 Phase 73:
+                // no sync runs inline; leaving `last_sync_date` unset means
+                // `Cron::cronDomainSync`'s existing oldest-first ordering
+                // (NULL sorts first) picks this domain up on its next tick.
+                (new DomainState())->add([
+                    'domains_id'      => $domains_id,
+                    'is_glpi_created' => 0,
+                ]);
             }
 
             $infocom = new Infocom();
@@ -175,24 +186,10 @@ class DomainImportController extends AbstractController
                     'suppliers_id' => $suppliers_id,
                 ]);
             }
-
-            try {
-                // §14.2 (Phase 47): every domain reaching this call was
-                // discovered via supplier import, not created by hand —
-                // marks its state row (if this is its first sync) as not
-                // "Native".
-                $engine->sync($domain, true);
-            } catch (Throwable $e) {
-                $sync_failed++;
-                PluginLogger::error(
-                    "Initial sync failed for imported domain #$domains_id ($name)",
-                    $e::class . ': ' . $e->getMessage(),
-                );
-            }
         }
 
         Session::addMessageAfterRedirect(
-            self::buildSummaryMessage($created, $restored, $skipped, $failed, $sync_failed),
+            self::buildSummaryMessage($created, $restored, $skipped, $failed),
             false,
             ($created > 0 || $restored > 0) ? INFO : WARNING,
         );
@@ -205,10 +202,9 @@ class DomainImportController extends AbstractController
      * @param  int $restored
      * @param  int $skipped
      * @param  int $failed
-     * @param  int $sync_failed
      * @return string
      */
-    private static function buildSummaryMessage(int $created, int $restored, int $skipped, int $failed, int $sync_failed): string
+    private static function buildSummaryMessage(int $created, int $restored, int $skipped, int $failed): string
     {
         $parts = [sprintf(_n('%d domain imported', '%d domains imported', $created, 'domainmanager'), $created)];
 
@@ -224,13 +220,6 @@ class DomainImportController extends AbstractController
             $parts[] = sprintf(
                 _n('%d could not be created, see the plugin error log', '%d could not be created, see the plugin error log', $failed, 'domainmanager'),
                 $failed,
-            );
-        }
-
-        if ($sync_failed > 0) {
-            $parts[] = sprintf(
-                _n('%d could not be synced yet, see the plugin error log', '%d could not be synced yet, see the plugin error log', $sync_failed, 'domainmanager'),
-                $sync_failed,
             );
         }
 

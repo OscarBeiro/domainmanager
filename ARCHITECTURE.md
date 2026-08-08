@@ -3641,3 +3641,311 @@ live here. Re-verified against current code before recording, rather than truste
   already exists") only render on an actual **successful, empty-or-fully-matched** discovery, never
   on failure. No code change made; recorded here so this doesn't get re-investigated as a live bug
   report without first checking whether the "empty table" being described is actually an error page.
+
+## 19. Research (2026-08-08) — Phases 72–76, planned for `1.7.0` (one phase, one session each)
+
+Planning-only session; no code changed. Each phase below is scoped to be implemented standalone
+in its own fresh session, starting from base branch `develop`. Verify GLPI internals against
+`glpi-project/glpi` pinned to `11.0/bugfixes` (never `main`). Target version for this cycle's
+changelog heading is `1.7.0-dev` (user override of §10's default `alpha1`/`alpha2`/`beta1`
+pre-release convention for this release).
+
+### 19.1 Phase 72 — Per-item logging on both cron tasks
+
+Today `cronDomainSync()` (`src/Cron.php:92-211`) already calls `addVolume(1)` once per domain
+inside its loop (`Cron.php:185`), but logs only at run level: a summary (`:189`), a per-entity
+breakdown (`:191-197`), and a per-registrar breakdown (`:199-204`) — no per-domain `$task->log()`
+line. `cronRdapEnrichment()` (`Cron.php:242-316`) processes one domain per run (early `return 1`
+at `:311`), so its addVolume-once-vs-per-item question doesn't currently arise, but any per-item
+logging added should still follow the same shape in case that early-return is revisited later.
+Neither task resolves/logs an entity name per item — only entity-level aggregates in the summary.
+
+Plan: add one `$task->log($msg)` per domain in `cronDomainSync()`'s loop (~`Cron.php:140-185`),
+guarded by `if ($task)`, in `Certificate::cronCertificateAlert()`'s shape (entity, domain name,
+outcome — synced/no-change/error+reason); confirm the exact entity-name helper against
+`11.0/bugfixes` before writing (candidate: `Dropdown::getDropdownName('glpi_entities',
+$entities_id)`). Keep existing summary lines — per-item lines supplement them. Add the matching
+per-domain log call to `cronRdapEnrichment()` at its existing log/addVolume point (`:302-310`).
+Then document the convention (cron logs per item not per run; `$task->log()` +`addVolume(1)`
+inside the loop; `$task` nullable, must be guarded; entity name belongs in the message since the
+Logs view has no entity column) in `.claude/skills/glpi-plugin-builder/`.
+
+Files: `src/Cron.php`, `.claude/skills/glpi-plugin-builder/`.
+
+### 19.2 Phase 73 — Batched supplier import
+
+Import entry point `templates/domain_discovery_modal.html.twig:63-130` posts to
+`/plugins/domainmanager/domainimport/{suppliers_id}`, handled fully synchronously in one request
+by `src/Controller/DomainImportController.php:65-201` (`foreach ($names as $normalized => $name)`
+at `:117`). **Confirmed risk**: each domain creation triggers an immediate sync inline in the
+loop — `$engine->sync($domain, true)` at `:184` — so 100 imports means 100 synchronous provider
+syncs in one HTTP request, the timeout/rate-limit exposure the phase exists to fix. Partial
+failure is already non-fatal per domain: sync failures are caught (`:184-187`), counted into
+`$sync_failed`, loop continues, single summary returned at the end (`:194-198`) — so today's model
+is "commit each domain independently, report a count," not all-or-nothing, but nothing paces or
+chunks requests and there's no live progress feedback. Not yet measured at planning time:
+`max_execution_time`/`memory_limit` vs actual per-domain cost, and the precise re-run/duplicate
+behavior of the existing-domain check at `:118-166` (it appears to guard against duplicates but
+needs confirming, not re-solving, at implementation time).
+
+Plan: split domain-row creation (fast, stays synchronous) from per-domain sync — defer sync to
+the existing `cronDomainSync` rotation instead of syncing inline during import, removing the
+rate-limit/timeout risk without inventing a queue. If immediate visible sync is wanted, chunk the
+import across successive client-driven requests instead, with a running progress count and a
+final per-domain success/fail table (never a silent partial import). Confirm and document
+re-run/idempotency behavior of `:118-166` rather than rebuilding it. Report on, but don't build
+unasked, a pre-commit dry-run count ("42 new, 58 already exist").
+
+Files: `src/Controller/DomainImportController.php`, `templates/domain_discovery_modal.html.twig`.
+
+### 19.3 Phase 74 — Correct history action semantics
+
+Every `Log::history()` call in the plugin uses the 3-arg form with no `$linked_action`, so all
+currently default to `HISTORY_LOG_SIMPLE_MESSAGE` (12):
+
+| File:line | Target itemtype | Current shape |
+|---|---|---|
+| `src/HookHandler.php:229` | `Domain::class` | plain message |
+| `src/SupplierConfig.php:429` | `Supplier::class` | plain message |
+| `src/SupplierConfig.php:463-472` | `Supplier::class` | plain message (sprintf) |
+| `src/Service/SyncLogger.php:57` | `Domain::class` | plain message |
+| `src/Service/DnsRecordWriteback.php:1185-1194` | `Domain::class` | plain message (sprintf) |
+
+Per `Log::getHistoryData()` on `11.0/bugfixes`, `HISTORY_ADD_SUBITEM`(17)/`HISTORY_UPDATE_SUBITEM`
+(18)/`HISTORY_DELETE_SUBITEM`(19) resolve the Field column from
+`getItemForItemtype($data["itemtype_link"])->getTypeName(1)` — driven by `itemtype_link`, not
+`id_search_option`.
+
+Plan for the implementing session: classify each call above as a genuine add/update/delete or as
+free-text narration with no such shape. `DnsRecordWriteback.php`'s calls likely overlap with
+`DomainRecord`'s own `CommonDBChild`/`$logs_for_parent` native subitem logging on the parent
+`Domain` — check for duplication and retire the plugin's own call where core already writes an
+equivalent entry, rather than upgrading a duplicate. For genuine add/update/delete events not
+already covered natively, switch to the matching `HISTORY_*_SUBITEM` constant with `itemtype_link`
+set, and confirm the `new_value` format `HISTORY_ADD_SUBITEM` expects so the message fits it.
+`SupplierConfig.php`'s two calls and `SyncLogger.php`'s call read as genuine free-text
+status/sync narration and likely should stay `HISTORY_LOG_SIMPLE_MESSAGE` — confirm rather than
+force a subitem shape onto them.
+
+Files: `src/HookHandler.php`, `src/SupplierConfig.php`, `src/Service/SyncLogger.php`,
+`src/Service/DnsRecordWriteback.php`.
+
+### 19.4 Phase 75 — Consistent warning styling
+
+Reference ("good") pattern, `templates/config.html.twig:44-47`:
+
+```twig
+<div class="alert alert-warning" role="alert">
+    <i class="ti ti-alert-triangle me-1"></i>
+    {{ __('...', 'domainmanager') }}
+</div>
+```
+
+Inconsistent occurrences found: `templates/domainrecord_new_notice.html.twig:44-47` (`d-flex
+align-items-center`, text wrapped in an inner `<div>`, `me-2`, icon `ti-world-cog`, plus a
+behavioral `d-none` initial state — keep the behavior, fix the rest);
+`templates/domainrecord_edit_panel.html.twig:85-88` (same `d-flex align-items-center` + `<div>`-
+wrap + `me-2`, icon `ti-lock`); `templates/domain_panel.html.twig:184-197` (missing
+`role="alert"`, includes a genuine `<a>` help link to keep, conditional `d-none` via ternary —
+behavioral, keep); `templates/supplier_tab.html.twig:46-49` (missing `role="alert"` only).
+
+Plan: normalize all four to `config.html.twig`'s shape — `alert alert-warning ... role="alert"`,
+`<i class="ti ti-alert-triangle me-1"></i>` then text as a direct child, not wrapped in an inner
+`<div>` — while preserving each template's real behavioral classes (`d-none` toggles, spacing
+utilities, the help link). `ti-world-cog` and `ti-lock` are semantically deliberate (write-back
+vs read-only distinctness) and should likely stay; default to keeping semantically distinct icons
+and fixing only structural/accessibility drift unless the user says otherwise when this phase is
+implemented. Tabler/Bootstrap 5 utility classes and Tabler icons only, no custom CSS/inline
+style, GLPI theme variables only (already true here). Verify in both light and dark theme.
+
+Files: `templates/domainrecord_new_notice.html.twig`, `templates/domainrecord_edit_panel.html.twig`,
+`templates/domain_panel.html.twig`, `templates/supplier_tab.html.twig`.
+
+### 19.5 Phase 76 (new, user-reported; implemented) — Inconsistent DNS provider hyperlink on the domain form
+
+Bug report: on `front/domain.form.php?id=…`, the DNS provider name is sometimes a clickable link
+to the Supplier record and sometimes plain text, with no pattern identifiable from the UI alone.
+Root cause fully identified — three contributing causes, all confirmed against current code:
+
+1. **Template condition**, `templates/domain_panel.html.twig:127-135`: renders `<a
+   href="{{ dns_supplier.getLinkURL() ~ supplier_tab_forcetab }}">{{ detected }}</a>` only when
+   `dns_supplier` (PHP-side) is truthy, else plain `{{ detected }}`.
+2. **PHP resolution**, `src/DomainForm.php:115-121`: `dns_supplier` stays `null` whenever
+   `state->fields['dns_suppliers_id'] <= 0` **or** `Supplier::getFromDB()` fails — e.g. the
+   Supplier record was since deleted while `dns_suppliers_id` is still stored on `DomainState`.
+   This alone explains link-vs-text varying per domain depending on whether its stored supplier
+   still exists.
+3. **Post-sync JS destroys the link unconditionally**, `templates/domain_panel.html.twig:504-507`:
+   ```js
+   const provider = document.getElementById('domainmanager-provider');
+   if (provider && data.detected_provider) {
+       provider.textContent = data.detected_provider;
+   }
+   ```
+   After every "Update Now" sync this overwrites the cell via `textContent`, destroying any
+   hyperlink markup unconditionally — regardless of whether a valid Supplier exists. This is
+   almost certainly the pattern actually observed ("sometimes it is and others isn't" on the
+   *same* domain, before vs after a sync click). Root cause: `SyncEngine`'s response
+   (`src/Service/SyncEngine.php:124-142`, returned via `src/Controller/SyncController.php:50-76`)
+   only returns `detected_provider` as a plain string — never `dns_suppliers_id` or a link URL —
+   so the JS has no way to rebuild the link.
+
+Plan: have `SyncEngine`'s sync result include the resolved `dns_suppliers_id` (already computed
+at `SyncEngine.php:271`) alongside `detected_provider`, threaded through
+`SyncController.php:50-76` into the JSON response. In `domain_panel.html.twig`'s post-sync JS
+(`:504-507`), replace the `textContent` write with logic mirroring the Twig condition: rebuild an
+`<a>` element when the response carries a valid `dns_suppliers_id` (plus a link URL, or enough to
+construct one client-side the way `dns_supplier.getLinkURL()` does server-side), else set plain
+text — matching post-sync rendering to initial-page-load rendering. Leave `DomainForm.php:115-121`
+as-is (a deleted Supplier genuinely shouldn't be linkable); just make the post-sync path respect
+the same rule instead of ignoring it.
+
+Files: `src/Service/SyncEngine.php`, `src/Controller/SyncController.php`,
+`templates/domain_panel.html.twig`.
+
+### 19.6 Verification, per phase, at implementation time
+
+- 72: run both crons manually against test data; confirm the task's Logs view shows one line per
+  domain (entity + outcome) plus the existing summary lines.
+- 73: import a batch (~20+ synthetic domains); confirm no timeout, a partial-failure scenario
+  reports clearly, and re-import doesn't duplicate.
+- 74: trigger an add/update/delete of the relevant subitem; confirm the Historical tab renders
+  the correct verb/icon instead of a generic change, and no duplicate entries appear next to
+  native `CommonDBChild` history.
+- 75: view each affected template in the browser in both light and dark theme; confirm visual
+  parity with `config.html.twig`'s warning.
+- 76: reproduce by (a) loading a domain with a live Supplier — expect a link; (b) deleting that
+  Supplier and reloading — expect plain text; (c) clicking "Update Now" on a domain with a live
+  Supplier — expect the link to survive the sync instead of collapsing to plain text.
+- 77: at the provider, create two TXT records with identical name and content; run "Update Now"
+  twice — first sync mirrors one in, second sync should complete without the abort message and
+  `domainmanager.log` should show the "Skipped mirroring duplicate upstream TXT record" line;
+  confirm a genuine user-initiated duplicate TXT add (not sync-driven) still hard-aborts with its
+  original error message.
+- 78: proxy (Cloudflare) a record, sync, confirm the cloud icon and proxied-IP line show; delete
+  that record upstream and sync again so it's trashed locally; toggle the Records tab's native
+  "show trash bin" view and confirm the trashed row shows with no proxy icon/IP overlay; toggle
+  trash-bin view off and confirm the still-live records' proxy indicators are unaffected.
+- 79: open a write-back-managed domain's existing DNS record edit form — confirm the "no undo"
+  line in the "Managed by Domain Manager" ribbon-card now renders as an alert-warning banner
+  (icon + role="alert"), in both themes; open that domain's Records tab and confirm its own
+  quick-add panel's "no undo" notice renders the same way; open a Supplier's Domain Manager tab
+  for each of Cloudflare/IONOS/Dinahosting and confirm their credential-requirement hint now
+  renders the same way too, with its "Setup instructions" link intact.
+
+### 19.7 Phase 77 (new, user-reported 2026-08-08; implemented) — Reconciler sync blocked by a genuine upstream TXT duplicate
+
+Bug report: running a manual domain sync produced the user-facing abort message `A record of
+type TXT named "dev.gal" already exists for this domain; Domain Manager does not allow duplicate
+records`, surfaced during `cronDomainSync`/"Update Now", not a user-initiated add.
+
+Root cause (confirmed, not yet designed around): `DnsRecordWriteback::onPreAdd()`
+(`src/Service/DnsRecordWriteback.php:117-152`) runs its plugin-wide duplicate-name guard
+**before** the `_domainmanager_sync` bypass check (`:150-152`) — a deliberate 2026-08-03 design
+decision (comment at `:117-124`) so a retry-storm-style duplicate is caught even when the write
+originates from `RecordReconciler` mirroring an upstream read, not a real user-initiated create.
+For TXT specifically the guard is narrowed to an exact type+name+**content** match
+(`duplicateNameError()` `:971-973`, Phase 68 addendum), so this only fires when the provider
+itself already has two TXT records at the same name with byte-identical content — i.e. the
+duplicate genuinely exists upstream (e.g. at Cloudflare), and the reconciler's attempt to mirror
+the second one in locally is what's being refused.
+
+Effect: a real upstream duplicate now silently stalls that record's mirroring on every sync
+(the abort message is user-facing per `self::abort()`, but during a cron run there's nothing to
+show it to) instead of being skipped/logged and letting the rest of the sync proceed —
+`cronDomainSync`'s per-domain outcome (Phase 72) would presumably surface it as an `error`, worth
+confirming once this phase is implemented since Phase 72 predates this bug report.
+
+Fix implemented: option (b) — a reconciler-driven (`_domainmanager_sync`) add that hits this
+guard for TXT specifically is now skipped rather than hard-aborted. Option (a) (exempting TXT
+reconciler adds from the guard entirely) was considered but rejected: the guard's content-aware
+TXT match only ever fires on a genuine byte-identical duplicate, so there is nothing left to
+protect against by exempting it — skip-with-log and outright exemption behave identically in
+practice, but skip-with-log keeps a visible trail (`PluginLogger::activity()`) of what happened,
+which outright exemption would not. `onPreAdd()` (`src/Service/DnsRecordWriteback.php:104-177`)
+now computes `$isSyncAdd` once, before the duplicate-name guard runs, and reuses it for the
+existing `_domainmanager_sync` bypass below it; when the guard's `$duplicateError` fires and both
+`$isSyncAdd` and `$checkType === 'TXT'` hold, the add is cancelled (`$item->input = false`, no
+`Session::addMessageAfterRedirect()`) and logged via `PluginLogger::activity()` instead of
+`self::abort()`. Every other combination (non-sync TXT duplicate, any-source A/AAAA/CNAME
+duplicate) keeps the original hard abort — the 2026-08-03 retry-storm protection for those types
+is unchanged.
+
+Files: `src/Service/DnsRecordWriteback.php`.
+
+### 19.8 Phase 78 (new, user-reported 2026-08-08; implemented) — Deleted proxied record leaves stale proxy state
+
+Bug report: user observed a record row like:
+
+```
+x    Automatic    4.5.7.9
+104.21.47.37, 172.67.170.91
+```
+
+Interpretation, confirmed at implementation time: this is a display-only artifact, not stale data
+persisting forever. `DomainForm::renderProxyIndicators()` (`src/DomainForm.php:396-`) queries
+`glpi_plugin_domainmanager_records` for `is_proxied`/`proxy_addresses` keyed only by `domains_id`,
+with no join back to the native `glpi_domainrecords` row's `is_deleted` flag — while
+`RecordReconciler::doReconcile()`'s trash loop (`src/Service/RecordReconciler.php:332-353`)
+soft-deletes the native `DomainRecord` when a record disappears upstream, it never touches the
+`ImportedRecord` row's `is_proxied`/`proxy_addresses`, which is otherwise correct (the next sync
+that either recreates or restores-and-updates the record refreshes both fields unconditionally,
+per the "is_proxied is refreshed on every sync" comment at `RecordReconciler.php:268-271`). The
+gap is narrow but real: if GLPI's own trash-bin toggle for the Records tab is on, the now-trashed
+row still renders (core's own list, unaffected by this plugin), and the overlay query — having no
+`is_deleted` filter — still attaches the last-known proxied state and IPs to it, exactly matching
+the report.
+
+Fix: `renderProxyIndicators()`'s query now inner-joins `DomainRecord::getTable()` on
+`domainrecords_id` and requires `is_deleted = 0`, so a trashed record's row never gets a proxy
+overlay regardless of the trash-bin toggle. The underlying `ImportedRecord` fields are left
+as-is (not cleared) — the next real sync of that domain already refreshes them unconditionally
+whether the record is recreated fresh or restored, per the comment above; clearing them on trash
+would be redundant with that and was rejected mainly to keep this a single, narrowly-scoped
+display-layer fix rather than touching `RecordReconciler`'s trash path too. Not part of this
+phase: any relation to the pending proxy-toggle-right + origin/proxied-IP display work already
+tracked for branch "8" (see project memory `project_proxy_toggle_right_plan`) — that work is
+about origin-vs-proxied IP presentation on *live* records, not deleted ones, and wasn't touched
+here.
+
+Files: `src/DomainForm.php`.
+
+### 19.9 Phase 79 (new, user-reported 2026-08-08; implemented) — Three more warning-style notices missed by Phase 75
+
+User feedback after Phase 75 shipped: three more notices read as warnings but weren't included in
+that phase's normalization pass —
+
+- `domainrecord_edit_panel.html.twig`'s "Managed by Domain Manager" ribbon-card
+  (`src/DomainForm.php`'s `injectDomainRecord()`) carried its "Saving this form updates the
+  record live at %s. There is no undo." line as plain `text-muted small` text, not an alert —
+  even though `domainrecord_new_notice.html.twig`'s generic-form counterpart already carries the
+  **identical** message as a proper `alert-warning` (Phase 75 normalized that one, since it
+  already used the alert shape; this ribbon-card version never did, so Phase 75's per-template
+  sweep didn't touch it).
+- `supplier_tab.html.twig`'s three per-driver credential hints (Cloudflare "Requires an Account
+  API Token…", IONOS "Requires an API Key and Secret…", Dinahosting "Requires the super-admin
+  account's username and password — no scoped API token exists…") rendered as plain Bootstrap
+  `form-text` hints, not warnings — despite Dinahosting's in particular being a real
+  security-relevant requirement (full super-admin credentials, not a scoped token) rather than
+  routine field help.
+- Found in a follow-up report, same root cause: `domainrecord_add_panel.html.twig`'s Records-tab
+  quick-add panel (`src/DomainForm.php`'s `renderRecordWritePanel()`, `$live_notice`) carries a
+  *third* wording of the same "creates the record live ... no undo" message ("This creates the
+  record live at %s. There is no undo.") — also plain `text-muted small`, missed by both the
+  original Phase 75 sweep and this phase's first pass because it's a third near-duplicate string
+  in a third template, not literally identical text to the other two.
+
+Fix: all three now use the same `alert-warning`/`role="alert"` shape as every other banner
+(`config.html.twig`'s reference). The ribbon-card notice and the quick-add panel's notice both
+reuse `ti-world-cog` (matching `domainrecord_new_notice.html.twig`'s identical-purpose banner);
+the three driver hints use `ti-alert-triangle` (matching `config.html.twig`'s own warning and
+`supplier_tab.html.twig`'s existing Cloudflare-account-id warning). No wording changes — purely
+the same structural/markup normalization Phase 75 already did for the other four banners,
+extended to these three spots it missed (three separate near-duplicate "no undo" strings across
+three templates turned out to be genuinely easy to miss in one pass). The `ttl_auto_note` info
+lines (both templates) are unchanged (still `text-muted small` with `ti-info-circle`) — they're
+genuinely informational, not a warning, same distinction Phase 75 already drew for
+`domainrecord_new_notice.html.twig`'s own info line.
+
+Files: `templates/domainrecord_edit_panel.html.twig`, `templates/supplier_tab.html.twig`,
+`templates/domainrecord_add_panel.html.twig`.
