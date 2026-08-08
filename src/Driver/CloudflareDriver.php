@@ -435,6 +435,11 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
                 // state) is only meaningful when `proxiable` is true.
                 $isProxied = ($row['proxiable'] ?? false) ? (bool) ($row['proxied'] ?? false) : null;
                 $comment   = isset($row['comment']) ? (string) $row['comment'] : null;
+                // Confirmed live against Cloudflare's current API reference (§9 research
+                // "persist proxy addresses + TTL-auto flag"): `ttl == 1` is Cloudflare's own
+                // "automatic" sentinel, with no separate boolean field — this is the only
+                // driver where this mapping is valid (see ZoneRecord::$isTtlAuto docblock).
+                $isTtlAuto = ((int) ($row['ttl'] ?? 0)) === 1;
 
                 try {
                     $records[] = new ZoneRecord(
@@ -445,6 +450,7 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
                         (string) ($row['id'] ?? ''),
                         $isProxied,
                         $comment,
+                        $isTtlAuto,
                     );
                 } catch (InvalidArgumentException $e) {
                     PluginLogger::activity("Cloudflare record skipped for $domain: " . $e->getMessage());
@@ -664,6 +670,7 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
     {
         $isProxied = ($row['proxiable'] ?? false) ? (bool) ($row['proxied'] ?? false) : null;
         $comment   = isset($row['comment']) ? (string) $row['comment'] : null;
+        $isTtlAuto = ((int) ($row['ttl'] ?? 0)) === 1;
 
         return new ZoneRecord(
             $type,
@@ -673,6 +680,7 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
             (string) ($row['id'] ?? ''),
             $isProxied,
             $comment,
+            $isTtlAuto,
         );
     }
 

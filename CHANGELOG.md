@@ -11,7 +11,8 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 
 ## [Unreleased]
 ### Features
-- Proxied DNS records now have a "Show public IP" link on the Records tab that looks up the live, publicly-visible address on demand.
+- Proxied DNS records now show their public-facing address(es) directly under the Target column, saved automatically instead of requiring a click to look them up.
+- Cloudflare records using "Automatic" TTL now display "Automatic" instead of a confusing "1 second" value.
 
 ## [1.5.2] - 2026-08-07
 ### Features

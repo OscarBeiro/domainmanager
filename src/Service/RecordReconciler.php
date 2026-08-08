@@ -55,8 +55,27 @@ use Throwable;
  */
 class RecordReconciler
 {
-    public function __construct(private SyncLogger $logger = new SyncLogger())
-    {
+    /**
+     * Per-domain cap on live DNS lookups for proxy addresses (§9 research
+     * "persist proxy addresses + TTL-auto flag"): resolving these at sync
+     * time (rather than the previous on-click-only behaviour) moves the
+     * cost from "paid when someone opens the tab" to "paid on every sync",
+     * for every proxied record — a per-domain bound keeps one domain's
+     * proxied-record count from making its own sync tick unpredictably
+     * slow, and composes correctly regardless of the cron's own batch size
+     * (unlike a global per-tick cap, which would make one domain's count
+     * affect whether another domain's addresses get resolved that tick).
+     * A domain with more records than this reaches partial coverage that
+     * rotates in on a later sync, never a permanent gap.
+     */
+    private const PROXY_IP_LOOKUP_LIMIT = 20;
+
+    private int $proxyLookupCount = 0;
+
+    public function __construct(
+        private SyncLogger $logger = new SyncLogger(),
+        private PublicIpResolver $publicIpResolver = new PublicIpResolver(),
+    ) {
     }
 
     /**
@@ -134,9 +153,10 @@ class RecordReconciler
         /** @var \DBmysql $DB */
         global $DB;
 
-        $domains_id = (int) $domain->getID();
-        $type_ids   = $this->resolveTypeIds();
-        $stats      = ['added' => 0, 'updated' => 0, 'restored' => 0, 'trashed' => 0, 'unchanged' => 0];
+        $domains_id             = (int) $domain->getID();
+        $type_ids               = $this->resolveTypeIds();
+        $stats                  = ['added' => 0, 'updated' => 0, 'restored' => 0, 'trashed' => 0, 'unchanged' => 0];
+        $this->proxyLookupCount = 0;
 
         // Load the ownership map: remote_id and hash indexes over unclaimed rows
         $ownership = [];
@@ -250,13 +270,19 @@ class RecordReconciler
             // can change without the record's own content changing at all,
             // so it must never be gated behind the hash-changed branch.
             $imported = new ImportedRecord();
-            $imported->update([
+            $imported_input = [
                 'id'          => $oid,
                 'remote_id'   => $record->remoteId,
                 'record_hash' => $hash,
                 'last_seen'   => $now,
                 'is_proxied'  => self::toNullableInt($record->isProxied),
-            ]);
+                'is_ttl_auto' => self::toNullableInt($record->isTtlAuto),
+            ];
+            $proxy_addresses = $this->resolveProxyAddresses($record);
+            if (array_key_exists('value', $proxy_addresses)) {
+                $imported_input['proxy_addresses'] = $proxy_addresses['value'];
+            }
+            $imported->update($imported_input);
 
             $this->reconcileComment($domain, $native, $record, $commentDriver);
         }
@@ -414,6 +440,7 @@ class RecordReconciler
         }
 
         $imported = new ImportedRecord();
+        $proxy_addresses = $this->resolveProxyAddresses($record);
         $imported->add([
             'domainrecords_id' => $records_id,
             'domains_id'       => $domain->getID(),
@@ -428,6 +455,12 @@ class RecordReconciler
             // fires for the soft-delete this reconciler itself performs).
             'is_managed'       => 1,
             'is_proxied'       => self::toNullableInt($record->isProxied),
+            'is_ttl_auto'      => self::toNullableInt($record->isTtlAuto),
+            // array_key_exists('value', ...) is false only when this brand
+            // new record's own creation already exceeded the per-domain
+            // lookup bound — leaves the column at its real NULL default
+            // rather than a resolver call that didn't happen.
+            'proxy_addresses'  => $proxy_addresses['value'] ?? null,
         ]);
 
         // §9 Phase 14: same conditional per-field lock set as the update
@@ -458,6 +491,36 @@ class RecordReconciler
     private static function toNullableInt(?bool $value): ?int
     {
         return $value === null ? null : (int) $value;
+    }
+
+    /**
+     * Resolve the live public-facing address(es) for a proxied record,
+     * bounded by {@see PROXY_IP_LOOKUP_LIMIT} per {@see reconcile()} call
+     * (i.e. per domain, per sync). `$record->name` is already the absolute
+     * FQDN GLPI stores (confirmed live, `RecordPublicIpController` fix,
+     * 2026-08-08) — no zone-name concatenation needed here, same as that
+     * controller.
+     *
+     * @param  ZoneRecord $record
+     * @return array{value?: string|null} empty array = skip entirely (limit
+     *         reached; leave the stored column untouched this sync);
+     *         `['value' => null]` = not proxied, clear any stale value;
+     *         `['value' => '<json>']` = resolved (possibly to an empty list)
+     */
+    private function resolveProxyAddresses(ZoneRecord $record): array
+    {
+        if ($record->isProxied !== true) {
+            return ['value' => null];
+        }
+
+        if ($this->proxyLookupCount >= self::PROXY_IP_LOOKUP_LIMIT) {
+            return [];
+        }
+        $this->proxyLookupCount++;
+
+        $addresses = $this->publicIpResolver->resolve($record->name, $record->type === 'AAAA' ? 'AAAA' : 'A');
+
+        return ['value' => $addresses !== [] ? json_encode($addresses) : null];
     }
 
     /**

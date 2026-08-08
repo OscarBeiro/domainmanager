@@ -3499,22 +3499,53 @@ right exists, so no dedicated test cases apply — proxy-toggle behavior is cove
 per-type UPDATE right's own test coverage (Phase 37/49 above). See ARCHITECTURE.md §17.14b for what
 was reverted and why.
 
-### Phase 71 — lazy per-row public IP lookup for proxied records (ARCHITECTURE.md §17.16)
+### Phase 71 — lazy per-row public IP lookup for proxied records (ARCHITECTURE.md §17.16) — SUPERSEDED
 
-- **"Show public IP" appears only on proxied records.** On a Domain's Records tab, a record marked
-  `is_proxied` (cloud icon already shown) also shows a "Show public IP" button next to the icon; a
-  non-proxied record shows neither.
+**Superseded by the phase below** (persisted `proxy_addresses`/`is_ttl_auto`, no more on-click
+lookup, `RecordPublicIpController` removed). Kept here for history; do not test against current
+code — the "Show public IP" button and its endpoint no longer exist.
+
+### Phase — persist proxy addresses + TTL-auto flag, then relocate the display
+
+- **Cloudflare domain, mix of proxied and non-proxied records.** Sync a Cloudflare-managed domain
+  with at least one proxied A/AAAA record and at least one non-proxied record. Expected: the
+  proxied record's row shows the cloud icon next to Name (unchanged) *and* a grey second line
+  under the Target cell listing the resolved anycast address(es); the non-proxied record's row
+  shows neither. `glpi_plugin_domainmanager_records.proxy_addresses` is a JSON array for the
+  proxied record's `ImportedRecord` row, `NULL` for the non-proxied one.
   - [ ] Not yet verified live
-- **Clicking the button resolves a live public IP.** Click "Show public IP" on a proxied A/AAAA
-  record pointed at a real Cloudflare zone. Expected: the button's text is replaced with a
-  Cloudflare anycast address, distinct from the origin IP shown in the Data column, and the
-  button becomes non-interactive (one-shot).
-  - [ ] Not yet verified live (requires a real Cloudflare-proxied zone)
-- **Graceful failure when live DNS doesn't resolve.** Click the button for a proxied record whose
-  name no longer resolves publicly (e.g. record deleted upstream but not yet reconciled).
-  Expected: button text shows a "Lookup failed" message, no JS error in the console.
+- **Cloudflare domain, TTL "Automatic".** A Cloudflare record whose upstream `ttl` is `1`.
+  Expected: the TTL cell shows "Automatic" (translated), and hovering it shows the raw value `1`
+  as a tooltip. `is_ttl_auto = 1` on that record's `ImportedRecord` row.
   - [ ] Not yet verified live
-- **Endpoint rejects non-proxied and unauthorized access.** A crafted GET to
-  `/plugins/domainmanager/recordip/{id}` for a record with `is_proxied = 0` returns HTTP 400; the
-  same request from a user lacking `domain` READ returns HTTP 403.
-  - [ ] Not yet verified live (code review + `phpcs`/`php-cs-fixer`/`php -l` only so far)
+- **Cloudflare domain, none proxied.** Sync a Cloudflare-managed domain with zero proxied
+  records. Expected: no cloud icon, no address line, no "Automatic" TTL anywhere on the tab (unless
+  a non-proxied record still legitimately has `ttl == 1`, in which case only the TTL rendering
+  applies — proxying and TTL-auto are independent per-record flags).
+  - [ ] Not yet verified live
+- **Non-Cloudflare domain (IONOS or Dinahosting).** Sync a domain managed by a driver with no
+  proxy/TTL-sentinel concept. Expected: `is_proxied`, `proxy_addresses`, and `is_ttl_auto` all stay
+  `NULL` for every record; the Records tab renders with no overlay at all, byte-identical to
+  before this phase.
+  - [ ] Not yet verified live
+- **Bounded lookups per sync.** A domain with more proxied records than
+  `RecordReconciler::PROXY_IP_LOOKUP_LIMIT` (20). Expected: the first 20 (iteration order) get a
+  resolved `proxy_addresses` value (or `NULL` if the live lookup itself found nothing); the rest
+  keep whatever `proxy_addresses` value they already had (not forcibly cleared) until a later sync
+  reaches them.
+  - [ ] Not yet verified live (needs a zone with >20 proxied records, or a lowered constant for the
+        test)
+- **Migration: existing rows survive with `NULL`, populate on next sync.** On an instance
+  upgrading from before this phase (`glpi_plugin_domainmanager_records` rows with no
+  `proxy_addresses`/`is_ttl_auto` columns yet), run `install()`/plugin update. Expected: both
+  columns exist, every pre-existing row reads `NULL` for both (no backfill, matching `is_proxied`'s
+  own upgrade behavior) — confirm via direct DB query, not just the UI (a `NULL` row renders
+  identically to "nothing to show", so the DB check is the only way to distinguish "column added,
+  still unpopulated" from "column never added"). Then trigger a sync for one such domain and
+  confirm both columns populate for its proxied/TTL-auto records.
+  - [ ] Not yet verified live
+- **"Show public IP" removed, no dead endpoint.** Confirm `src/Controller/RecordPublicIpController.php`
+  no longer exists and `GET /plugins/domainmanager/recordip/{id}` 404s (route no longer registered).
+  Confirm the address is never shown in two places (neither a leftover button near the Name cell
+  nor any other duplicate).
+  - [ ] Not yet verified live

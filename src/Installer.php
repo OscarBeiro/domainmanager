@@ -67,6 +67,7 @@ class Installer
         self::migrateRecordManagedColumn($migration);
         self::addRegistrarMetadataColumns($migration);
         self::addRecordProxiedColumn($migration);
+        self::addRecordProxyMetadataColumns($migration);
         self::addRecordGlpiCreatedColumn($migration);
         self::addDomainManagedColumn($migration);
         self::addDomainGlpiCreatedColumn($migration);
@@ -227,6 +228,8 @@ class Installer
                     `is_managed` tinyint NOT NULL DEFAULT '0',
                     `is_proxied` tinyint NULL DEFAULT NULL,
                     `is_glpi_created` tinyint NOT NULL DEFAULT '0',
+                    `proxy_addresses` text,
+                    `is_ttl_auto` tinyint NULL DEFAULT NULL,
                     `date_mod` timestamp NULL DEFAULT NULL,
                     `date_creation` timestamp NULL DEFAULT NULL,
                     PRIMARY KEY (`id`),
@@ -236,7 +239,8 @@ class Installer
                     KEY `record_hash` (`record_hash`),
                     KEY `is_managed` (`is_managed`),
                     KEY `is_proxied` (`is_proxied`),
-                    KEY `is_glpi_created` (`is_glpi_created`)
+                    KEY `is_glpi_created` (`is_glpi_created`),
+                    KEY `is_ttl_auto` (`is_ttl_auto`)
                 ) ENGINE=InnoDB DEFAULT CHARSET={$charset} COLLATE={$collation} ROW_FORMAT=DYNAMIC
                 SQL,
             'glpi_plugin_domainmanager_locks' => <<<SQL
@@ -406,6 +410,39 @@ class Installer
 
         $migration->addField($table, 'is_proxied', 'tinyint NULL DEFAULT NULL');
         $migration->addKey($table, 'is_proxied');
+    }
+
+    /**
+     * Add `proxy_addresses`/`is_ttl_auto` to the records table (§9 research
+     * "persist proxy addresses + TTL-auto flag, then relocate the display").
+     * Same table `is_managed`/`is_proxied` already live on, same idempotent
+     * `Migration::addField()`(+`addKey()` for the tinyint) pattern as
+     * `is_proxied`; already present in `createTables()`'s raw CREATE TABLE
+     * for fresh installs. Both nullable, both left `NULL` on every
+     * pre-existing row (no backfill — mirrors `is_proxied` exactly, not
+     * `is_managed`'s backfilled convention), populated for real only the
+     * next time each record's domain is synced.
+     *
+     * `proxy_addresses` mirrors `rdap_nameservers`'s own established
+     * multi-value-list convention on `glpi_plugin_domainmanager_states`
+     * (nullable `text`, plain `json_encode()`/`json_decode()`, no key —
+     * a list column isn't filtered on) rather than inventing a second
+     * convention for storing a list of addresses.
+     *
+     * `is_ttl_auto` stores the *semantic* "this TTL means automatic", never
+     * the raw TTL number — that already lives on native `DomainRecord::ttl`
+     * and duplicating it here would create a second copy to keep in sync.
+     *
+     * @param  Migration $migration
+     * @return void
+     */
+    private static function addRecordProxyMetadataColumns(Migration $migration): void
+    {
+        $table = 'glpi_plugin_domainmanager_records';
+
+        $migration->addField($table, 'proxy_addresses', 'text', ['value' => null]);
+        $migration->addField($table, 'is_ttl_auto', 'tinyint NULL DEFAULT NULL');
+        $migration->addKey($table, 'is_ttl_auto');
     }
 
     /**

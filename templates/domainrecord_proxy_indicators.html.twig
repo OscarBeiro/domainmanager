@@ -29,51 +29,66 @@
 {#
  # Rendered from `DomainForm::renderProxyIndicators()` on the Records tab.
  # `DomainRecord::showForDomain()` is core's own hardcoded datatable with no
- # extension point for an extra column, so a cloud icon (and, per §17.9-
- # §17.11 Phase 71, a lazy "Show public IP" lookup link) is overlaid next to
- # each proxied record's Name link instead, matched by the record id already
- # present in that link's native `getFormURLWithID()` href.
+ # extension point for an extra column, so every indicator here is overlaid
+ # client-side next to (or under) the cell that already holds the matching
+ # record id — found via the record id already present in the Name link's
+ # native `getFormURLWithID()` href, then walked positionally to sibling
+ # cells (core's own fixed Type/Name/TTL/Target column order, confirmed
+ # against `DomainRecord::showForDomain()` on `11.0/bugfixes`).
+ #
+ # Three independent, data-presence-gated overlays:
+ # - A cloud icon next to the Name link for any proxied record.
+ # - The persisted anycast address(es), as a second line under the Target
+ #   cell's origin IP (§9 research "persist proxy addresses + TTL-auto
+ #   flag") — one column across from the icon, same treatment the Name cell
+ #   used to get before the live-lookup "Show public IP" button (removed:
+ #   the value is now persisted, so there is nothing left to fetch on click,
+ #   and per that research's own point 9, it must not display in two
+ #   places).
+ # - "Automatic" (translated) replacing a `1`-second TTL in the TTL cell,
+ #   raw value kept as a hover tooltip.
  #}
 <script>
     (function () {
-        var proxiedIds = {{ proxied_ids|json_encode|raw }};
-        var title = {{ __('Proxied through Cloudflare', 'domainmanager')|json_encode|raw }};
-        var showIpLabel = {{ __('Show public IP', 'domainmanager')|json_encode|raw }};
-        var failedLabel = {{ __('Lookup failed', 'domainmanager')|json_encode|raw }};
-        var recordIpUrlBase = {{ path('/plugins/domainmanager/recordip/')|json_encode|raw }};
+        var proxiedIds   = {{ proxied_ids|json_encode|raw }};
+        var proxyAddrs   = {{ proxy_addresses|json_encode|raw }};
+        var ttlAutoIds   = {{ ttl_auto_ids|json_encode|raw }};
+        var cloudTitle   = {{ __('Proxied through Cloudflare', 'domainmanager')|json_encode|raw }};
+        var autoLabel    = {{ __('Automatic', 'domainmanager')|json_encode|raw }};
 
         document.querySelectorAll('a[href*="domainrecord.form.php?id="]').forEach(function (link) {
             var match = link.href.match(/[?&]id=(\d+)/);
-            if (!match || proxiedIds.indexOf(parseInt(match[1], 10)) === -1) {
+            if (!match) {
                 return;
             }
-            if (link.nextSibling && link.nextSibling.classList && link.nextSibling.classList.contains('domainmanager-proxy-indicator')) {
+            var recordId = parseInt(match[1], 10);
+            var nameTd   = link.closest('td');
+            if (!nameTd) {
                 return;
             }
-            var recordId = match[1];
+            var ttlTd  = nameTd.nextElementSibling;
+            var dataTd = ttlTd ? ttlTd.nextElementSibling : null;
 
-            var icon = document.createElement('i');
-            icon.className = 'ti ti-cloud-filled text-primary ms-1 domainmanager-proxy-indicator';
-            icon.title = title;
-            link.parentNode.insertBefore(icon, link.nextSibling);
+            if (proxiedIds.indexOf(recordId) !== -1 && !(link.nextSibling && link.nextSibling.classList && link.nextSibling.classList.contains('domainmanager-proxy-indicator'))) {
+                var icon = document.createElement('i');
+                icon.className = 'ti ti-cloud-filled text-primary ms-1 domainmanager-proxy-indicator';
+                icon.title = cloudTitle;
+                link.parentNode.insertBefore(icon, link.nextSibling);
+            }
 
-            var button = document.createElement('button');
-            button.type = 'button';
-            button.className = 'btn btn-link btn-sm p-0 ms-2 domainmanager-show-public-ip';
-            button.textContent = showIpLabel;
-            button.addEventListener('click', function () {
-                button.disabled = true;
-                fetch(recordIpUrlBase + recordId, {
-                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
-                }).then(function (response) {
-                    return response.json();
-                }).then(function (data) {
-                    button.textContent = (data.ips && data.ips.length) ? data.ips.join(', ') : failedLabel;
-                }).catch(function () {
-                    button.textContent = failedLabel;
-                });
-            });
-            icon.parentNode.insertBefore(button, icon.nextSibling);
+            var addresses = proxyAddrs[recordId];
+            if (addresses && addresses.length && dataTd && !dataTd.querySelector('.domainmanager-proxy-addresses')) {
+                var addrLine = document.createElement('div');
+                addrLine.className = 'text-muted small domainmanager-proxy-addresses';
+                addrLine.textContent = addresses.join(', ');
+                dataTd.appendChild(addrLine);
+            }
+
+            if (ttlAutoIds.indexOf(recordId) !== -1 && ttlTd && !ttlTd.classList.contains('domainmanager-ttl-auto')) {
+                ttlTd.classList.add('domainmanager-ttl-auto');
+                ttlTd.title = ttlTd.textContent.trim();
+                ttlTd.textContent = autoLabel;
+            }
         });
     })();
 </script>
