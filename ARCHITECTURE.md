@@ -3817,8 +3817,13 @@ Files: `src/Service/SyncEngine.php`, `src/Controller/SyncController.php`,
 - 76: reproduce by (a) loading a domain with a live Supplier — expect a link; (b) deleting that
   Supplier and reloading — expect plain text; (c) clicking "Update Now" on a domain with a live
   Supplier — expect the link to survive the sync instead of collapsing to plain text.
+- 77: at the provider, create two TXT records with identical name and content; run "Update Now"
+  twice — first sync mirrors one in, second sync should complete without the abort message and
+  `domainmanager.log` should show the "Skipped mirroring duplicate upstream TXT record" line;
+  confirm a genuine user-initiated duplicate TXT add (not sync-driven) still hard-aborts with its
+  original error message.
 
-### 19.7 Phase 77 (new, user-reported 2026-08-08, deferred — not yet planned in detail) — Reconciler sync blocked by a genuine upstream TXT duplicate
+### 19.7 Phase 77 (new, user-reported 2026-08-08; implemented) — Reconciler sync blocked by a genuine upstream TXT duplicate
 
 Bug report: running a manual domain sync produced the user-facing abort message `A record of
 type TXT named "dev.gal" already exists for this domain; Domain Manager does not allow duplicate
@@ -3841,16 +3846,22 @@ show it to) instead of being skipped/logged and letting the rest of the sync pro
 `cronDomainSync`'s per-domain outcome (Phase 72) would presumably surface it as an `error`, worth
 confirming once this phase is implemented since Phase 72 predates this bug report.
 
-Not yet planned: whether the fix is (a) exempting reconciler-driven adds from this guard for TXT
-specifically, now that TXT's content-aware comparison already prevents the original 2026-08-03
-failure mode it exists to catch (the incident was A records, a type where round-robin duplicates
-are out of scope by design — TXT's rationale may not carry over); (b) treating an exact upstream
-TXT duplicate as a skip-with-log rather than a hard sync error, since the reconciler can't create
-the record locally either way and blocking the rest of that domain's sync over it seems like the
-wrong failure mode; or (c) something else. Needs its own research pass before implementation,
-not assumed from this summary alone.
+Fix implemented: option (b) — a reconciler-driven (`_domainmanager_sync`) add that hits this
+guard for TXT specifically is now skipped rather than hard-aborted. Option (a) (exempting TXT
+reconciler adds from the guard entirely) was considered but rejected: the guard's content-aware
+TXT match only ever fires on a genuine byte-identical duplicate, so there is nothing left to
+protect against by exempting it — skip-with-log and outright exemption behave identically in
+practice, but skip-with-log keeps a visible trail (`PluginLogger::activity()`) of what happened,
+which outright exemption would not. `onPreAdd()` (`src/Service/DnsRecordWriteback.php:104-177`)
+now computes `$isSyncAdd` once, before the duplicate-name guard runs, and reuses it for the
+existing `_domainmanager_sync` bypass below it; when the guard's `$duplicateError` fires and both
+`$isSyncAdd` and `$checkType === 'TXT'` hold, the add is cancelled (`$item->input = false`, no
+`Session::addMessageAfterRedirect()`) and logged via `PluginLogger::activity()` instead of
+`self::abort()`. Every other combination (non-sync TXT duplicate, any-source A/AAAA/CNAME
+duplicate) keeps the original hard abort — the 2026-08-03 retry-storm protection for those types
+is unchanged.
 
-Files (surveyed, not yet a fix plan): `src/Service/DnsRecordWriteback.php`.
+Files: `src/Service/DnsRecordWriteback.php`.
 
 ### 19.8 Phase 78 (new, user-reported 2026-08-08, deferred — not yet planned in detail) — Deleted proxied record leaves stale proxy state
 

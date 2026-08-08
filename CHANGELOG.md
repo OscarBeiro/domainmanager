@@ -17,6 +17,7 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 - The daily domain sync now logs each individual domain it processes, not just a run summary.
 
 ### Bugs
+- Fixed a sync that could get permanently stuck on a domain because of a duplicate TXT record that genuinely exists at the DNS provider — that one record is now skipped instead of blocking the rest of the sync.
 - The DNS Provider name on a domain's form now stays a clickable link after clicking "Update Now", instead of turning into plain text until the page is reloaded.
 
 ## [1.6.0] - 2026-08-08

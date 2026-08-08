@@ -3719,3 +3719,22 @@ don't rely on the "click date" UI in this GLPI version.
   alerts (`role="alert"` now present on every one, including the two that previously lacked it —
   `domain_panel.html.twig`'s provider warning and `supplier_tab.html.twig`'s Cloudflare notice).
   - [ ] Not yet verified live
+
+### Phase 77: reconciler sync no longer aborts on a genuine upstream TXT duplicate
+
+- **Create two TXT records with identical name and content at the provider** (Cloudflare/IONOS/
+  Dinahosting) for a write-back-managed domain, then run "Update Now" twice in a row. Expected:
+  the first sync mirrors one of them in locally as usual; the second sync completes successfully
+  (no user-facing abort message) instead of stalling on the duplicate, and `domainmanager.log`
+  shows a "Skipped mirroring duplicate upstream TXT record ..." activity line.
+  - [ ] Not yet verified live
+- **Confirm a genuine user-initiated duplicate TXT add is still rejected.** Manually add a DNS
+  record via the UI with the same type+name+content as an existing TXT record on the same
+  domain (not via sync). Expected: still hard-aborts with the original "already exists for this
+  domain" error message — this phase only changes reconciler-driven (sync) adds.
+  - [ ] Not yet verified live
+- **Confirm A/AAAA/CNAME duplicate protection is unchanged.** Attempt to create a second A record
+  at the same name (manually, or by letting a reconciler sync mirror one in if reproducible).
+  Expected: still hard-aborts exactly as before this phase — the skip-with-log behavior is scoped
+  to sync-driven TXT duplicates only.
+  - [ ] Not yet verified live

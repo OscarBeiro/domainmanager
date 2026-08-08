@@ -143,19 +143,40 @@ class DnsRecordWriteback
         // against the domain's own zone name first, same as the actual
         // push below does.
         $checkType = self::typeName($type_id);
+        $isSyncAdd = !empty($item->input['_domainmanager_sync']);
         if ($checkType !== null && in_array($checkType, self::WRITABLE_TYPES, true)) {
             $checkDomain = new Domain();
             if ($domains_id > 0 && $checkDomain->getFromDB($domains_id) && DomainState::getForDomain($domains_id) !== null) {
                 $qualifiedName = self::absoluteRecordName($rawName, $checkDomain->fields['name']);
                 $duplicateError = self::duplicateNameError($domains_id, $type_id, $qualifiedName, null, (string) ($item->input['data'] ?? ''));
                 if ($duplicateError !== null) {
+                    if ($isSyncAdd && $checkType === 'TXT') {
+                        // Phase 77 (ARCHITECTURE.md §19.7): a genuine upstream
+                        // duplicate TXT record (byte-identical type+name+content,
+                        // per duplicateNameError()'s TXT-specific content match)
+                        // can never be mirrored in locally once the first copy
+                        // already exists — aborting here, as the generic path
+                        // below does, would stall this one record's mirroring on
+                        // every sync forever, with no user around during a cron
+                        // run to even see the abort message. Skip just this
+                        // record and let the rest of the sync proceed; this
+                        // doesn't weaken the original 2026-08-03 retry-storm
+                        // protection, which was about A records, not TXT.
+                        PluginLogger::activity(sprintf(
+                            'Skipped mirroring duplicate upstream TXT record "%s" for domain #%d (byte-identical record already exists locally)',
+                            $qualifiedName,
+                            $domains_id,
+                        ));
+                        $item->input = false;
+                        return;
+                    }
                     self::abort($item, $duplicateError);
                     return;
                 }
             }
         }
 
-        if (!empty($item->input['_domainmanager_sync'])) {
+        if ($isSyncAdd) {
             // RecordReconciler creating a local mirror of a record it just
             // read FROM the provider (§ live bug, 2026-08-03: with no such
             // guard, this fired for every reconciler-driven add — outside
