@@ -321,7 +321,14 @@ A third search option (`Domain`, id `9403`, `"Registrar (Financial information)"
 
 The two remaining, real, non-duplicate options this plugin still registers — `PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_MANAGED`/`_PROXY` (§5.7/§9 Phase 7 addendum) and the new `PLUGIN_DOMAINMANAGER_SO_DOMAIN_MANAGED` (§9 Phase 14) — now each open their itemtype's option group with an explicit category-tab entry (`'id' => 'domainmanager', 'name' => __('Domain Manager', 'domainmanager')`, the same convention core's own `Infocom::rawSearchOptionsToAdd()` uses for its `'id' => 'financial'` header), so they group under a clearly-labeled "Domain Manager" section in the Search UI instead of the generic, unlabeled "Plugins" catch-all a plugin's options fall into without one.
 
-`search-options-registry.json` (repo root) is the TICGAL-wide ledger of every search-option ID any TICGAL plugin registers, keyed by plugin then itemtype — it exists to keep IDs collision-free *between TICGAL's own plugins* (mechanically checkable). Its `removed` array now documents `9401`/`9402`/`9403`'s removal and why, alongside the still-active `9404`/`9405`/`9406`. Update it in the same change whenever a new search option is added here or in any sibling TICGAL plugin.
+**Correction (2026-08-08): no `search-options-registry.json` file was ever created.** Earlier
+revisions of this document described a planned TICGAL-wide, cross-plugin ledger file at the repo
+root; it was never actually built. The real, current source of truth is the
+`define('PLUGIN_DOMAINMANAGER_SO_*', ...)` block in `setup.php` (currently `48-138`), whose
+comments already document each id's purpose and the removed/retired ones (`9401`/`9402`/`9403`
+dropped as placeholders/duplicate of native id 53; `9425`/`9426`/`9429` permanent gaps from a
+same-day-superseded RDAP design). Update that block directly whenever a new search option is
+added, and re-check it (not a JSON file) for collisions before allocating a new id.
 
 ### 3.7.2 Phase 15: "Unknown column ...states_domains_id.is_managed" crash — real root cause was a missed version bump, not a wrong table/hook
 
@@ -357,7 +364,7 @@ Goal: make every field this plugin tracks on `glpi_plugin_domainmanager_states` 
 
 **`last_sync_date` deliberately has no dropdown**: its values aren't a bounded set, so `'datatype' => 'datetime'` (a plain native GLPI datatype, no custom code) is the correct, simpler choice — its built-in `equals`/`morethan`/`lessthan`/`empty` criteria already satisfy "sort and check validity" (e.g. filter for domains whose last sync predates a given date, or that show `empty` because they've never synced at all).
 
-`search-options-registry.json`'s reserved block widened `9400-9409` → `9400-9429` to leave room for the remaining `glpi_plugin_domainmanager_states` fields (the 7 registrar administrative-metadata columns from §9 Phase 7, `is_managed` already covered) a later phase will expose the same way.
+`setup.php`'s reserved block widened `9400-9409` → `9400-9429` to leave room for the remaining `glpi_plugin_domainmanager_states` fields (the 7 registrar administrative-metadata columns from §9 Phase 7, `is_managed` already covered) a later phase will expose the same way.
 
 ### 3.7.2 What gets logged
 
@@ -605,7 +612,7 @@ result object {registrar_status, dns_status, messages} → controller JSON / cro
 - **§5.7 "Managed" search option on DomainRecord (addendum "Searchable 'Managed' Field on Domain Records"):** whether a native `DomainRecord` was imported/is tracked by this plugin (`1`) or created manually by a user, never touched by sync (no row at all — equivalent to "unmanaged" for search purposes). **No new table was created** — deliberate deviation from the addendum's own "e.g. `glpi_plugin_domainmanager_recordmeta`" example: `ImportedRecord`/`glpi_plugin_domainmanager_records` already *is* exactly that shape (a plugin table with a unique `domainrecords_id` FK, one row per plugin-tracked record, created only when the reconciler first touches a record) — adding a second table with the identical relationship would have been a redundant abstraction. `is_managed` (tinyint, default `1`) was added to that existing table instead via `Installer::migrateRecordManagedColumn()`, which also **drops the now-superseded `is_stale` column** in the same step (§5.4). `RecordReconciler::createRecord()` sets `is_managed = 1` once, at creation, and never changes it again — it stays `1` through updated/trashed/restored (§5.4); only a real purge (removing the `ImportedRecord` row via `HookHandler::domainRecordPurged()`, `ITEM_PURGE` only) ends the relationship, matching the addendum's rule that editing/going-stale never revokes provenance.
   - **Search option**: registered in the existing `plugin_domainmanager_getAddSearchOptionsNew()` hook (`setup.php`, same mechanism already used elsewhere, §3.7.1) — `PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_MANAGED = 9404`. Uses `'joinparams' => ['jointype' => 'child']`, confirmed directly against `Glpi\Search\Provider\SQLProvider::getLeftJoinCriteria()` on this exact installed `11.0.8` source (not assumed): this jointype builds `LEFT JOIN glpi_plugin_domainmanager_records ON glpi_domainrecords.id = glpi_plugin_domainmanager_records.domainrecords_id` — the correct shape for a satellite table with a direct, non-polymorphic FK back to the parent item. `linkfield` is set explicitly to `domainrecords_id` for clarity even though it also matches what `getForeignKeyFieldForTable('glpi_domainrecords')` would derive by default (confirmed: `substr('glpi_domainrecords', 5) . '_id'`). `datatype => 'bool'`, `massiveaction => false` (this value is plugin-derived, never meant to be set directly via bulk edit). A manually-created record with no `ImportedRecord` row at all reads as `NULL` through the `LEFT JOIN`, which GLPI's `bool` datatype already renders/filters as "No" — no extra default-value handling needed.
   - **Verified two ways**: (1) the option array's exact shape was confirmed correct by directly invoking the registered `plugin_domainmanager_getAddSearchOptionsNew('DomainRecord')` function inside the live container (returned exactly the expected `{id, table, field, linkfield, name, datatype, massiveaction, joinparams}` shape); (2) getting `Search::getCleanedOptions()`/`Search::getDatas()` to pick it up end-to-end inside a bare throwaway console-command test harness hit `Plugin::isPluginActive()`/`Plugin::getPlugins()` returning empty — a limitation of that specific synthetic bootstrap (a real HTTP request through the Kernel initializes the active-plugins list very differently and much more completely than a bare console command does; `bootPlugins()` alone didn't reproduce it either), **not** evidence of a problem with the option itself.
-  - **Known real gap, flagged rather than glossed over: `DomainRecord` has no native, `Search::show()`-based list/search page in GLPI 11 core.** Confirmed directly: `front/domainrecord.form.php` (single-item form) exists, but there is no `front/domainrecord.php`, and `bin/console debug:router` shows no generic itemtype-agnostic search route either. The *only* existing UI for browsing multiple `DomainRecord`s is `DomainRecord::showForDomain()` (the "Records" tab on each `Domain`), which builds its own raw query and renders via `components/datatable.html.twig` — it does **not** consult `Search::getOptions()`/the search engine at all, so it cannot show or filter by this new option today. The search option is correctly registered per GLPI's supported plugin mechanism (satisfying the addendum's literal ask, and making the field available to any consumer that *does* call the generic search engine for this itemtype — e.g. Reports, a future dedicated list page), but there is currently no dedicated top-level place in the native UI where a user would go to filter Domain Records by "Managed" specifically. Building one (either a new `front/domainrecord.php`-equivalent, or reworking `showForDomain()`'s tab to route through `Search::show()`) would be a separate, larger change with its own regression surface on core-owned add/edit-record UI already living in that tab — not attempted here without being asked.
+  - **Correction (2026-08-08): a working `Search::show()`-based list/search page for `DomainRecord` DOES exist, reachable at `/front/domainrecord.php` despite no physical file at that path.** The earlier claim here ("no front/domainrecord.php, no debug:router route, therefore no search page") was drawn from file-existence and explicit-routing checks alone, missing GLPI 11's generic legacy fallback: `Glpi\Kernel\Listener\RequestListener\LegacyItemtypeRouteListener` (`src/Glpi/Kernel/Listener/RequestListener/LegacyItemtypeRouteListener.php`) intercepts any `/front/{itemtype}.php` request with no matching physical file or explicit route, resolves the itemtype name via `getItemForItemtype()`, and — for any `CommonGLPI` subclass whose `canView()` passes — renders it through `GenericListController` → `templates/pages/generic_list.html.twig` → `Glpi\Search\SearchEngine::show($class)`. Verified live at `http://127.0.0.1:65108/front/domainrecord.php`. Because this plugin never defines its own `DomainRecord` class (search options 9404/9405/9430 are registered directly onto **GLPI core's own `\DomainRecord`** — see above), `getItemForItemtype('domainrecord')` resolves to exactly the class these search options already target, so the "Managed"/"Proxy status"/"Native" options are filterable today through this generic page — no dedicated front file or Search-page build-out needed. `DomainRecord::showForDomain()` (the "Records" tab) remains a separate, purpose-built raw-query view and is unaffected by this.
 
 ---
 
@@ -843,7 +850,7 @@ Right registered per-profile via `Migration::addRight` at install and manageable
     - **"Registrar"** (id 9412, `datatype` => `itemlink`) and **"NS Provider"** (id 9413, `itemlink`) now show the actual clickable Domain names for that role, via a two-hop `beforejoin` chain (Supplier -> `glpi_infocoms`/`glpi_plugin_domainmanager_states` -> `glpi_domains`), each paired with a `count`-only companion — **"Number of domains (Registrar)"** (id 9414) and **"Number of domains (NS Provider)"** (id 9415) — for sorting/filtering by quantity without pulling the name list.
     - **"Domains"** (id 9411, unchanged) stays count-only: it reuses `DomainState`'s `registrar_suppliers_id` mirror column to OR both roles in one join, since a single search-option join can only OR two columns on one table, and there's no way to union two different tables' matching rows into one name list within the search framework's one-join-per-option model. Good enough for "is this supplier worth a closer look" filtering; the authoritative per-domain cross-check is still `DomainState::getDomainsForSupplier()` on the Supplier's own tab.
     - **Live-verified**, not just read from docs: built a throwaway bootstrap script against the `glpi-claude` 11.0.8 dev container (`Glpi\Kernel\Kernel` + `Search::getDatas('Supplier', ..., [9411..9415])`) and confirmed the generated SQL — both `itemlink` two-hop joins and the `count` single-hop joins — executes cleanly (returned 3 rows, all-null values only because that dev instance currently has zero domains linked to any supplier, not a query defect).
-    See `search-options-registry.json` for the full per-option collision-check record.
+    See `setup.php`'s `PLUGIN_DOMAINMANAGER_SO_*` define block for the full per-option collision-check record (no separate registry file exists — see §3.7.1 correction).
 
 15. **Phases 21-23 (implemented 2026-07-28) — RDAP as a fallback/supplementary data source (`PHASE21_PLAN.md`).** Registrar drivers each report a different subset of lifecycle/lock metadata (§3.6-§3.10); RDAP (`rdap.org`) is queried as a driver-agnostic supplement to fill whatever gaps the configured driver leaves, never to override or duplicate what a driver already reports.
     - **No IANA bootstrap-file cache, no per-TLD authoritative-server map.** The cron design's own rate-limit ceiling (one lookup per 10-minute tick) caps worst case at ~144 requests/day to `rdap.org`, nowhere near its 10-req/10s limit — the engineering cost of a bootstrap cache buys nothing at this call volume.
@@ -2524,21 +2531,26 @@ by one"; §14.2 then assigns `9431` with nothing widening the block to cover it.
 broken. Only the bookkeeping diverged, and it diverged because the number is written in prose in two
 sections as well as in the JSON file.
 
-Resolution, decided 2026-08-03:
+Resolution, decided 2026-08-03, **corrected 2026-08-08**: the `resources/search-options-registry.json`
+file described below was never created — see the §3.7.1 correction. The actual single source of truth
+is **`setup.php`'s own `PLUGIN_DOMAINMANAGER_SO_*` define block** (currently ids up to `9431`, see
+§3.7.1). §3.7.4 and §14.2 keep the rule and a pointer to that block; neither restates the number, to
+avoid recreating the drift this section was written to fix.
 
-- **`resources/search-options-registry.json` is the single source of truth** for the current ceiling and
-  for retired IDs. §3.7.4 and §14.2 keep the rule and a pointer to that file; neither restates the
+- **`setup.php`'s define block is the single source of truth** for the current ceiling and
+  for retired IDs. §3.7.4 and §14.2 keep the rule and a pointer to it; neither restates the
   number. Adding a fourth prose copy — including in this section — would recreate the drift.
 - **Fold an enforcement check into this phase.** Assert at install (or in a dev-only check) that every
-  ID returned by `plugin_domainmanager_getAddSearchOptionsNew()` appears in the registry and falls
-  inside the reserved block. `NsProviderRegistry`'s validated-JSON-resource pattern is the precedent, so
-  this is idiomatic rather than new machinery — and it converts a documentation-discipline problem into
-  one the code catches, which is the only kind that survives twenty phases.
+  ID returned by `plugin_domainmanager_getAddSearchOptionsNew()` matches one of `setup.php`'s own
+  `PLUGIN_DOMAINMANAGER_SO_*` constants and falls inside the reserved block. This converts a
+  documentation-discipline problem into one the code catches, which is the only kind that survives
+  twenty phases.
 - **IDs needed here: five.** §11.6 gives four per-type rights rows (`domainmanager:dns_records_a`,
   `_aaaa`, `_cname`, `_txt`) plus `domainmanager:unlock_imported`. Search options are per right *name*,
   one per `glpi_profilerights` row — the `CREATE`/`UPDATE`/`DELETE`/`PURGE` bits are rendered by
-  `getRights()` and need no IDs of their own. Presumed `9432`–`9436`, pending the registry's actual
-  highest value.
+  `getRights()` and need no IDs of their own. Confirmed highest existing id is `9431`
+  (`PLUGIN_DOMAINMANAGER_SO_DOMAIN_GLPI_CREATED`, `setup.php:138`), so these five allocate as
+  `9432`–`9436`.
 
 **Note on §11.6 and Phase 52:** §11.6 states that "every entry point checks rights server-side,
 entity-aware." That reduces Phase 52 to confirming the code matches its own documentation — still worth
@@ -2938,10 +2950,10 @@ the cron may trigger these lookups.
 3. Phase 51b — whether the `request()` error-mapping correction belongs in Group A at all, or is
    small enough to fold into whichever phase next touches `DinahostingDriver`.
 4. Phase 52's outcome is unknown by design — it may be a bug fix or a no-op with a regression test.
-5. Phase 57b's ID allocation — the registry file is the last thing blocking that phase. The plan
-   presumes `9432`–`9436` and makes `search-options-registry.json` the single source of truth for the
-   ceiling, with the prose in §3.7.4/§14.2 reduced to a pointer. Confirm the file's actual highest
-   value, and confirm the enforcement check is wanted rather than just the corrected number.
+5. **Resolved 2026-08-08** — no registry file exists or is planned; `setup.php`'s own define block is
+   the single source of truth, confirmed highest id is `9431`, so Phase 57b allocates `9432`–`9436`.
+   Still open: confirm the enforcement check (assert registered ids match `setup.php` constants) is
+   wanted rather than just the corrected numbers.
 
 ---
 
