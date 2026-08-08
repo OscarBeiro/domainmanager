@@ -43,7 +43,7 @@ use Symfony\Component\Routing\Attribute\Route;
 
 /**
  * Backs the Records tab's "Show public IP" per-row lookup (§17.9-§17.11,
- * Phase 70): a read-only, on-demand live DNS lookup of the publicly-visible
+ * Phase 71): a read-only, on-demand live DNS lookup of the publicly-visible
  * address for a Cloudflare-proxied record — deliberately not queried on page
  * load for every row (§9 Phase 23's cost constraint). Restricted to records
  * the plugin has itself marked `is_proxied`; the origin IP for every other

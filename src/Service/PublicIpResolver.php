@@ -35,7 +35,7 @@ use GlpiPlugin\Domainmanager\IdnNormalizer;
 
 /**
  * Live public-facing IP lookup, isolated as a testable seam (§17.9-§17.11,
- * Phase 70): Cloudflare's API only ever returns the origin IP in `content` —
+ * Phase 71): Cloudflare's API only ever returns the origin IP in `content` —
  * this resolves the live, publicly-visible address instead (the Cloudflare
  * anycast address, for a proxied record). Same shape as NsResolver: a
  * request-scoped `dns_get_record()` wrapper that tolerates failure by
