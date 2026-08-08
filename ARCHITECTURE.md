@@ -3471,6 +3471,13 @@ misleading) was judged not worth the extra right for now.
 - `src/DomainForm.php` — `$can_toggle_proxy` no longer ANDs in the right check; back to
   `$can_update && isProxiableType($type) && supportsProxyToggle($state)`, i.e. Finding 1's original
   status quo (§17.2) — gated solely by the per-type write-back UPDATE right.
+- `src/Installer.php` — added `removeReversedProxyRight()` (called from `install()` right after
+  `registerRights()`/`migratePurgeRight()`), deleting any stale `glpi_profilerights` row named
+  `domainmanager:dns_record_proxy` and re-running `ProfileRight::cleanAllPossibleRights()` — the same
+  cleanup shape `migratePurgeRight()` above uses for a removed right. Guards against a dev/test
+  instance that ran `install()`/`update()` while the right briefly existed on this branch (`f97636b`)
+  before the revert; a no-op everywhere else. Found via a `glpi-plugin-builder` skill review of the
+  add-then-revert diff (2026-08-08).
 
 Net effect: proxy toggling behaves exactly as it did before Phase 69 (per-type UPDATE governs it, no
 separate permission). §17.2's bypass-risk analysis (Finding 4: `proxied` is always sent explicitly on

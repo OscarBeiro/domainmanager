@@ -80,6 +80,7 @@ class Installer
         self::seedRecordTypes();
         self::registerRights($migration);
         self::migratePurgeRight();
+        self::removeReversedProxyRight();
         self::registerCronTasks();
         self::dropRecordConflictsTable($migration);
         self::backfillManagedFieldLocks();
@@ -935,6 +936,27 @@ class Installer
         }
 
         $DB->delete('glpi_profilerights', ['name' => $old_right]);
+        ProfileRight::cleanAllPossibleRights();
+    }
+
+    /**
+     * `domainmanager:dns_record_proxy` (ARCHITECTURE.md §17.14b, Phase 69)
+     * was registered and reverted the same day — proxy toggling is folded
+     * back into the per-type write-back UPDATE right instead of a
+     * dedicated right. Any install/dev instance that ran `install()` while
+     * that right briefly existed on this branch would otherwise carry a
+     * stale `glpi_profilerights` row for a right no longer read anywhere
+     * in code; remove it defensively, same pattern as `migratePurgeRight()`
+     * above. A no-op on any instance that never saw the reverted right.
+     *
+     * @return void
+     */
+    private static function removeReversedProxyRight(): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $DB->delete('glpi_profilerights', ['name' => 'domainmanager:dns_record_proxy']);
         ProfileRight::cleanAllPossibleRights();
     }
 
