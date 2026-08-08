@@ -16,7 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Entries are grouped into **Features** (new capability, UI/UX change, refactor, doc/config
 change) and **Bugs** (something that was actually broken, fixed) — one line each.
 
-## [Unreleased] - 1.6.0-dev
+## [Unreleased] - 1.6.0-beta1
+### Bugs
+- Removed a stale `glpi_profilerights` row left behind on any dev/test instance that had installed/updated while a since-reverted dedicated proxy-toggle right briefly existed on this branch.
 
 ## [1.5.2] - 2026-08-07
 ### Features
