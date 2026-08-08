@@ -11,6 +11,7 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 
 ## [Unreleased]
 ### Features
+- Importing many domains from a supplier at once no longer risks a timeout — newly discovered domains are created immediately and synced shortly after, on the regular daily sync schedule, instead of all at once during the import itself.
 - The daily domain sync now logs each individual domain it processes, not just a run summary.
 
 ## [1.6.0] - 2026-08-08

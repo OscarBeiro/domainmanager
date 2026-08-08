@@ -3652,3 +3652,21 @@ FROM glpi_crontasklogs WHERE crontasks_id = <id> ORDER BY id DESC LIMIT 30;
 ```
 Every run's rows sharing the same `crontasklogs_id` (the START row's id) are the full picture;
 don't rely on the "click date" UI in this GLPI version.
+
+### Phase 73: batched supplier import no longer syncs inline
+
+- **Import a batch of several new domains from a supplier's discovery modal.** Expected: the
+  request returns quickly (no long wait proportional to batch size), the summary message reports
+  "N domains imported" with no "could not be synced yet" line, and every new `Domain` shows as
+  never-synced (state "Never"/no registrar or DNS info yet) immediately after the redirect.
+  - [ ] Not yet verified live
+- **Trigger `cronDomainSync` manually right after that import** (Setup > Automatic actions >
+  "domainmanager - domainsync" > Execute, or CLI). Expected: the just-imported domains are
+  processed first (or among the first, if the batch exceeds the cron's per-run limit), since they
+  have no `last_sync_date` and sort ahead of every previously-synced domain; each one ends up with
+  real registrar/DNS state afterward, and `is_glpi_created` reads as "not Native" for them.
+  - [ ] Not yet verified live
+- **Re-import a previously-trashed domain (restore path).** Expected: unaffected by this phase —
+  the restored domain already carries its old state row, no new bare state row is created for it,
+  and it simply gets picked up again by the normal oldest-first sync ordering.
+  - [ ] Not yet verified live
