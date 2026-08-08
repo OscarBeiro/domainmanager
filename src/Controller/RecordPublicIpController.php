@@ -75,11 +75,12 @@ class RecordPublicIpController extends AbstractController
         $typeObj = new DomainRecordType();
         $type    = $typeObj->getFromDB((int) $record->fields['domainrecordtypes_id']) ? $typeObj->fields['name'] : '';
 
-        $zoneName = $domain->fields['name'];
-        $name     = trim((string) $record->fields['name']);
-        $fqdn     = ($name === '' || $name === '@' || strcasecmp($name, $zoneName) === 0)
-            ? $zoneName
-            : $name . '.' . $zoneName;
+        // Core stores DomainRecord::name as the already-fully-qualified name
+        // (confirmed via DomainRecord::getDisplayName(), which strips the zone
+        // suffix only for *display* purposes) — never a relative label, so it
+        // must not be re-concatenated with the zone name here.
+        $name = trim((string) $record->fields['name']);
+        $fqdn = ($name === '' || $name === '@') ? $domain->fields['name'] : $name;
 
         $ips = (new PublicIpResolver())->resolve($fqdn, $type === 'AAAA' ? 'AAAA' : 'A');
 
