@@ -17,6 +17,9 @@ Entries are grouped into **Features** (new capability, UI/UX change, refactor, d
 change) and **Bugs** (something that was actually broken, fixed) — one line each.
 
 ## [Unreleased] - 1.6.0-beta1
+### Features
+- **Phase 71 (ARCHITECTURE.md §17.16): lazy per-row public IP lookup for proxied records.** New `Service/PublicIpResolver.php` (sibling to `NsResolver.php`) and `GET /plugins/domainmanager/recordip/{domainrecords_id}` (`Controller/RecordPublicIpController.php`, gated on `domain` READ + the record being plugin-tracked `is_proxied`) back a new "Show public IP" button injected next to the existing proxy cloud icon on the Records tab (`domainrecord_proxy_indicators.html.twig`); resolves on click, no load-time DNS query per row.
+
 ### Bugs
 - Removed a stale `glpi_profilerights` row left behind on any dev/test instance that had installed/updated while a since-reverted dedicated proxy-toggle right briefly existed on this branch.
 

@@ -3491,3 +3491,28 @@ proxy-toggle access revisits this.
 - Live verification against a real Cloudflare zone that the proxy toggle actually works end-to-end (update + toggle + re-read). Phase 49's code is integrated and appears functional based on code review, but the §12.8 style "live account verification" has not been done.
 - Whether the NsResolver or a sibling resolver class is the right place for a public-IP fetcher (§17.10 open point 10), or whether the logic belongs inline in the domain form or in a separate service.
 - The IP-display strategy decision: lazy per-row, async fill, or cached. All three are viable; the choice depends on the operator's expected workflow (frequency of viewing, tolerance for lag, trust in cache staleness).
+
+### 17.16 Part B implemented as Phase 71 (not 70), 2026-08-08 — numbering collision note
+
+§17.11's "Phase 70" placeholder recommendation, written 2026-08-07, collided with an unrelated
+fix (the discovery-modal blank-on-error fix, CHANGELOG-dev.md's `1.5.0` section) that had already
+shipped as Phase 70 on 2026-08-03 — the placeholder was proposed without checking the number was
+still free. **Implemented as Phase 71** instead, to avoid two different pieces of work sharing one
+phase number in the changelog history. Owner picked the **lazy per-row** strategy (§17.9's option
+1), with cached-with-TTL (option 3) flagged as a possible later phase.
+
+Implementation:
+- New `src/Service/PublicIpResolver.php` — sibling to `NsResolver.php`, same IDN-normalize +
+  validate + `@dns_get_record()`-tolerate-failure shape; `resolve(string $fqdn, string $type)`
+  queries `DNS_A`/`DNS_AAAA` per `$type` ('A' or 'AAAA'; CNAME resolves transitively by querying
+  the same type on the same name).
+- New `src/Controller/RecordPublicIpController.php` — `GET /plugins/domainmanager/recordip/
+  {domainrecords_id}`. Gated on `domain` READ (this is a read-only lookup of already-public DNS
+  data, not a write), and further restricted to records the plugin has marked `is_proxied` via
+  `ImportedRecord` — a non-proxied record's origin IP is already visible in the Records tab's own
+  Data column, so there's no reason to expose a live-DNS fan-out for arbitrary record ids.
+- `templates/domainrecord_proxy_indicators.html.twig` — the existing per-row cloud-icon overlay
+  script now also inserts a "Show public IP" button next to the icon; a delegated click handler
+  fetches the new endpoint and replaces the button's own text with the result (or a failure
+  message), one-shot per page view — no polling, no load-time query per row, matching the lazy
+  per-row framing.

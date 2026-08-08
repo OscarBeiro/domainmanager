@@ -29,7 +29,8 @@
 {#
  # Rendered from `DomainForm::renderProxyIndicators()` on the Records tab.
  # `DomainRecord::showForDomain()` is core's own hardcoded datatable with no
- # extension point for an extra column, so a cloud icon is overlaid next to
+ # extension point for an extra column, so a cloud icon (and, per §17.9-
+ # §17.11 Phase 70, a lazy "Show public IP" lookup link) is overlaid next to
  # each proxied record's Name link instead, matched by the record id already
  # present in that link's native `getFormURLWithID()` href.
  #}
@@ -37,6 +38,10 @@
     (function () {
         var proxiedIds = {{ proxied_ids|json_encode|raw }};
         var title = {{ __('Proxied through Cloudflare', 'domainmanager')|json_encode|raw }};
+        var showIpLabel = {{ __('Show public IP', 'domainmanager')|json_encode|raw }};
+        var failedLabel = {{ __('Lookup failed', 'domainmanager')|json_encode|raw }};
+        var recordIpUrlBase = {{ path('/plugins/domainmanager/recordip/')|json_encode|raw }};
+
         document.querySelectorAll('a[href*="domainrecord.form.php?id="]').forEach(function (link) {
             var match = link.href.match(/[?&]id=(\d+)/);
             if (!match || proxiedIds.indexOf(parseInt(match[1], 10)) === -1) {
@@ -45,10 +50,30 @@
             if (link.nextSibling && link.nextSibling.classList && link.nextSibling.classList.contains('domainmanager-proxy-indicator')) {
                 return;
             }
+            var recordId = match[1];
+
             var icon = document.createElement('i');
             icon.className = 'ti ti-cloud-filled text-primary ms-1 domainmanager-proxy-indicator';
             icon.title = title;
             link.parentNode.insertBefore(icon, link.nextSibling);
+
+            var button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'btn btn-link btn-sm p-0 ms-2 domainmanager-show-public-ip';
+            button.textContent = showIpLabel;
+            button.addEventListener('click', function () {
+                button.disabled = true;
+                fetch(recordIpUrlBase + recordId, {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                }).then(function (response) {
+                    return response.json();
+                }).then(function (data) {
+                    button.textContent = (data.ips && data.ips.length) ? data.ips.join(', ') : failedLabel;
+                }).catch(function () {
+                    button.textContent = failedLabel;
+                });
+            });
+            icon.parentNode.insertBefore(button, icon.nextSibling);
         });
     })();
 </script>

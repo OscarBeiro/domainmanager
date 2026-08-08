@@ -3498,3 +3498,23 @@ into the existing per-type write-back UPDATE right rather than gated by a separa
 right exists, so no dedicated test cases apply — proxy-toggle behavior is covered by the existing
 per-type UPDATE right's own test coverage (Phase 37/49 above). See ARCHITECTURE.md §17.14b for what
 was reverted and why.
+
+### Phase 71 — lazy per-row public IP lookup for proxied records (ARCHITECTURE.md §17.16)
+
+- **"Show public IP" appears only on proxied records.** On a Domain's Records tab, a record marked
+  `is_proxied` (cloud icon already shown) also shows a "Show public IP" button next to the icon; a
+  non-proxied record shows neither.
+  - [ ] Not yet verified live
+- **Clicking the button resolves a live public IP.** Click "Show public IP" on a proxied A/AAAA
+  record pointed at a real Cloudflare zone. Expected: the button's text is replaced with a
+  Cloudflare anycast address, distinct from the origin IP shown in the Data column, and the
+  button becomes non-interactive (one-shot).
+  - [ ] Not yet verified live (requires a real Cloudflare-proxied zone)
+- **Graceful failure when live DNS doesn't resolve.** Click the button for a proxied record whose
+  name no longer resolves publicly (e.g. record deleted upstream but not yet reconciled).
+  Expected: button text shows a "Lookup failed" message, no JS error in the console.
+  - [ ] Not yet verified live
+- **Endpoint rejects non-proxied and unauthorized access.** A crafted GET to
+  `/plugins/domainmanager/recordip/{id}` for a record with `is_proxied = 0` returns HTTP 400; the
+  same request from a user lacking `domain` READ returns HTTP 403.
+  - [ ] Not yet verified live (code review + `phpcs`/`php-cs-fixer`/`php -l` only so far)

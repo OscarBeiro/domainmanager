@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Entries are grouped into **Features** and **Bugs**, one line each.
 
 ## [Unreleased]
+### Features
+- Proxied DNS records now have a "Show public IP" link on the Records tab that looks up the live, publicly-visible address on demand.
 
 ## [1.5.2] - 2026-08-07
 ### Features
