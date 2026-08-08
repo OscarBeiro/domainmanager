@@ -3646,8 +3646,9 @@ live here. Re-verified against current code before recording, rather than truste
 
 Planning-only session; no code changed. Each phase below is scoped to be implemented standalone
 in its own fresh session, starting from base branch `develop`. Verify GLPI internals against
-`glpi-project/glpi` pinned to `11.0/bugfixes` (never `main`). Per §10, target `1.7.0-alpha1`, not
-`-dev`, for the pre-release changelog heading.
+`glpi-project/glpi` pinned to `11.0/bugfixes` (never `main`). Target version for this cycle's
+changelog heading is `1.7.0-dev` (user override of §10's default `alpha1`/`alpha2`/`beta1`
+pre-release convention for this release).
 
 ### 19.1 Phase 72 — Per-item logging on both cron tasks
 
