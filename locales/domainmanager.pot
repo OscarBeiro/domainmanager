@@ -1,7 +1,7 @@
-# domainmanager Glpi Plugin.
-# Copyright (C) 2026 TICgal
+# Domain Manager Glpi Plugin.
+# Copyright (C) 2026 TICGAL
 # This file is distributed under the same license as the PACKAGE package.
-# TICgal, 2026
+# TICGAL, 2026
 #
 #, fuzzy
 msgid ""
@@ -9,7 +9,7 @@ msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-08-08 20:06+0200\n"
-"PO-Revision-Date: 2026-MO-DA HO:MI+ZONE\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
 "Language: \n"
@@ -955,7 +955,7 @@ msgstr ""
 msgid "This DMARC record has no \"p=\" tag; without one no policy is applied"
 msgstr ""
 
-#: src/Service/RecordValidator.php:293
+#: src/Service/RecordValidator.php:295
 msgid ""
 "This DKIM record has no \"p=\" tag; without one the key cannot be validated"
 msgstr ""
