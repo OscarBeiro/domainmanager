@@ -3620,3 +3620,35 @@ blocked IP — every 403 branch in `CloudflareDriver` previously discarded that 
   Expected: that domain's per-domain log line shows an `error (...)` outcome distinct from the
   synced ones, and the run summary's error count still matches.
   - [ ] Not yet verified live
+
+### Known upstream GLPI 11 bug: cron task "Logs" detail view never shows per-item lines
+
+Not a Domain Manager bug — confirmed as a genuine GLPI 11 core regression, still present on
+`main` (unreleased next major) as of this check. Affects every plugin's/core's cron task the
+same way, including this plugin's `cronDomainSync`/`cronRdapEnrichment` (Phase 72).
+
+**Symptom:** Setup > Automatic actions > [any task] > Logs lists one row per run (e.g. "Action
+completed, fully processed"). Clicking that row's date to drill into per-item detail reloads the
+tab with the exact same single row — no per-item lines ever appear, even though they exist.
+
+**Root cause (confirmed by diffing `src/CronTask.php` across branches):** `showHistory()`
+builds each run's date link. On GLPI 10.0/bugfixes it correctly links using
+`$data['crontasklogs_id']` (the shared group key every child log row's own `crontasklogs_id`
+column points at). Somewhere in GLPI 11's Twig rewrite of this method, that became
+`(int) $data['id']` — the STOP row's *own* primary key, not the shared group key. Since
+`showHistoryDetail($logid)` queries `WHERE id=$logid OR crontasklogs_id=$logid`, and every
+per-item/summary child row's `crontasklogs_id` points at the run's *start* row (a different id
+than the stop row you clicked), the detail query can never find them. Confirmed still present
+on GLPI 11.0/bugfixes (the pinned target branch) and on `main` (next major, unreleased) as of
+2026-08-08; not present on 10.0/bugfixes. No matching GitHub issue found in
+`glpi-project/glpi` as of this check — worth filing upstream if it still isn't fixed by the
+time this is revisited.
+
+**How to verify this plugin's own cron logging is actually correct despite the broken UI:**
+query `glpi_crontasklogs` directly —
+```sql
+SELECT id, crontasks_id, crontasklogs_id, date, state, volume, content
+FROM glpi_crontasklogs WHERE crontasks_id = <id> ORDER BY id DESC LIMIT 30;
+```
+Every run's rows sharing the same `crontasklogs_id` (the START row's id) are the full picture;
+don't rely on the "click date" UI in this GLPI version.
