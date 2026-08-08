@@ -310,7 +310,7 @@ class DomainForm
         // fact itself (TTL 1 == automatic) is Cloudflare-specific, checked
         // via the same instanceof-capability pattern as $can_toggle_proxy
         // above, never a hardcoded driver name.
-        $ttl_auto_note = $can_update && $state !== null && DnsRecordWriteback::supportsTtlAutoSentinel($state);
+        $ttl_auto_note = $can_update && DnsRecordWriteback::supportsTtlAutoSentinel($state);
 
         TemplateRenderer::getInstance()->display('@domainmanager/domainrecord_edit_panel.html.twig', [
             'can_update'        => $can_update,
