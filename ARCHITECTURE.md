@@ -3817,3 +3817,37 @@ Files: `src/Service/SyncEngine.php`, `src/Controller/SyncController.php`,
 - 76: reproduce by (a) loading a domain with a live Supplier — expect a link; (b) deleting that
   Supplier and reloading — expect plain text; (c) clicking "Update Now" on a domain with a live
   Supplier — expect the link to survive the sync instead of collapsing to plain text.
+
+### 19.7 Phase 77 (new, user-reported 2026-08-08, deferred — not yet planned in detail) — Reconciler sync blocked by a genuine upstream TXT duplicate
+
+Bug report: running a manual domain sync produced the user-facing abort message `A record of
+type TXT named "dev.gal" already exists for this domain; Domain Manager does not allow duplicate
+records`, surfaced during `cronDomainSync`/"Update Now", not a user-initiated add.
+
+Root cause (confirmed, not yet designed around): `DnsRecordWriteback::onPreAdd()`
+(`src/Service/DnsRecordWriteback.php:117-152`) runs its plugin-wide duplicate-name guard
+**before** the `_domainmanager_sync` bypass check (`:150-152`) — a deliberate 2026-08-03 design
+decision (comment at `:117-124`) so a retry-storm-style duplicate is caught even when the write
+originates from `RecordReconciler` mirroring an upstream read, not a real user-initiated create.
+For TXT specifically the guard is narrowed to an exact type+name+**content** match
+(`duplicateNameError()` `:971-973`, Phase 68 addendum), so this only fires when the provider
+itself already has two TXT records at the same name with byte-identical content — i.e. the
+duplicate genuinely exists upstream (e.g. at Cloudflare), and the reconciler's attempt to mirror
+the second one in locally is what's being refused.
+
+Effect: a real upstream duplicate now silently stalls that record's mirroring on every sync
+(the abort message is user-facing per `self::abort()`, but during a cron run there's nothing to
+show it to) instead of being skipped/logged and letting the rest of the sync proceed —
+`cronDomainSync`'s per-domain outcome (Phase 72) would presumably surface it as an `error`, worth
+confirming once this phase is implemented since Phase 72 predates this bug report.
+
+Not yet planned: whether the fix is (a) exempting reconciler-driven adds from this guard for TXT
+specifically, now that TXT's content-aware comparison already prevents the original 2026-08-03
+failure mode it exists to catch (the incident was A records, a type where round-robin duplicates
+are out of scope by design — TXT's rationale may not carry over); (b) treating an exact upstream
+TXT duplicate as a skip-with-log rather than a hard sync error, since the reconciler can't create
+the record locally either way and blocking the rest of that domain's sync over it seems like the
+wrong failure mode; or (c) something else. Needs its own research pass before implementation,
+not assumed from this summary alone.
+
+Files (surveyed, not yet a fix plan): `src/Service/DnsRecordWriteback.php`.
