@@ -3767,3 +3767,18 @@ don't rely on the "click date" UI in this GLPI version.
   off, confirm every still-live proxied record still shows its cloud icon and proxied-IP line as
   before this phase.
   - [ ] Not yet verified live
+
+### Phase 79: two more warning notices normalized (missed by Phase 75)
+
+- **Open an existing DNS record's edit form on a write-back-managed domain.** Expected: the
+  "Managed by Domain Manager" ribbon-card's "Saving this form updates the record live at ...
+  There is no undo." line now renders as an `alert-warning` banner (icon + visible border/
+  background, `role="alert"`), not plain muted text — matching the identical message already
+  shown that way on the generic "New Domain record" form. Check both light and dark theme.
+  - [ ] Not yet verified live
+- **Open a Supplier's Domain Manager tab and select each of Cloudflare, IONOS, and Dinahosting
+  as the API driver in turn.** Expected: each driver's credential-requirement hint ("Requires an
+  Account API Token…" / "Requires an API Key and Secret…" / "Requires the super-admin account's
+  username and password…") now renders as an `alert-warning` banner instead of a plain muted
+  hint, with its "Setup instructions" link still present and working. Check both themes.
+  - [ ] Not yet verified live

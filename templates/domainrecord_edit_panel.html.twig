@@ -42,7 +42,13 @@
             <h4 class="card-title ps-5">{{ __('Managed by Domain Manager', 'domainmanager') }}</h4>
         </div>
         <div class="card-body">
-            <div class="text-muted small">
+            {# Phase 79: same "live push, no undo" warning as
+             # domainrecord_new_notice.html.twig's identical message on the
+             # generic add form — now styled the same way (alert-warning,
+             # config.html.twig's reference shape) instead of plain muted
+             # text, so the two entry points read as the same warning. #}
+            <div class="alert alert-warning mb-0" role="alert">
+                <i class="ti ti-world-cog me-1"></i>
                 {% if supplier_name %}
                     {{ __('Saving this form updates the record live at %s. There is no undo.', 'domainmanager')|replace({'%s': supplier_name}) }}
                 {% else %}
