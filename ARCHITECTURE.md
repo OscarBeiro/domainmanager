@@ -3641,3 +3641,178 @@ live here. Re-verified against current code before recording, rather than truste
   already exists") only render on an actual **successful, empty-or-fully-matched** discovery, never
   on failure. No code change made; recorded here so this doesn't get re-investigated as a live bug
   report without first checking whether the "empty table" being described is actually an error page.
+
+## 19. Research (2026-08-08) — Phases 72–76, planned for `1.7.0` (one phase, one session each)
+
+Planning-only session; no code changed. Each phase below is scoped to be implemented standalone
+in its own fresh session, starting from base branch `develop`. Verify GLPI internals against
+`glpi-project/glpi` pinned to `11.0/bugfixes` (never `main`). Per §10, target `1.7.0-alpha1`, not
+`-dev`, for the pre-release changelog heading.
+
+### 19.1 Phase 72 — Per-item logging on both cron tasks
+
+Today `cronDomainSync()` (`src/Cron.php:92-211`) already calls `addVolume(1)` once per domain
+inside its loop (`Cron.php:185`), but logs only at run level: a summary (`:189`), a per-entity
+breakdown (`:191-197`), and a per-registrar breakdown (`:199-204`) — no per-domain `$task->log()`
+line. `cronRdapEnrichment()` (`Cron.php:242-316`) processes one domain per run (early `return 1`
+at `:311`), so its addVolume-once-vs-per-item question doesn't currently arise, but any per-item
+logging added should still follow the same shape in case that early-return is revisited later.
+Neither task resolves/logs an entity name per item — only entity-level aggregates in the summary.
+
+Plan: add one `$task->log($msg)` per domain in `cronDomainSync()`'s loop (~`Cron.php:140-185`),
+guarded by `if ($task)`, in `Certificate::cronCertificateAlert()`'s shape (entity, domain name,
+outcome — synced/no-change/error+reason); confirm the exact entity-name helper against
+`11.0/bugfixes` before writing (candidate: `Dropdown::getDropdownName('glpi_entities',
+$entities_id)`). Keep existing summary lines — per-item lines supplement them. Add the matching
+per-domain log call to `cronRdapEnrichment()` at its existing log/addVolume point (`:302-310`).
+Then document the convention (cron logs per item not per run; `$task->log()` +`addVolume(1)`
+inside the loop; `$task` nullable, must be guarded; entity name belongs in the message since the
+Logs view has no entity column) in `.claude/skills/glpi-plugin-builder/`.
+
+Files: `src/Cron.php`, `.claude/skills/glpi-plugin-builder/`.
+
+### 19.2 Phase 73 — Batched supplier import
+
+Import entry point `templates/domain_discovery_modal.html.twig:63-130` posts to
+`/plugins/domainmanager/domainimport/{suppliers_id}`, handled fully synchronously in one request
+by `src/Controller/DomainImportController.php:65-201` (`foreach ($names as $normalized => $name)`
+at `:117`). **Confirmed risk**: each domain creation triggers an immediate sync inline in the
+loop — `$engine->sync($domain, true)` at `:184` — so 100 imports means 100 synchronous provider
+syncs in one HTTP request, the timeout/rate-limit exposure the phase exists to fix. Partial
+failure is already non-fatal per domain: sync failures are caught (`:184-187`), counted into
+`$sync_failed`, loop continues, single summary returned at the end (`:194-198`) — so today's model
+is "commit each domain independently, report a count," not all-or-nothing, but nothing paces or
+chunks requests and there's no live progress feedback. Not yet measured at planning time:
+`max_execution_time`/`memory_limit` vs actual per-domain cost, and the precise re-run/duplicate
+behavior of the existing-domain check at `:118-166` (it appears to guard against duplicates but
+needs confirming, not re-solving, at implementation time).
+
+Plan: split domain-row creation (fast, stays synchronous) from per-domain sync — defer sync to
+the existing `cronDomainSync` rotation instead of syncing inline during import, removing the
+rate-limit/timeout risk without inventing a queue. If immediate visible sync is wanted, chunk the
+import across successive client-driven requests instead, with a running progress count and a
+final per-domain success/fail table (never a silent partial import). Confirm and document
+re-run/idempotency behavior of `:118-166` rather than rebuilding it. Report on, but don't build
+unasked, a pre-commit dry-run count ("42 new, 58 already exist").
+
+Files: `src/Controller/DomainImportController.php`, `templates/domain_discovery_modal.html.twig`.
+
+### 19.3 Phase 74 — Correct history action semantics
+
+Every `Log::history()` call in the plugin uses the 3-arg form with no `$linked_action`, so all
+currently default to `HISTORY_LOG_SIMPLE_MESSAGE` (12):
+
+| File:line | Target itemtype | Current shape |
+|---|---|---|
+| `src/HookHandler.php:229` | `Domain::class` | plain message |
+| `src/SupplierConfig.php:429` | `Supplier::class` | plain message |
+| `src/SupplierConfig.php:463-472` | `Supplier::class` | plain message (sprintf) |
+| `src/Service/SyncLogger.php:57` | `Domain::class` | plain message |
+| `src/Service/DnsRecordWriteback.php:1185-1194` | `Domain::class` | plain message (sprintf) |
+
+Per `Log::getHistoryData()` on `11.0/bugfixes`, `HISTORY_ADD_SUBITEM`(17)/`HISTORY_UPDATE_SUBITEM`
+(18)/`HISTORY_DELETE_SUBITEM`(19) resolve the Field column from
+`getItemForItemtype($data["itemtype_link"])->getTypeName(1)` — driven by `itemtype_link`, not
+`id_search_option`.
+
+Plan for the implementing session: classify each call above as a genuine add/update/delete or as
+free-text narration with no such shape. `DnsRecordWriteback.php`'s calls likely overlap with
+`DomainRecord`'s own `CommonDBChild`/`$logs_for_parent` native subitem logging on the parent
+`Domain` — check for duplication and retire the plugin's own call where core already writes an
+equivalent entry, rather than upgrading a duplicate. For genuine add/update/delete events not
+already covered natively, switch to the matching `HISTORY_*_SUBITEM` constant with `itemtype_link`
+set, and confirm the `new_value` format `HISTORY_ADD_SUBITEM` expects so the message fits it.
+`SupplierConfig.php`'s two calls and `SyncLogger.php`'s call read as genuine free-text
+status/sync narration and likely should stay `HISTORY_LOG_SIMPLE_MESSAGE` — confirm rather than
+force a subitem shape onto them.
+
+Files: `src/HookHandler.php`, `src/SupplierConfig.php`, `src/Service/SyncLogger.php`,
+`src/Service/DnsRecordWriteback.php`.
+
+### 19.4 Phase 75 — Consistent warning styling
+
+Reference ("good") pattern, `templates/config.html.twig:44-47`:
+
+```twig
+<div class="alert alert-warning" role="alert">
+    <i class="ti ti-alert-triangle me-1"></i>
+    {{ __('...', 'domainmanager') }}
+</div>
+```
+
+Inconsistent occurrences found: `templates/domainrecord_new_notice.html.twig:44-47` (`d-flex
+align-items-center`, text wrapped in an inner `<div>`, `me-2`, icon `ti-world-cog`, plus a
+behavioral `d-none` initial state — keep the behavior, fix the rest);
+`templates/domainrecord_edit_panel.html.twig:85-88` (same `d-flex align-items-center` + `<div>`-
+wrap + `me-2`, icon `ti-lock`); `templates/domain_panel.html.twig:184-197` (missing
+`role="alert"`, includes a genuine `<a>` help link to keep, conditional `d-none` via ternary —
+behavioral, keep); `templates/supplier_tab.html.twig:46-49` (missing `role="alert"` only).
+
+Plan: normalize all four to `config.html.twig`'s shape — `alert alert-warning ... role="alert"`,
+`<i class="ti ti-alert-triangle me-1"></i>` then text as a direct child, not wrapped in an inner
+`<div>` — while preserving each template's real behavioral classes (`d-none` toggles, spacing
+utilities, the help link). `ti-world-cog` and `ti-lock` are semantically deliberate (write-back
+vs read-only distinctness) and should likely stay; default to keeping semantically distinct icons
+and fixing only structural/accessibility drift unless the user says otherwise when this phase is
+implemented. Tabler/Bootstrap 5 utility classes and Tabler icons only, no custom CSS/inline
+style, GLPI theme variables only (already true here). Verify in both light and dark theme.
+
+Files: `templates/domainrecord_new_notice.html.twig`, `templates/domainrecord_edit_panel.html.twig`,
+`templates/domain_panel.html.twig`, `templates/supplier_tab.html.twig`.
+
+### 19.5 Phase 76 (new, user-reported) — Inconsistent DNS provider hyperlink on the domain form
+
+Bug report: on `front/domain.form.php?id=…`, the DNS provider name is sometimes a clickable link
+to the Supplier record and sometimes plain text, with no pattern identifiable from the UI alone.
+Root cause fully identified — three contributing causes, all confirmed against current code:
+
+1. **Template condition**, `templates/domain_panel.html.twig:127-135`: renders `<a
+   href="{{ dns_supplier.getLinkURL() ~ supplier_tab_forcetab }}">{{ detected }}</a>` only when
+   `dns_supplier` (PHP-side) is truthy, else plain `{{ detected }}`.
+2. **PHP resolution**, `src/DomainForm.php:115-121`: `dns_supplier` stays `null` whenever
+   `state->fields['dns_suppliers_id'] <= 0` **or** `Supplier::getFromDB()` fails — e.g. the
+   Supplier record was since deleted while `dns_suppliers_id` is still stored on `DomainState`.
+   This alone explains link-vs-text varying per domain depending on whether its stored supplier
+   still exists.
+3. **Post-sync JS destroys the link unconditionally**, `templates/domain_panel.html.twig:504-507`:
+   ```js
+   const provider = document.getElementById('domainmanager-provider');
+   if (provider && data.detected_provider) {
+       provider.textContent = data.detected_provider;
+   }
+   ```
+   After every "Update Now" sync this overwrites the cell via `textContent`, destroying any
+   hyperlink markup unconditionally — regardless of whether a valid Supplier exists. This is
+   almost certainly the pattern actually observed ("sometimes it is and others isn't" on the
+   *same* domain, before vs after a sync click). Root cause: `SyncEngine`'s response
+   (`src/Service/SyncEngine.php:124-142`, returned via `src/Controller/SyncController.php:50-76`)
+   only returns `detected_provider` as a plain string — never `dns_suppliers_id` or a link URL —
+   so the JS has no way to rebuild the link.
+
+Plan: have `SyncEngine`'s sync result include the resolved `dns_suppliers_id` (already computed
+at `SyncEngine.php:271`) alongside `detected_provider`, threaded through
+`SyncController.php:50-76` into the JSON response. In `domain_panel.html.twig`'s post-sync JS
+(`:504-507`), replace the `textContent` write with logic mirroring the Twig condition: rebuild an
+`<a>` element when the response carries a valid `dns_suppliers_id` (plus a link URL, or enough to
+construct one client-side the way `dns_supplier.getLinkURL()` does server-side), else set plain
+text — matching post-sync rendering to initial-page-load rendering. Leave `DomainForm.php:115-121`
+as-is (a deleted Supplier genuinely shouldn't be linkable); just make the post-sync path respect
+the same rule instead of ignoring it.
+
+Files: `src/Service/SyncEngine.php`, `src/Controller/SyncController.php`,
+`templates/domain_panel.html.twig`.
+
+### 19.6 Verification, per phase, at implementation time
+
+- 72: run both crons manually against test data; confirm the task's Logs view shows one line per
+  domain (entity + outcome) plus the existing summary lines.
+- 73: import a batch (~20+ synthetic domains); confirm no timeout, a partial-failure scenario
+  reports clearly, and re-import doesn't duplicate.
+- 74: trigger an add/update/delete of the relevant subitem; confirm the Historical tab renders
+  the correct verb/icon instead of a generic change, and no duplicate entries appear next to
+  native `CommonDBChild` history.
+- 75: view each affected template in the browser in both light and dark theme; confirm visual
+  parity with `config.html.twig`'s warning.
+- 76: reproduce by (a) loading a domain with a live Supplier — expect a link; (b) deleting that
+  Supplier and reloading — expect plain text; (c) clicking "Update Now" on a domain with a live
+  Supplier — expect the link to survive the sync instead of collapsing to plain text.
