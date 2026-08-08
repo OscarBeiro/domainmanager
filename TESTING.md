@@ -3768,13 +3768,17 @@ don't rely on the "click date" UI in this GLPI version.
   before this phase.
   - [ ] Not yet verified live
 
-### Phase 79: two more warning notices normalized (missed by Phase 75)
+### Phase 79: three more warning notices normalized (missed by Phase 75)
 
 - **Open an existing DNS record's edit form on a write-back-managed domain.** Expected: the
   "Managed by Domain Manager" ribbon-card's "Saving this form updates the record live at ...
   There is no undo." line now renders as an `alert-warning` banner (icon + visible border/
   background, `role="alert"`), not plain muted text — matching the identical message already
   shown that way on the generic "New Domain record" form. Check both light and dark theme.
+  - [ ] Not yet verified live
+- **Open that same domain's Records tab and open its own quick-add panel** (not the generic
+  top-nav "+" form). Expected: its "This creates the record live at <Supplier>. There is no
+  undo." notice now also renders as an `alert-warning` banner, in both themes.
   - [ ] Not yet verified live
 - **Open a Supplier's Domain Manager tab and select each of Cloudflare, IONOS, and Dinahosting
   as the API driver in turn.** Expected: each driver's credential-requirement hint ("Requires an

@@ -16,8 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Entries are grouped into **Features** (new capability, UI/UX change, refactor, doc/config
 change) and **Bugs** (something that was actually broken, fixed) — one line each.
 
-## [Unreleased] - 1.7.0-beta2
+## [Unreleased] - 1.7.0-beta3
+### Bugs
+- Fixed `SyncEngine::sync()`'s return-array docblock, missing the `dns_suppliers_id` key added for Phase 76 — PHPStan was flagging `SyncController.php`'s read of that offset as unknown.
+
 ### Features
+- **Phase 79 (follow-up): a third missed "no undo" notice normalized.** (`templates/domainrecord_add_panel.html.twig`). After the two spots below shipped, user feedback found a third: the Records tab's own quick-add panel (`DomainForm::renderRecordWritePanel()`'s `$live_notice`) carries a third wording of the same message ("This creates the record live at %s. There is no undo.") — also plain `text-muted small`, missed by the first pass because it's a third near-duplicate string in a third template. Now uses the same `alert-warning`/`ti-world-cog` shape as the other two.
 - **Phase 79: two more warning notices normalized to match Phase 75's alert-warning shape.** (`templates/domainrecord_edit_panel.html.twig`, `templates/supplier_tab.html.twig`). User feedback after Phase 75 shipped: the "Managed by Domain Manager" ribbon-card's "Saving this form updates the record live at ... There is no undo." line was plain `text-muted small` text, unlike the identical message on `domainrecord_new_notice.html.twig`'s generic add form, which Phase 75 already normalized to `alert-warning`; and `supplier_tab.html.twig`'s three per-driver credential hints (Cloudflare/IONOS/Dinahosting) were plain Bootstrap `form-text` hints despite Dinahosting's in particular being a real security-relevant requirement (full super-admin credentials, not a scoped token). Both now use the same `alert-warning`/`role="alert"` shape as every other banner — the ribbon-card notice with `ti-world-cog` (matching its identical-text sibling), the three driver hints with `ti-alert-triangle` (matching `config.html.twig`'s reference and `supplier_tab.html.twig`'s existing Cloudflare-account-id warning). No wording changes; the `ttl_auto_note` info line is left as plain muted text (genuinely informational, same distinction Phase 75 drew elsewhere).
 
 ### Bugs

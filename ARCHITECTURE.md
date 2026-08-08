@@ -3828,9 +3828,10 @@ Files: `src/Service/SyncEngine.php`, `src/Controller/SyncController.php`,
   trash-bin view off and confirm the still-live records' proxy indicators are unaffected.
 - 79: open a write-back-managed domain's existing DNS record edit form — confirm the "no undo"
   line in the "Managed by Domain Manager" ribbon-card now renders as an alert-warning banner
-  (icon + role="alert"), in both themes; open a Supplier's Domain Manager tab for each of
-  Cloudflare/IONOS/Dinahosting and confirm their credential-requirement hint now renders the same
-  way, with its "Setup instructions" link intact.
+  (icon + role="alert"), in both themes; open that domain's Records tab and confirm its own
+  quick-add panel's "no undo" notice renders the same way; open a Supplier's Domain Manager tab
+  for each of Cloudflare/IONOS/Dinahosting and confirm their credential-requirement hint now
+  renders the same way too, with its "Setup instructions" link intact.
 
 ### 19.7 Phase 77 (new, user-reported 2026-08-08; implemented) — Reconciler sync blocked by a genuine upstream TXT duplicate
 
@@ -3909,9 +3910,9 @@ here.
 
 Files: `src/DomainForm.php`.
 
-### 19.9 Phase 79 (new, user-reported 2026-08-08; implemented) — Two more warning-style notices missed by Phase 75
+### 19.9 Phase 79 (new, user-reported 2026-08-08; implemented) — Three more warning-style notices missed by Phase 75
 
-User feedback after Phase 75 shipped: two more notices read as warnings but weren't included in
+User feedback after Phase 75 shipped: three more notices read as warnings but weren't included in
 that phase's normalization pass —
 
 - `domainrecord_edit_panel.html.twig`'s "Managed by Domain Manager" ribbon-card
@@ -3927,15 +3928,24 @@ that phase's normalization pass —
   `form-text` hints, not warnings — despite Dinahosting's in particular being a real
   security-relevant requirement (full super-admin credentials, not a scoped token) rather than
   routine field help.
+- Found in a follow-up report, same root cause: `domainrecord_add_panel.html.twig`'s Records-tab
+  quick-add panel (`src/DomainForm.php`'s `renderRecordWritePanel()`, `$live_notice`) carries a
+  *third* wording of the same "creates the record live ... no undo" message ("This creates the
+  record live at %s. There is no undo.") — also plain `text-muted small`, missed by both the
+  original Phase 75 sweep and this phase's first pass because it's a third near-duplicate string
+  in a third template, not literally identical text to the other two.
 
-Fix: both now use the same `alert-warning`/`role="alert"` shape as every other banner
-(`config.html.twig`'s reference). The ribbon-card notice reuses `ti-world-cog` (matching its
-identical-text sibling in `domainrecord_new_notice.html.twig`); the three driver hints use
-`ti-alert-triangle` (matching `config.html.twig`'s own warning and `supplier_tab.html.twig`'s
-existing Cloudflare-account-id warning). No wording changes — purely the same structural/markup
-normalization Phase 75 already did for the other four banners, extended to these two spots it
-missed. The `ttl_auto_note` info line beneath the ribbon-card warning is unchanged (still
-`text-muted small` with `ti-info-circle`) — it's genuinely informational, not a warning, same
-distinction Phase 75 already drew for `domainrecord_new_notice.html.twig`'s own info line.
+Fix: all three now use the same `alert-warning`/`role="alert"` shape as every other banner
+(`config.html.twig`'s reference). The ribbon-card notice and the quick-add panel's notice both
+reuse `ti-world-cog` (matching `domainrecord_new_notice.html.twig`'s identical-purpose banner);
+the three driver hints use `ti-alert-triangle` (matching `config.html.twig`'s own warning and
+`supplier_tab.html.twig`'s existing Cloudflare-account-id warning). No wording changes — purely
+the same structural/markup normalization Phase 75 already did for the other four banners,
+extended to these three spots it missed (three separate near-duplicate "no undo" strings across
+three templates turned out to be genuinely easy to miss in one pass). The `ttl_auto_note` info
+lines (both templates) are unchanged (still `text-muted small` with `ti-info-circle`) — they're
+genuinely informational, not a warning, same distinction Phase 75 already drew for
+`domainrecord_new_notice.html.twig`'s own info line.
 
-Files: `templates/domainrecord_edit_panel.html.twig`, `templates/supplier_tab.html.twig`.
+Files: `templates/domainrecord_edit_panel.html.twig`, `templates/supplier_tab.html.twig`,
+`templates/domainrecord_add_panel.html.twig`.
