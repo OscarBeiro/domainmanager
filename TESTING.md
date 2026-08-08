@@ -3720,6 +3720,21 @@ don't rely on the "click date" UI in this GLPI version.
   `domain_panel.html.twig`'s provider warning and `supplier_tab.html.twig`'s Cloudflare notice).
   - [ ] Not yet verified live
 
+### Phase 76: DNS Provider hyperlink survives "Update Now"
+
+- **Load a domain with a live, resolvable Supplier as its DNS provider.** Expected: the DNS
+  Provider field renders as a real hyperlink to that Supplier's own page.
+  - [ ] Not yet verified live
+- **Delete that Supplier, then reload the domain form.** Expected: the DNS Provider field now
+  renders as plain text (no link) — a deleted Supplier genuinely isn't linkable, this is the
+  correct baseline, not a regression.
+  - [ ] Not yet verified live
+- **On a domain with a live Supplier, click "Update Now" and watch the DNS Provider field without
+  reloading the page.** Expected: the field stays (or becomes) a working hyperlink immediately
+  after the sync completes — it should not collapse to plain text and then only become a link
+  again after a manual page reload.
+  - [ ] Not yet verified live
+
 ### Phase 77: reconciler sync no longer aborts on a genuine upstream TXT duplicate
 
 - **Create two TXT records with identical name and content at the provider** (Cloudflare/IONOS/
