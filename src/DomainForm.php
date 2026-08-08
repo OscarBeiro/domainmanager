@@ -304,6 +304,14 @@ class DomainForm
         // — the kill switch, not a rights gap, is the reason.
         $read_only_locked = $read_only && $dns_editable && $is_writable_type;
 
+        // §9 research "persist proxy addresses + TTL-auto flag": only worth
+        // showing when TTL is actually an editable input on this render —
+        // a locked TTL field already tells the story on its own, and the
+        // fact itself (TTL 1 == automatic) is Cloudflare-specific, checked
+        // via the same instanceof-capability pattern as $can_toggle_proxy
+        // above, never a hardcoded driver name.
+        $ttl_auto_note = $can_update && DnsRecordWriteback::supportsTtlAutoSentinel($state);
+
         TemplateRenderer::getInstance()->display('@domainmanager/domainrecord_edit_panel.html.twig', [
             'can_update'        => $can_update,
             'can_delete'        => $can_delete,
@@ -311,6 +319,7 @@ class DomainForm
             'read_only_locked'  => $read_only_locked,
             'can_toggle_proxy' => $can_toggle_proxy,
             'current_proxied'  => $current_proxied,
+            'ttl_auto_note' => $ttl_auto_note,
             'display_name'  => $displayName,
             'supplier_name' => $dns_editable ? DnsRecordWriteback::writableSupplierName($domains_id) : null,
             // Cosmetic-only (server-side is authoritative, see docblock
@@ -375,6 +384,12 @@ class DomainForm
      * next to any proxied record's Name link, matched by the record id
      * already present in that link's native `getFormURLWithID()` href.
      *
+     * §9 research "persist proxy addresses + TTL-auto flag, then relocate
+     * the display": also carries each row's persisted `proxy_addresses`
+     * (moved from the Name cell to a second line under the Target cell) and
+     * `is_ttl_auto` (rendered as "Automatic" in the TTL cell) — both purely
+     * data-presence-gated, never on which driver populated them.
+     *
      * @param  int $domains_id
      * @return void
      */
@@ -384,25 +399,44 @@ class DomainForm
         global $DB;
 
         $iterator = $DB->request([
-            'SELECT' => 'domainrecords_id',
+            'SELECT' => ['domainrecords_id', 'is_proxied', 'proxy_addresses', 'is_ttl_auto'],
             'FROM'   => 'glpi_plugin_domainmanager_records',
             'WHERE'  => [
-                'domains_id'  => $domains_id,
-                'is_proxied'  => 1,
+                'domains_id' => $domains_id,
+                'OR'         => [
+                    'is_proxied'  => 1,
+                    'is_ttl_auto' => 1,
+                ],
             ],
         ]);
 
-        $proxied_ids = [];
+        $proxied_ids     = [];
+        $proxy_addresses = [];
+        $ttl_auto_ids    = [];
         foreach ($iterator as $row) {
-            $proxied_ids[] = (int) $row['domainrecords_id'];
+            $id = (int) $row['domainrecords_id'];
+
+            if ((int) $row['is_proxied'] === 1) {
+                $proxied_ids[] = $id;
+                $addresses     = json_decode((string) $row['proxy_addresses'], true);
+                if (is_array($addresses) && $addresses !== []) {
+                    $proxy_addresses[$id] = array_values($addresses);
+                }
+            }
+
+            if ((int) $row['is_ttl_auto'] === 1) {
+                $ttl_auto_ids[] = $id;
+            }
         }
 
-        if ($proxied_ids === []) {
+        if ($proxied_ids === [] && $ttl_auto_ids === []) {
             return;
         }
 
         TemplateRenderer::getInstance()->display('@domainmanager/domainrecord_proxy_indicators.html.twig', [
-            'proxied_ids' => $proxied_ids,
+            'proxied_ids'     => $proxied_ids,
+            'proxy_addresses' => $proxy_addresses,
+            'ttl_auto_ids'    => $ttl_auto_ids,
         ]);
     }
 
@@ -473,6 +507,11 @@ class DomainForm
             'read_only'    => $read_only,
             'live_notice'  => $live_notice,
             'add_form_url' => DomainRecord::getFormURLWithID(0),
+            // §9 research "persist proxy addresses + TTL-auto flag": same
+            // instanceof-capability check as injectDomainRecord()'s own
+            // $ttl_auto_note — this panel's TTL field is always editable
+            // (new record), so only the driver capability needs checking.
+            'ttl_auto_note' => DnsRecordWriteback::supportsTtlAutoSentinel($state),
         ]);
     }
 

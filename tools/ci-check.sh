@@ -5,7 +5,7 @@
 #
 # PHP-CS-Fixer runs on the host (needs only PHP + the phar, no GLPI
 # runtime). PHPStan needs real GLPI core classes/constants to resolve
-# type info, so it runs inside the glpi-claude dev container, using a
+# type info, so it runs inside the testing dev container, using a
 # generated config with absolute container paths (the plugin's own
 # tools/phpstan/phpstan.neon ships with stale bootstrap paths for GLPI 11
 # — see ARCHITECTURE-adjacent skill notes — and the root phpstan.neon's
@@ -17,7 +17,7 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
 CACHE_DIR="$HOME/.cache/domainmanager-ci"
 CS_FIXER_PHAR="$CACHE_DIR/php-cs-fixer.phar"
-CONTAINER="glpi-claude_glpi_1"
+CONTAINER="testing_glpi_1"
 PLUGIN_IN_CONTAINER="/var/www/glpi/plugins/domainmanager"
 PHPSTAN_CONFIG_NAME="local-ci-parity.neon"
 
@@ -32,10 +32,10 @@ cd "$REPO_DIR"
 PHP_CS_FIXER_IGNORE_ENV=1 php "$CS_FIXER_PHAR" fix --config=.php-cs-fixer.php --dry-run --diff
 
 echo
-echo -e "\033[0;33m==> PHPStan (via glpi-claude dev container)\033[0m"
+echo -e "\033[0;33m==> PHPStan (via testing dev container)\033[0m"
 if ! command -v podman >/dev/null 2>&1 || ! podman ps --format '{{.Names}}' 2>/dev/null | grep -qx "$CONTAINER"; then
-    echo "glpi-claude dev container not running — skipping PHPStan (start it with:"
-    echo "  cd ~/containers/glpi && podman compose -f compose-glpi-11008-claude.yml up -d)"
+    echo "testing dev container not running — skipping PHPStan (start it with:"
+    echo "  cd ~/containers/testing && podman compose -f compose-glpi-65108-persistent.yml up -d)"
 else
     cat > "$REPO_DIR/tools/phpstan/$PHPSTAN_CONFIG_NAME" <<EOF
 parameters:

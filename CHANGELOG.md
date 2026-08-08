@@ -11,6 +11,16 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-08-08
+### Features
+- Proxied DNS records now show their public-facing address(es) directly under the Target column, saved automatically instead of requiring a click to look them up.
+- Cloudflare records using "Automatic" TTL now display "Automatic" instead of a confusing "1 second" value.
+- The DNS record add/edit forms now remind you that setting TTL to 1 means "Automatic" (for providers that support it).
+- The proxied public address(es) shown on the Records tab now have a small cloud icon in front of them, so it's clearer what they represent.
+
+### Bugs
+- A Cloudflare token blocked by an IP address restriction now shows the actual reason instead of a misleading "missing permission" message.
+
 ## [1.5.2] - 2026-08-07
 ### Features
 - Domain synchronization now runs continuously (every 10 minutes) instead of once a day, so newly added or changed domains are picked up much sooner. Existing installs are only switched over automatically if the automatic action's schedule hasn't been manually customized.

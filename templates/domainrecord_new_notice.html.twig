@@ -40,19 +40,33 @@
  # hook happens to render, normally last) so it's seen before any field is
  # touched, not after scrolling past the whole form.
  #}
-<div class="alert alert-warning d-flex align-items-center mb-3 d-none" id="domainmanager_writeback_notice{{ rand }}" role="alert">
-    <i class="ti ti-world-cog me-2"></i>
-    <div>{{ __('This domain is managed by Domain Manager with DNS write-back enabled: creating this record here pushes it live to the provider immediately, with no undo.', 'domainmanager') }}</div>
+<div id="domainmanager_new_record_notices{{ rand }}">
+    <div class="alert alert-warning d-flex align-items-center mb-3 d-none" id="domainmanager_writeback_notice{{ rand }}" role="alert">
+        <i class="ti ti-world-cog me-2"></i>
+        <div>{{ __('This domain is managed by Domain Manager with DNS write-back enabled: creating this record here pushes it live to the provider immediately, with no undo.', 'domainmanager') }}</div>
+    </div>
+    {#
+     # §9 research "persist proxy addresses + TTL-auto flag": unlike the
+     # banner above, this can't be gated on a live per-domain check the same
+     # way — it's a fact about Cloudflare specifically, not this domain's
+     # write-back state, so it's shown unconditionally (hedged wording)
+     # rather than left off this entry point entirely.
+     #}
+    <div class="text-muted small mb-3">
+        <i class="ti ti-info-circle"></i>
+        {{ __('If this domain uses Cloudflare DNS, setting TTL to 1 means "Automatic".', 'domainmanager') }}
+    </div>
 </div>
 <script>
     (() => {
+        const container = document.getElementById('domainmanager_new_record_notices{{ rand }}');
         const notice = document.getElementById('domainmanager_writeback_notice{{ rand }}');
-        if (!notice) {
+        if (!container || !notice) {
             return;
         }
-        const form = notice.closest('form');
-        if (form && form.firstElementChild !== notice) {
-            form.insertBefore(notice, form.firstElementChild);
+        const form = container.closest('form');
+        if (form && form.firstElementChild !== container) {
+            form.insertBefore(container, form.firstElementChild);
         }
         const field = form ? form.querySelector('[name="domains_id"]') : null;
         if (!field) {

@@ -3490,3 +3490,120 @@ amendment.
 - [ ] Not yet verified live end-to-end (the two regression cases above and a real upgrade run
   against `~/containers/testing`'s existing diverged `DomainSync` row, confirming it is left
   untouched rather than overwritten)
+
+### Phase 69 — dedicated `domainmanager:dns_record_proxy` right (implemented then reverted, ARCHITECTURE.md §17.14b)
+
+Implemented 2026-08-07, then reverted the same day per owner decision: proxy toggling is folded back
+into the existing per-type write-back UPDATE right rather than gated by a separate right. No new
+right exists, so no dedicated test cases apply — proxy-toggle behavior is covered by the existing
+per-type UPDATE right's own test coverage (Phase 37/49 above). See ARCHITECTURE.md §17.14b for what
+was reverted and why.
+
+### Phase 71 — lazy per-row public IP lookup for proxied records (ARCHITECTURE.md §17.16) — SUPERSEDED
+
+**Superseded by the phase below** (persisted `proxy_addresses`/`is_ttl_auto`, no more on-click
+lookup, `RecordPublicIpController` removed). Kept here for history; do not test against current
+code — the "Show public IP" button and its endpoint no longer exist.
+
+### Phase — persist proxy addresses + TTL-auto flag, then relocate the display
+
+- **Cloudflare domain, mix of proxied and non-proxied records.** Sync a Cloudflare-managed domain
+  with at least one proxied A/AAAA record and at least one non-proxied record. Expected: the
+  proxied record's row shows the cloud icon next to Name (unchanged) *and* a grey second line
+  under the Target cell, itself prefixed with its own small cloud icon, listing the resolved
+  anycast address(es); the non-proxied record's row shows neither.
+  `glpi_plugin_domainmanager_records.proxy_addresses` is a JSON array for the proxied record's
+  `ImportedRecord` row, `NULL` for the non-proxied one.
+  - [ ] Not yet verified live
+- **Cloudflare domain, TTL "Automatic".** A Cloudflare record whose upstream `ttl` is `1`.
+  Expected: the TTL cell shows "Automatic" (translated), and hovering it shows the raw value `1`
+  as a tooltip. `is_ttl_auto = 1` on that record's `ImportedRecord` row.
+  - [ ] Not yet verified live
+- **Cloudflare domain, none proxied.** Sync a Cloudflare-managed domain with zero proxied
+  records. Expected: no cloud icon, no address line, no "Automatic" TTL anywhere on the tab (unless
+  a non-proxied record still legitimately has `ttl == 1`, in which case only the TTL rendering
+  applies — proxying and TTL-auto are independent per-record flags).
+  - [ ] Not yet verified live
+- **Non-Cloudflare domain (IONOS or Dinahosting).** Sync a domain managed by a driver with no
+  proxy/TTL-sentinel concept. Expected: `is_proxied`, `proxy_addresses`, and `is_ttl_auto` all stay
+  `NULL` for every record; the Records tab renders with no overlay at all, byte-identical to
+  before this phase.
+  - [ ] Not yet verified live
+- **Bounded lookups per sync.** A domain with more proxied records than
+  `RecordReconciler::PROXY_IP_LOOKUP_LIMIT` (20). Expected: the first 20 (iteration order) get a
+  resolved `proxy_addresses` value (or `NULL` if the live lookup itself found nothing); the rest
+  keep whatever `proxy_addresses` value they already had (not forcibly cleared) until a later sync
+  reaches them.
+  - [ ] Not yet verified live (needs a zone with >20 proxied records, or a lowered constant for the
+        test)
+- **Migration: existing rows survive with `NULL`, populate on next sync.** On an instance
+  upgrading from before this phase (`glpi_plugin_domainmanager_records` rows with no
+  `proxy_addresses`/`is_ttl_auto` columns yet), run `install()`/plugin update. Expected: both
+  columns exist, every pre-existing row reads `NULL` for both (no backfill, matching `is_proxied`'s
+  own upgrade behavior) — confirm via direct DB query, not just the UI (a `NULL` row renders
+  identically to "nothing to show", so the DB check is the only way to distinguish "column added,
+  still unpopulated" from "column never added"). Then trigger a sync for one such domain and
+  confirm both columns populate for its proxied/TTL-auto records.
+  - [ ] Not yet verified live
+- **"Show public IP" removed, no dead endpoint.** Confirm `src/Controller/RecordPublicIpController.php`
+  no longer exists and `GET /plugins/domainmanager/recordip/{id}` 404s (route no longer registered).
+  Confirm the address is never shown in two places (neither a leftover button near the Name cell
+  nor any other duplicate).
+  - [ ] Not yet verified live
+
+### Cloudflare 403 error messages name the real restriction, not just "missing permission"
+
+Found live 2026-08-08: a Cloudflare token restricted by "Client IP Address Filtering" (dashboard
+setting on the token itself) returns HTTP 403 with error `code: 9109` and a `message` naming the
+blocked IP — every 403 branch in `CloudflareDriver` previously discarded that and always showed
+"lacks DNS:Read/Edit permission for this zone", which sent troubleshooting toward the wrong cause
+(token scopes) instead of the right one (the token's IP allowlist).
+
+- **Check Connection surfaces the real reason for an IP-restricted token.** Configure a Cloudflare
+  API token with "Client IP Address Filtering" excluding the GLPI server's actual egress IP. Run
+  "Check Connection" on the Supplier's DNS leg. Expected: the failure message names the IP
+  restriction and the blocked address (Cloudflare's own wording), not the generic
+  "lacks DNS:Read permission" text. (The underlying root cause — `code: 9109`,
+  `"Cannot use the access token from location: 213.177.194.73"` — was confirmed live in
+  `domainmanager-errors.log` before this fix; the fix itself still needs a live re-check.)
+  - [ ] Not yet verified live (re-check after this fix, against the same IP-restricted token)
+- **"Update Now" / sync surfaces the same real reason.** Trigger "Update Now" on a Domain whose
+  Cloudflare token is IP-restricted the same way. Expected: `domainmanager-errors.log`'s
+  "DNS leg failed" line, and any surfaced UI message, both name the IP restriction — not the
+  generic missing-permission text.
+  - [ ] Not yet verified live
+- **An actual missing-scope 403 (no restriction code) still falls back to the generic message.**
+  A token with `DNS:Read`/`DNS:Edit` genuinely absent from its scopes (not IP-restricted) returns a
+  403 with no `9109`/`9208` error code. Expected: the pre-existing generic "lacks DNS:Read/Edit
+  permission" message still shows — `describeForbidden()`'s fallback path.
+  - [ ] Not yet verified live (needs a second token with a genuine scope gap, not an IP
+        restriction, to test against)
+
+### TTL-automatic reminder on the DNS record add/edit forms
+
+- **Edit form, Cloudflare-managed writable record, user holds UPDATE.** Open an existing,
+  plugin-imported, writable-type (A/AAAA/CNAME/TXT) record's native edit page on a Cloudflare
+  write-back-managed domain. Expected: the existing "Managed by Domain Manager" banner gains a
+  second line — `Setting TTL to 1 means "Automatic".` — and the TTL field itself remains editable.
+  - [ ] Not yet verified live
+- **Edit form, record not manageable (wrong type, no right, or non-Cloudflare driver).** Open a
+  record's edit page where `can_update` is false (NS/MX record, missing UPDATE right, IONOS/
+  Dinahosting-managed domain, or the domain isn't write-back editable at all). Expected: no TTL
+  note shown (the "Managed by Domain Manager" banner itself doesn't render), and the TTL field is
+  cosmetically locked with the existing lock icon — unchanged pre-existing behavior, not new to
+  this change.
+  - [ ] Not yet verified live
+- **Add panel, Cloudflare write-back-managed domain.** Open the Records tab of a Cloudflare
+  write-back-managed domain and use the Domain-Manager-branded "Add a DNS record" panel. Expected:
+  an info icon next to the TTL label shows the "Setting TTL to 1 means Automatic" text on hover.
+  - [ ] Not yet verified live
+- **Add panel, IONOS/Dinahosting write-back-managed domain.** Same panel on a non-Cloudflare
+  write-back-managed domain. Expected: no info icon next to the TTL label (the driver doesn't
+  implement `DnsRecordTtlAutoInterface`).
+  - [ ] Not yet verified live
+- **Generic blank "New Domain record" form (top-nav "+" / global Domains-records list).** Open
+  this form without a domain preselected. Expected: a small hedged note ("If this domain uses
+  Cloudflare DNS, setting TTL to 1 means 'Automatic'.") is shown at the top of the form, alongside
+  (but independent of) the existing write-back warning banner, regardless of which domain ends up
+  selected.
+  - [ ] Not yet verified live

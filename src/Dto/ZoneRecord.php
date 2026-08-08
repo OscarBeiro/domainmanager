@@ -51,6 +51,7 @@ final class ZoneRecord
     public readonly string $remoteId;
     public readonly ?bool $isProxied;
     public readonly ?string $comment;
+    public readonly ?bool $isTtlAuto;
 
     /**
      * $isProxied is a genuine tri-state (§9 Phase 7 addendum "Searchable
@@ -65,8 +66,18 @@ final class ZoneRecord
      * only; `null` for every driver that has no such concept) — kept out
      * of getHash() deliberately, same as $isProxied, since it never governs
      * add/update/trash reconciliation, only the separate comment sync.
+     *
+     * $isTtlAuto records the *semantic* "this TTL means automatic", not the
+     * raw number — the number itself (a literal `1`) already lives in $ttl.
+     * Driver-supplied, deliberately never derived here from `$ttl === 1`:
+     * that sentinel is Cloudflare-specific (confirmed against Cloudflare's
+     * own API docs, §9 research "persist proxy addresses + TTL-auto flag"),
+     * and a `1`-second TTL from a driver with no such convention (IONOS,
+     * Dinahosting) is a literal one-second TTL, not "automatic". Kept out
+     * of getHash() for the same reason $isProxied is: it never governs
+     * add/update/trash reconciliation.
      */
-    public function __construct(string $type, string $name, string $data, int $ttl, string $remoteId = '', ?bool $isProxied = null, ?string $comment = null)
+    public function __construct(string $type, string $name, string $data, int $ttl, string $remoteId = '', ?bool $isProxied = null, ?string $comment = null, ?bool $isTtlAuto = null)
     {
         $type = strtoupper(trim($type));
         if (!in_array($type, self::TYPES, true)) {
@@ -99,6 +110,7 @@ final class ZoneRecord
         $this->remoteId  = $remoteId;
         $this->isProxied = $isProxied;
         $this->comment   = $comment;
+        $this->isTtlAuto = $isTtlAuto;
     }
 
     /**

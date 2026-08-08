@@ -24,14 +24,14 @@ echo "========== Phase 1: Foundation =========="
 
 # 1.1 Clean install from CLI
 echo -n "1.1 Clean install + activate: "
-podman exec glpi_glpi_1 php /var/www/glpi/bin/console glpi:plugin:install domainmanager --force > /tmp/install_out.txt 2>&1
+podman exec testing_glpi_1 php /var/www/glpi/bin/console glpi:plugin:install domainmanager --force > /tmp/install_out.txt 2>&1
 INSTALL_RESULT=$?
-podman exec glpi_glpi_1 php /var/www/glpi/bin/console glpi:plugin:activate domainmanager > /tmp/activate_out.txt 2>&1
+podman exec testing_glpi_1 php /var/www/glpi/bin/console glpi:plugin:activate domainmanager > /tmp/activate_out.txt 2>&1
 ACTIVATE_RESULT=$?
 
 if [ $INSTALL_RESULT -eq 0 ] && [ $ACTIVATE_RESULT -eq 0 ]; then
     # Check tables exist
-    TABLES=$(podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -se \
+    TABLES=$(podman exec testing_db_1 mariadb -uglpi -pglpi glpi -se \
         "SHOW TABLES LIKE 'glpi_plugin_domainmanager%';" 2>/dev/null)
     TABLE_COUNT=$(echo "$TABLES" | wc -l)
     if [ "$TABLE_COUNT" -ge "4" ]; then
@@ -45,10 +45,10 @@ fi
 
 # 1.2 Seeds present and idempotent
 echo -n "1.2 Seeds (DomainType/RecordTypes): "
-RESULT=$(podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -se \
+RESULT=$(podman exec testing_db_1 mariadb -uglpi -pglpi glpi -se \
     "SELECT COUNT(*) FROM glpi_domaintypes WHERE name='Internet Domain';" 2>/dev/null || echo "0")
 if [ "$RESULT" = "1" ]; then
-    RESULT2=$(podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -se \
+    RESULT2=$(podman exec testing_db_1 mariadb -uglpi -pglpi glpi -se \
         "SELECT COUNT(*) FROM glpi_domainrecordtypes WHERE name IN ('A','AAAA','ALIAS','CNAME','MX','NS','PTR','SOA','SRV','TXT','CAA');" 2>/dev/null || echo "0")
     if [ "$RESULT2" = "11" ]; then
         pass "1.2"
@@ -61,8 +61,8 @@ fi
 
 # 1.6 Cron shell executes
 echo -n "1.6 Cron shell (DomainSync): "
-podman exec glpi_glpi_1 php /var/www/glpi/front/cron.php --force DomainSync > /tmp/cron_out.txt 2>&1
-CRON_LOG=$(podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -se \
+podman exec testing_glpi_1 php /var/www/glpi/front/cron.php --force DomainSync > /tmp/cron_out.txt 2>&1
+CRON_LOG=$(podman exec testing_db_1 mariadb -uglpi -pglpi glpi -se \
     "SELECT state, content FROM glpi_crontasklogs WHERE crontasks_id=(SELECT id FROM glpi_crontasks WHERE name='DomainSync' LIMIT 1) ORDER BY id DESC LIMIT 1;" 2>/dev/null)
 CRON_STATE=$(echo "$CRON_LOG" | cut -f1)
 CRON_CONTENT=$(echo "$CRON_LOG" | cut -f2-)
@@ -76,11 +76,11 @@ fi
 # 4.7 Cron batching (sanity check that cron runs multiple times without aborting)
 echo -n "4.7 Cron batching sanity: "
 # Run cron twice in succession to verify batching loop doesn't abort
-podman exec glpi_glpi_1 php /var/www/glpi/front/cron.php --force DomainSync > /tmp/cron_batch1.txt 2>&1
-BATCH_LOG1=$(podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -se \
+podman exec testing_glpi_1 php /var/www/glpi/front/cron.php --force DomainSync > /tmp/cron_batch1.txt 2>&1
+BATCH_LOG1=$(podman exec testing_db_1 mariadb -uglpi -pglpi glpi -se \
     "SELECT state FROM glpi_crontasklogs WHERE crontasks_id=(SELECT id FROM glpi_crontasks WHERE name='DomainSync' LIMIT 1) ORDER BY id DESC LIMIT 1;" 2>/dev/null)
-podman exec glpi_glpi_1 php /var/www/glpi/front/cron.php --force DomainSync > /tmp/cron_batch2.txt 2>&1
-BATCH_LOG2=$(podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -se \
+podman exec testing_glpi_1 php /var/www/glpi/front/cron.php --force DomainSync > /tmp/cron_batch2.txt 2>&1
+BATCH_LOG2=$(podman exec testing_db_1 mariadb -uglpi -pglpi glpi -se \
     "SELECT state FROM glpi_crontasklogs WHERE crontasks_id=(SELECT id FROM glpi_crontasks WHERE name='DomainSync' LIMIT 1) ORDER BY id DESC LIMIT 1;" 2>/dev/null)
 
 # state=2 means "completed successfully"
@@ -92,15 +92,15 @@ fi
 
 # 1.7 Uninstall (residue-free)
 echo -n "1.7 Uninstall (residue-free): "
-podman exec glpi_glpi_1 php /var/www/glpi/bin/console glpi:plugin:deactivate domainmanager > /tmp/deactivate_out.txt 2>&1
-podman exec glpi_glpi_1 php /var/www/glpi/bin/console glpi:plugin:uninstall domainmanager > /tmp/uninstall_out.txt 2>&1
+podman exec testing_glpi_1 php /var/www/glpi/bin/console glpi:plugin:deactivate domainmanager > /tmp/deactivate_out.txt 2>&1
+podman exec testing_glpi_1 php /var/www/glpi/bin/console glpi:plugin:uninstall domainmanager > /tmp/uninstall_out.txt 2>&1
 
 # Check tables gone but seeds remain
-PLUGIN_TABLES=$(podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -se \
+PLUGIN_TABLES=$(podman exec testing_db_1 mariadb -uglpi -pglpi glpi -se \
     "SHOW TABLES LIKE 'glpi_plugin_domainmanager%';" 2>/dev/null | wc -l)
-INTERNET_DOMAIN=$(podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -se \
+INTERNET_DOMAIN=$(podman exec testing_db_1 mariadb -uglpi -pglpi glpi -se \
     "SELECT COUNT(*) FROM glpi_domaintypes WHERE name='Internet Domain';" 2>/dev/null || echo "0")
-RECORD_TYPES=$(podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -se \
+RECORD_TYPES=$(podman exec testing_db_1 mariadb -uglpi -pglpi glpi -se \
     "SELECT COUNT(*) FROM glpi_domainrecordtypes;" 2>/dev/null || echo "0")
 
 if [ "$PLUGIN_TABLES" = "0" ] && [ "$INTERNET_DOMAIN" = "1" ] && [ "$RECORD_TYPES" -gt "0" ]; then
@@ -111,16 +111,16 @@ fi
 
 # 1.8 Reinstall after uninstall (idempotency)
 echo -n "1.8 Reinstall after uninstall: "
-podman exec glpi_glpi_1 php /var/www/glpi/bin/console glpi:plugin:install domainmanager > /tmp/reinstall_out.txt 2>&1
+podman exec testing_glpi_1 php /var/www/glpi/bin/console glpi:plugin:install domainmanager > /tmp/reinstall_out.txt 2>&1
 REINSTALL_RESULT=$?
-podman exec glpi_glpi_1 php /var/www/glpi/bin/console glpi:plugin:activate domainmanager > /tmp/reactivate_out.txt 2>&1
+podman exec testing_glpi_1 php /var/www/glpi/bin/console glpi:plugin:activate domainmanager > /tmp/reactivate_out.txt 2>&1
 REACTIVATE_RESULT=$?
 
 if [ $REINSTALL_RESULT -eq 0 ] && [ $REACTIVATE_RESULT -eq 0 ]; then
     # Verify idempotent: same result as 1.1
-    REINSTALL_TABLES=$(podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -se \
+    REINSTALL_TABLES=$(podman exec testing_db_1 mariadb -uglpi -pglpi glpi -se \
         "SHOW TABLES LIKE 'glpi_plugin_domainmanager%';" 2>/dev/null | wc -l)
-    REINSTALL_INTERNET=$(podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -se \
+    REINSTALL_INTERNET=$(podman exec testing_db_1 mariadb -uglpi -pglpi glpi -se \
         "SELECT COUNT(*) FROM glpi_domaintypes WHERE name='Internet Domain';" 2>/dev/null || echo "0")
     if [ "$REINSTALL_TABLES" -ge "4" ] && [ "$REINSTALL_INTERNET" = "1" ]; then
         pass "1.8"
@@ -240,7 +240,7 @@ echo "========== Phase 3.5: Cron Registration =========="
 
 # 3.5.14 Daily sync cron task registered (requires plugin active)
 echo -n "3.5.14 Cron task registration: "
-CRON_ROWS=$(podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -se \
+CRON_ROWS=$(podman exec testing_db_1 mariadb -uglpi -pglpi glpi -se \
     "SELECT COUNT(*) FROM glpi_crontasks WHERE itemtype LIKE '%Domainmanager%' AND name='DomainSync';" 2>/dev/null || echo "error")
 if [ "$CRON_ROWS" = "1" ]; then
     pass "3.5.14"
@@ -280,7 +280,7 @@ echo "========== Phase 5.8: Migration =========="
 
 # 5.8.1 Migration column check (if DB state exists)
 echo -n "5.8.1 Migration (is_managed column): "
-MIGRATION_CHECK=$(podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -se \
+MIGRATION_CHECK=$(podman exec testing_db_1 mariadb -uglpi -pglpi glpi -se \
     "SHOW COLUMNS FROM glpi_plugin_domainmanager_records LIKE 'is_managed';" 2>/dev/null | wc -l)
 if [ "$MIGRATION_CHECK" -gt "0" ]; then
     pass "5.8.1"

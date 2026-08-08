@@ -37,6 +37,7 @@ use DomainRecordType;
 use GlpiPlugin\Domainmanager\Config\Config;
 use GlpiPlugin\Domainmanager\Contract\DnsRecordCommentSyncInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsRecordProxyToggleInterface;
+use GlpiPlugin\Domainmanager\Contract\DnsRecordTtlAutoInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsRecordWriterInterface;
 use GlpiPlugin\Domainmanager\Dto\ZoneRecord;
 use GlpiPlugin\Domainmanager\DomainState;
@@ -1360,6 +1361,30 @@ class DnsRecordWriteback
 
         try {
             return self::getWritableDriver($state) instanceof DnsRecordProxyToggleInterface;
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    /**
+     * Whether this domain's configured DNS driver treats a TTL value of `1`
+     * as "automatic" (§9 research "persist proxy addresses + TTL-auto
+     * flag") — used by `DomainForm` to decide whether the editable TTL
+     * field on the add/edit forms is worth showing a "TTL 1 means
+     * Automatic" reminder next to, without naming a driver directly (same
+     * `instanceof` capability-check pattern as `supportsProxyToggle()`).
+     *
+     * @param  DomainState $state
+     * @return bool
+     */
+    public static function supportsTtlAutoSentinel(DomainState $state): bool
+    {
+        if (!self::isDnsEditable($state)) {
+            return false;
+        }
+
+        try {
+            return self::getWritableDriver($state) instanceof DnsRecordTtlAutoInterface;
         } catch (Throwable) {
             return false;
         }

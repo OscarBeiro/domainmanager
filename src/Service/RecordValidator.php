@@ -288,8 +288,10 @@ class RecordValidator
             return null;
         }
 
-        if (stripos($name, '._domainkey.') !== false && stripos($value, 'v=DKIM1') !== false
-            && !preg_match('/(?:^|;)\s*p=/i', $value)) {
+        if (
+            stripos($name, '._domainkey.') !== false && stripos($value, 'v=DKIM1') !== false
+            && !preg_match('/(?:^|;)\s*p=/i', $value)
+        ) {
             return __('This DKIM record has no "p=" tag; without one the key cannot be validated', 'domainmanager');
         }
 
