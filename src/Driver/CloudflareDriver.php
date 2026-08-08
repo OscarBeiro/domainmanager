@@ -261,7 +261,10 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
                 $result->status,
                 'dns',
                 $status,
-                __('This Cloudflare API token lacks DNS:Read permission for this zone', 'domainmanager'),
+                self::describeForbidden(
+                    $body,
+                    __('This Cloudflare API token lacks DNS:Read permission for this zone', 'domainmanager'),
+                ),
                 $raw_detail,
                 $result->checkedAt,
             );
@@ -774,7 +777,10 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
 
         if ($status === 403) {
             return new DriverException(
-                __('This Cloudflare API token lacks DNS:Edit permission for this zone', 'domainmanager'),
+                self::describeForbidden(
+                    json_encode($result['data'] ?? []),
+                    __('This Cloudflare API token lacks DNS:Edit permission for this zone', 'domainmanager'),
+                ),
                 true,
             );
         }
@@ -912,7 +918,10 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
                 "Cloudflare authorization failed on $path (HTTP $status): " . self::sanitizeMessage($body),
             );
             throw new DriverException(
-                __('This Cloudflare API token lacks DNS:Read permission for this zone', 'domainmanager'),
+                self::describeForbidden(
+                    $body,
+                    __('This Cloudflare API token lacks DNS:Read permission for this zone', 'domainmanager'),
+                ),
             );
         }
 
@@ -1047,6 +1056,62 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
             'registration_pending'                 => LifecycleStatus::Pending,
             default                                => LifecycleStatus::Ok,
         };
+    }
+
+    /**
+     * Turn a Cloudflare 403 body into an actionable message, instead of
+     * always assuming "missing scope" (found live, 2026-08-08): Cloudflare's
+     * own token-restriction failures (client IP address filtering, TLS
+     * client certificate requirement, time-of-day/date restriction) also
+     * return HTTP 403, with a distinct numeric `code` and a `message` that
+     * already names the real reason (e.g. code `9109`:
+     * "Cannot use the access token from location: <ip>") — collapsing all
+     * of these into a generic "lacks DNS:Read/Edit permission" message, as
+     * every 403 branch in this driver did until now, sends the user
+     * hunting through token scopes for a problem that's actually a client
+     * IP restriction, wasting real troubleshooting time. Falls back to the
+     * generic scope-missing message only when Cloudflare's response carries
+     * no recognized restriction code — still the right default for an
+     * actual missing-scope 403, which has no distinguishing `code` of its
+     * own beyond the generic auth-error family.
+     *
+     * Cloudflare's advanced token-restriction codes (confirmed against its
+     * current API error reference): `9109` client IP address filtering,
+     * `9208` TLS client certificate required. Both carry the real detail in
+     * `errors[0].message` already — reused verbatim (already user-safe,
+     * Cloudflare's own text, no secret material) rather than re-worded.
+     *
+     * @param  string $body           raw JSON response body
+     * @param  string $genericMessage already-translated fallback (the
+     *                                previous behavior) when no recognized
+     *                                restriction code is present
+     * @return string
+     */
+    private static function describeForbidden(string $body, string $genericMessage): string
+    {
+        $data = json_decode($body, true);
+        if (!is_array($data)) {
+            return $genericMessage;
+        }
+
+        $restrictionCodes = [9109, 9208];
+        foreach ($data['errors'] ?? [] as $error) {
+            if (!is_array($error) || !in_array((int) ($error['code'] ?? 0), $restrictionCodes, true)) {
+                continue;
+            }
+
+            $detail = self::sanitizeMessage((string) ($error['message'] ?? ''));
+            if ($detail === '') {
+                continue;
+            }
+
+            return sprintf(
+                __('Cloudflare rejected this request due to a token restriction: %s', 'domainmanager'),
+                $detail,
+            );
+        }
+
+        return $genericMessage;
     }
 
     /**

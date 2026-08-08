@@ -3549,3 +3549,31 @@ code — the "Show public IP" button and its endpoint no longer exist.
   Confirm the address is never shown in two places (neither a leftover button near the Name cell
   nor any other duplicate).
   - [ ] Not yet verified live
+
+### Cloudflare 403 error messages name the real restriction, not just "missing permission"
+
+Found live 2026-08-08: a Cloudflare token restricted by "Client IP Address Filtering" (dashboard
+setting on the token itself) returns HTTP 403 with error `code: 9109` and a `message` naming the
+blocked IP — every 403 branch in `CloudflareDriver` previously discarded that and always showed
+"lacks DNS:Read/Edit permission for this zone", which sent troubleshooting toward the wrong cause
+(token scopes) instead of the right one (the token's IP allowlist).
+
+- **Check Connection surfaces the real reason for an IP-restricted token.** Configure a Cloudflare
+  API token with "Client IP Address Filtering" excluding the GLPI server's actual egress IP. Run
+  "Check Connection" on the Supplier's DNS leg. Expected: the failure message names the IP
+  restriction and the blocked address (Cloudflare's own wording), not the generic
+  "lacks DNS:Read permission" text. (The underlying root cause — `code: 9109`,
+  `"Cannot use the access token from location: 213.177.194.73"` — was confirmed live in
+  `domainmanager-errors.log` before this fix; the fix itself still needs a live re-check.)
+  - [ ] Not yet verified live (re-check after this fix, against the same IP-restricted token)
+- **"Update Now" / sync surfaces the same real reason.** Trigger "Update Now" on a Domain whose
+  Cloudflare token is IP-restricted the same way. Expected: `domainmanager-errors.log`'s
+  "DNS leg failed" line, and any surfaced UI message, both name the IP restriction — not the
+  generic missing-permission text.
+  - [ ] Not yet verified live
+- **An actual missing-scope 403 (no restriction code) still falls back to the generic message.**
+  A token with `DNS:Read`/`DNS:Edit` genuinely absent from its scopes (not IP-restricted) returns a
+  403 with no `9109`/`9208` error code. Expected: the pre-existing generic "lacks DNS:Read/Edit
+  permission" message still shows — `describeForbidden()`'s fallback path.
+  - [ ] Not yet verified live (needs a second token with a genuine scope gap, not an IP
+        restriction, to test against)
