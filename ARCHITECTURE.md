@@ -3516,3 +3516,128 @@ Implementation:
   fetches the new endpoint and replaces the button's own text with the result (or a failure
   message), one-shot per page view — no polling, no load-time query per row, matching the lazy
   per-row framing.
+
+## 18. Phase 71 superseded — proxy addresses and TTL-auto persisted, display relocated (2026-08-08)
+
+§17.16's Phase 71 (live on-click "Show public IP" lookup) shipped, then was itself superseded the
+same week: `RESEARCH-proxy-ttl-storage.md` (research doc, folded into this section and deleted —
+see this section for its findings) proposed persisting both the resolved anycast address(es) and a
+"TTL means automatic" semantic at sync time instead, so the Records tab needs no per-click network
+round trip at all. Shipped as `1.6.0` (2026-08-08), superseding Phase 71's controller/resolver-click
+wiring while keeping `PublicIpResolver` itself (now called from sync, not from a click).
+
+### 18.1 Schema — two new nullable columns on `glpi_plugin_domainmanager_records`
+
+Both follow the `is_proxied` precedent exactly (`Installer::addRecordProxyMetadataColumns()`):
+idempotent `Migration::addField()` (+`addKey()` for the tinyint), nullable, **no backfill** —
+every pre-existing row stays `NULL` until its domain's next sync, never guessed at.
+
+- **`proxy_addresses`** (`text`) — mirrors `rdap_nameservers`'s own established multi-value-list
+  convention (`json_encode()`/`json_decode()`, no key — a list column isn't filtered on) rather
+  than inventing a second convention for storing a list.
+- **`is_ttl_auto`** (`tinyint NULL DEFAULT NULL`, keyed) — stores the *semantic* "this TTL means
+  automatic", never the raw number (that already lives on native `DomainRecord::ttl`; duplicating
+  it here would be a second copy to keep in sync). Verified live against Cloudflare's own current
+  API reference: `ttl == 1` is documented as its "automatic" sentinel, with no separate boolean
+  field. No other driver (IONOS, Dinahosting) has an equivalent sentinel — confirmed by grep, both
+  read `ttl` as a plain int with no special-cased value — so a literal `1`-second TTL from either
+  of those remains a literal one-second TTL, never "automatic". Enforced structurally: both
+  `ZoneRecord::$isTtlAuto` and the new `Contract\DnsRecordTtlAutoInterface` marker (§18.3) are
+  driver-supplied/driver-implemented, never derived generically from `ttl === 1` in shared code.
+
+### 18.2 Population — `RecordReconciler`, bounded live-DNS resolution
+
+Both fields are populated at the same two `ImportedRecord` add/update call sites `is_proxied`
+already uses, refreshed every sync regardless of which reconcile branch ran (same reasoning as
+`is_proxied`: neither field is a `ZoneRecord::getHash()` input, so either can change with no other
+content change).
+
+`proxy_addresses` requires a live DNS lookup (`PublicIpResolver::resolve()`, unchanged from Phase
+71) for any record with `is_proxied === true` — moving this from "paid when someone opens the tab,
+at most 1 lookup per click" to "paid on every sync, for every proxied record" is a strictly worse
+cost profile on its own, and multiplies under `DomainSync`'s continuous cron (§16, default batch 20
+domains/tick): unbounded, a batch of 20 domains could burst `20 × N` lookups in seconds. Bounded by
+`RecordReconciler::PROXY_IP_LOOKUP_LIMIT` (20), applied **per domain per sync** (not globally per
+cron tick) — a per-domain unit bounds one domain's worst-case added latency without making one
+domain's proxied-record count affect whether another domain's addresses get resolved that tick, and
+composes correctly regardless of the cron's own batch size. A record skipped for exceeding the
+bound keeps its previously-stored value rather than being cleared — partial coverage that rotates
+in on a later sync, never a permanent gap. Real-world proxied-record counts per domain were not
+measured against a live account before picking 20; revisit if a real zone commonly exceeds it.
+
+### 18.3 Display — same `POST_SHOW_TAB` overlay, walked positionally, no live fetch left
+
+`DomainForm::renderProxyIndicators()`/`domainrecord_proxy_indicators.html.twig` (unchanged
+injection point) now also selects `proxy_addresses`/`is_ttl_auto` and renders them without any
+network call: the anycast address(es) move from a "Show public IP" button next to the Name cell's
+cloud icon (now prefixed with its own small cloud icon, added 2026-08-08 per direct feedback that
+an unexplained second IP address next to the origin one needed more visual context) to a persisted
+second line under the **Target** cell's origin IP — confirmed against `DomainRecord::showForDomain()`
+on `11.0/bugfixes` that column order is always the fixed `type, name, ttl, data`, and that no `<td>`
+core renders carries a stable selector (`components/datatable.html.twig` gives every cell an empty
+`aria-label` and no `data-colkey`) — so the mechanism walks positionally from the already-matched
+Name-cell anchor: `link.closest('td').nextElementSibling` (TTL) `.nextElementSibling` (Target),
+never a fresh `querySelectorAll` pass. TTL renders as "Automatic" (translated) when `is_ttl_auto` is
+set, raw value kept as a hover tooltip. Both purely data-presence-gated, never on which driver
+populated the row. `RecordPublicIpController` (Phase 71's on-click endpoint) is removed — nothing
+left to fetch once the value is persisted, and per the same research's own finding, the address
+must not display in two places.
+
+A **new marker interface**, `Contract\DnsRecordTtlAutoInterface` (pure marker, no methods,
+implemented only by `CloudflareDriver`) plus `DnsRecordWriteback::supportsTtlAutoSentinel()` (same
+`instanceof`-capability pattern as the existing `supportsProxyToggle()`/`DnsRecordProxyToggleInterface`)
+lets the add/edit forms show a "Setting TTL to 1 means Automatic" reminder only when the concept
+actually applies, never via a hardcoded driver-name check — added 2026-08-08 on the same "add a
+reminder, or lock the field if not manageable" request. The edit form's TTL field was already
+cosmetically locked whenever the record isn't write-back manageable (`locked_fields =>
+$can_update ? [] : ['data', 'ttl']`, pre-existing), so the reminder only needed adding where TTL is
+actually editable: the edit panel's "Managed by Domain Manager" banner, the Phase 37 custom add
+panel (info-icon tooltip next to the TTL label), and — since GLPI's own generic blank "New Domain
+record" form can't resolve a domain's driver at render time, same limitation as that form's
+existing write-back banner — a hedged, always-visible variant there ("If this domain uses
+Cloudflare DNS, ...").
+
+### 18.4 Other findings carried over from ad-hoc research reports, still valid as of 2026-08-08
+
+Two standalone `RESEARCH-*.md` files accumulated during recent work (`RESEARCH-proxy-ttl-storage.md`,
+folded into §18.1–§18.3 above; `RESEARCH-phases69plus.md`, an earlier ad-hoc investigation from
+2026-08-03 whose own proposed Phase 69–72 numbering was superseded by what actually shipped as
+Phase 69/69b/70/71 elsewhere in this document). Both are deleted now that their durable findings
+live here. Re-verified against current code before recording, rather than trusted at face value:
+
+- **Check Connection still only probes DNS/zone scope, never Cloudflare's separate `Registrar:Read`
+  scope** (`CloudflareDriver::testConnection()`/`probeZoneScope()`, re-confirmed 2026-08-08) — a
+  token with `Zone:Read` but not `Registrar:Read` passes Check Connection and then 403s on the
+  first real registrar sync. Documented as a known, deliberate limitation in the driver's own
+  docblock (§3.10.1) since before this cleanup; still not closed. Worth a dedicated probe if
+  registrar-scope 403s are ever actually reported live — not built speculatively.
+- **The `managed_domainrecordtypes` gate is asymmetric between cron and "Update now" by design, not
+  by oversight**, and is worth stating as an explicit three-level cascade for anyone debugging a
+  partial sync: (1) `RecordReconciler::getUnmanageableTypeNames()` returns `[]` unconditionally
+  during cron (`Session::isCron()`), so no type is ever blocked by a cron-driven reconcile; (2) the
+  reconciler's own `add()`/`update()`/`restore()`/`delete()` calls carry `_domainmanager_sync`,
+  which makes every `DnsRecordWriteback` hook (`onPreAdd()`/`onPreUpdate()`/`onPreDelete()`/
+  `onPreRestore()`) bail out immediately regardless of rights, since a reconciler-driven mirror of
+  an upstream read is never a genuine write-back push (§11.20); (3) `DnsRecordWriteback`'s own
+  `managedTypesPreflight()` applies only to genuine user-initiated write-back adds, gated by the
+  acting profile's `managed_domainrecordtypes`. An operator whose profile is scoped to a subset of
+  types sees "Update Now" reject types the same profile's own scheduled cron sync would happily
+  pull in — surprising the first time it's hit, intentional once understood (cron is unrestricted
+  by design; "Update Now" respects the acting user's own role).
+- **The three DNS drivers (`CloudflareDriver`, `IonosDriver`, `DinahostingDriver`) share no base
+  class and compose no common service** — each independently implements its own HTTP client
+  construction, request wrapping/retry, pagination (cursor-based for Cloudflare, offset-based for
+  IONOS/Dinahosting), and HTTP/API error-code mapping. A real duplication cost, not a design flaw
+  in itself (§12.6's own "keep provider-specific concerns out of shared layers" principle cuts the
+  other way — a shared base class risks reintroducing exactly the coupling that section warns
+  against, e.g. one provider's error-code meaning leaking into a shared mapper). **Deferred, not
+  rejected**: worth an `AbstractDriver` extraction if a fourth driver is ever added and the
+  duplication cost compounds again, not speculatively now for three.
+- **Domain discovery's empty-modal-with-no-message symptom was already a non-issue by design, not
+  a latent bug**: `DomainDiscoveryController` throws and returns the exception message as a plain
+  HTTP 400 body on any `listAccountDomains()` failure (missing scope, network error, etc.) — the
+  browser renders that error text in place of the modal, never a silently empty table. The modal
+  template's own two empty-state messages ("no domains in this account" / "every domain found
+  already exists") only render on an actual **successful, empty-or-fully-matched** discovery, never
+  on failure. No code change made; recorded here so this doesn't get re-investigated as a live bug
+  report without first checking whether the "empty table" being described is actually an error page.
