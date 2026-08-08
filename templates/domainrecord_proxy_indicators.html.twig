@@ -44,7 +44,9 @@
  #   used to get before the live-lookup "Show public IP" button (removed:
  #   the value is now persisted, so there is nothing left to fetch on click,
  #   and per that research's own point 9, it must not display in two
- #   places).
+ #   places). Prefixed with its own cloud icon (same icon/tooltip as the
+ #   Name cell's) so the line reads as "this is the proxy address" on sight,
+ #   rather than a second, unexplained IP next to the origin one.
  # - "Automatic" (translated) replacing a `1`-second TTL in the TTL cell,
  #   raw value kept as a hover tooltip.
  #}
@@ -80,7 +82,13 @@
             if (addresses && addresses.length && dataTd && !dataTd.querySelector('.domainmanager-proxy-addresses')) {
                 var addrLine = document.createElement('div');
                 addrLine.className = 'text-muted small domainmanager-proxy-addresses';
-                addrLine.textContent = addresses.join(', ');
+
+                var addrIcon = document.createElement('i');
+                addrIcon.className = 'ti ti-cloud-filled text-primary me-1';
+                addrIcon.title = cloudTitle;
+                addrLine.appendChild(addrIcon);
+                addrLine.appendChild(document.createTextNode(addresses.join(', ')));
+
                 dataTd.appendChild(addrLine);
             }
 

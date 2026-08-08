@@ -3510,9 +3510,10 @@ code — the "Show public IP" button and its endpoint no longer exist.
 - **Cloudflare domain, mix of proxied and non-proxied records.** Sync a Cloudflare-managed domain
   with at least one proxied A/AAAA record and at least one non-proxied record. Expected: the
   proxied record's row shows the cloud icon next to Name (unchanged) *and* a grey second line
-  under the Target cell listing the resolved anycast address(es); the non-proxied record's row
-  shows neither. `glpi_plugin_domainmanager_records.proxy_addresses` is a JSON array for the
-  proxied record's `ImportedRecord` row, `NULL` for the non-proxied one.
+  under the Target cell, itself prefixed with its own small cloud icon, listing the resolved
+  anycast address(es); the non-proxied record's row shows neither.
+  `glpi_plugin_domainmanager_records.proxy_addresses` is a JSON array for the proxied record's
+  `ImportedRecord` row, `NULL` for the non-proxied one.
   - [ ] Not yet verified live
 - **Cloudflare domain, TTL "Automatic".** A Cloudflare record whose upstream `ttl` is `1`.
   Expected: the TTL cell shows "Automatic" (translated), and hovering it shows the raw value `1`
