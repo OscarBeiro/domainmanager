@@ -49,6 +49,12 @@
                     {{ __('Saving this form updates the record live at the DNS provider. There is no undo.', 'domainmanager') }}
                 {% endif %}
             </div>
+            {% if ttl_auto_note %}
+                <div class="text-muted small mt-1">
+                    <i class="ti ti-info-circle"></i>
+                    {{ __('Setting TTL to 1 means "Automatic".', 'domainmanager') }}
+                </div>
+            {% endif %}
         </div>
     </div>
 {% endif %}

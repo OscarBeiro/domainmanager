@@ -13,6 +13,7 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 ### Features
 - Proxied DNS records now show their public-facing address(es) directly under the Target column, saved automatically instead of requiring a click to look them up.
 - Cloudflare records using "Automatic" TTL now display "Automatic" instead of a confusing "1 second" value.
+- The DNS record add/edit forms now remind you that setting TTL to 1 means "Automatic" (for providers that support it).
 
 ### Bugs
 - A Cloudflare token blocked by an IP address restriction now shows the actual reason instead of a misleading "missing permission" message.

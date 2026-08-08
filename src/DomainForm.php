@@ -304,6 +304,14 @@ class DomainForm
         // — the kill switch, not a rights gap, is the reason.
         $read_only_locked = $read_only && $dns_editable && $is_writable_type;
 
+        // §9 research "persist proxy addresses + TTL-auto flag": only worth
+        // showing when TTL is actually an editable input on this render —
+        // a locked TTL field already tells the story on its own, and the
+        // fact itself (TTL 1 == automatic) is Cloudflare-specific, checked
+        // via the same instanceof-capability pattern as $can_toggle_proxy
+        // above, never a hardcoded driver name.
+        $ttl_auto_note = $can_update && $state !== null && DnsRecordWriteback::supportsTtlAutoSentinel($state);
+
         TemplateRenderer::getInstance()->display('@domainmanager/domainrecord_edit_panel.html.twig', [
             'can_update'        => $can_update,
             'can_delete'        => $can_delete,
@@ -311,6 +319,7 @@ class DomainForm
             'read_only_locked'  => $read_only_locked,
             'can_toggle_proxy' => $can_toggle_proxy,
             'current_proxied'  => $current_proxied,
+            'ttl_auto_note' => $ttl_auto_note,
             'display_name'  => $displayName,
             'supplier_name' => $dns_editable ? DnsRecordWriteback::writableSupplierName($domains_id) : null,
             // Cosmetic-only (server-side is authoritative, see docblock
@@ -498,6 +507,11 @@ class DomainForm
             'read_only'    => $read_only,
             'live_notice'  => $live_notice,
             'add_form_url' => DomainRecord::getFormURLWithID(0),
+            // §9 research "persist proxy addresses + TTL-auto flag": same
+            // instanceof-capability check as injectDomainRecord()'s own
+            // $ttl_auto_note — this panel's TTL field is always editable
+            // (new record), so only the driver capability needs checking.
+            'ttl_auto_note' => DnsRecordWriteback::supportsTtlAutoSentinel($state),
         ]);
     }
 

@@ -3577,3 +3577,32 @@ blocked IP — every 403 branch in `CloudflareDriver` previously discarded that 
   permission" message still shows — `describeForbidden()`'s fallback path.
   - [ ] Not yet verified live (needs a second token with a genuine scope gap, not an IP
         restriction, to test against)
+
+### TTL-automatic reminder on the DNS record add/edit forms
+
+- **Edit form, Cloudflare-managed writable record, user holds UPDATE.** Open an existing,
+  plugin-imported, writable-type (A/AAAA/CNAME/TXT) record's native edit page on a Cloudflare
+  write-back-managed domain. Expected: the existing "Managed by Domain Manager" banner gains a
+  second line — `Setting TTL to 1 means "Automatic".` — and the TTL field itself remains editable.
+  - [ ] Not yet verified live
+- **Edit form, record not manageable (wrong type, no right, or non-Cloudflare driver).** Open a
+  record's edit page where `can_update` is false (NS/MX record, missing UPDATE right, IONOS/
+  Dinahosting-managed domain, or the domain isn't write-back editable at all). Expected: no TTL
+  note shown (the "Managed by Domain Manager" banner itself doesn't render), and the TTL field is
+  cosmetically locked with the existing lock icon — unchanged pre-existing behavior, not new to
+  this change.
+  - [ ] Not yet verified live
+- **Add panel, Cloudflare write-back-managed domain.** Open the Records tab of a Cloudflare
+  write-back-managed domain and use the Domain-Manager-branded "Add a DNS record" panel. Expected:
+  an info icon next to the TTL label shows the "Setting TTL to 1 means Automatic" text on hover.
+  - [ ] Not yet verified live
+- **Add panel, IONOS/Dinahosting write-back-managed domain.** Same panel on a non-Cloudflare
+  write-back-managed domain. Expected: no info icon next to the TTL label (the driver doesn't
+  implement `DnsRecordTtlAutoInterface`).
+  - [ ] Not yet verified live
+- **Generic blank "New Domain record" form (top-nav "+" / global Domains-records list).** Open
+  this form without a domain preselected. Expected: a small hedged note ("If this domain uses
+  Cloudflare DNS, setting TTL to 1 means 'Automatic'.") is shown at the top of the form, alongside
+  (but independent of) the existing write-back warning banner, regardless of which domain ends up
+  selected.
+  - [ ] Not yet verified live

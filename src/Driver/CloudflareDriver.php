@@ -37,6 +37,7 @@ use GlpiPlugin\Domainmanager\Contract\ConnectionTestableInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsPipelineInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsRecordCommentSyncInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsRecordProxyToggleInterface;
+use GlpiPlugin\Domainmanager\Contract\DnsRecordTtlAutoInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsRecordWriterInterface;
 use GlpiPlugin\Domainmanager\Contract\DomainDiscoveryInterface;
 use GlpiPlugin\Domainmanager\Contract\RegistrarDriverInterface;
@@ -86,7 +87,7 @@ use Toolbox;
  *   segment for the Registrar API, instead of the previous approach of
  *   reading `account.id` back out of the zone lookup's own response.
  */
-class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface, ConnectionTestableInterface, DomainDiscoveryInterface, DnsRecordWriterInterface, DnsRecordProxyToggleInterface, DnsRecordCommentSyncInterface
+class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface, ConnectionTestableInterface, DomainDiscoveryInterface, DnsRecordWriterInterface, DnsRecordProxyToggleInterface, DnsRecordCommentSyncInterface, DnsRecordTtlAutoInterface
 {
     use ValidatesCredentialsTrait;
 
