@@ -182,7 +182,7 @@
                 </div>
 
                 <div class="alert alert-warning mt-2 mb-0 {{ dstatus in ['unsupported', 'unknown'] ? '' : 'd-none' }}"
-                     id="domainmanager-provider-warning">
+                     id="domainmanager-provider-warning" role="alert">
                     <i class="ti ti-alert-triangle me-1"></i>
                     <span id="domainmanager-provider-warning-text">
                         {% if dstatus == 'unsupported' %}

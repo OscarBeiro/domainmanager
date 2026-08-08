@@ -82,14 +82,14 @@
     </div>
 {% endif %}
 {% if read_only_locked %}
-    <div class="alert alert-warning d-flex align-items-center mb-3" role="alert">
-        <i class="ti ti-lock me-2"></i>
-        <div>{{ __('Domain Manager is in read-only mode (Setup > General > Domain Manager); this record cannot be edited here until it is turned off.', 'domainmanager') }}</div>
+    <div class="alert alert-warning mb-3" role="alert">
+        <i class="ti ti-lock me-1"></i>
+        {{ __('Domain Manager is in read-only mode (Setup > General > Domain Manager); this record cannot be edited here until it is turned off.', 'domainmanager') }}
     </div>
 {% elseif not can_update and locked_fields is not empty %}
-    <div class="alert alert-secondary d-flex align-items-center mb-3" role="alert">
-        <i class="ti ti-cloud-lock me-2"></i>
-        <div>{{ __('This record is imported by Domain Manager synchronization and cannot be edited here.', 'domainmanager') }}</div>
+    <div class="alert alert-secondary mb-3" role="alert">
+        <i class="ti ti-cloud-lock me-1"></i>
+        {{ __('This record is imported by Domain Manager synchronization and cannot be edited here.', 'domainmanager') }}
     </div>
 {% endif %}
 <script>

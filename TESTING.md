@@ -3696,3 +3696,26 @@ don't rely on the "click date" UI in this GLPI version.
   the restored domain already carries its old state row, no new bare state row is created for it,
   and it simply gets picked up again by the normal oldest-first sync ordering.
   - [ ] Not yet verified live
+
+### Phase 75: consistent warning styling
+
+- **Open the generic blank "New Domain record" form on a write-back-managed domain** (top-nav
+  "+" or global Domains-records list, then pick a Cloudflare/IONOS/Dinahosting-managed domain).
+  Expected: the write-back warning banner shows the `ti-world-cog` icon inline with its text (no
+  visible layout change from before), in both light and dark theme.
+  - [ ] Not yet verified live
+- **Open the DNS record edit panel while Domain Manager is in read-only mode**, and separately
+  **on an imported/locked record with the read-only mode off**. Expected: each shows its
+  respective banner (`ti-lock` / `ti-cloud-lock`) with no layout regression, in both themes.
+  - [ ] Not yet verified live
+- **Open a domain form whose DNS provider is unsupported or unidentified.** Expected: the
+  `ti-alert-triangle` provider warning (with its "Help us support this provider" link) still
+  renders correctly in both themes.
+  - [ ] Not yet verified live
+- **Open a Supplier's config tab with a Cloudflare configuration missing an Account ID.**
+  Expected: the warning banner renders correctly in both themes.
+  - [ ] Not yet verified live
+- **Screen-reader/accessibility spot check**: confirm all four banners above are announced as
+  alerts (`role="alert"` now present on every one, including the two that previously lacked it —
+  `domain_panel.html.twig`'s provider warning and `supplier_tab.html.twig`'s Cloudflare notice).
+  - [ ] Not yet verified live

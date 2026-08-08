@@ -11,6 +11,7 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 
 ## [Unreleased]
 ### Features
+- Warning banners across the plugin now look and behave consistently, and are properly announced to screen readers.
 - Fixed duplicate Historical-tab entries when adding or editing a DNS record on a write-back-managed domain — you'll now see one line per change instead of two.
 - Importing many domains from a supplier at once no longer risks a timeout — newly discovered domains are created immediately and synced shortly after, on the regular daily sync schedule, instead of all at once during the import itself.
 - The daily domain sync now logs each individual domain it processes, not just a run summary.

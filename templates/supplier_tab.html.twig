@@ -43,7 +43,7 @@
         <form method="post" action="{{ form_url }}" autocomplete="off">
             <div class="card-body">
                 {% if cloudflare_missing_account_id %}
-                    <div class="alert alert-warning">
+                    <div class="alert alert-warning" role="alert">
                         <i class="ti ti-alert-triangle me-1"></i>
                         {{ __('This Cloudflare configuration is missing an Account ID. Add it below and reissue this token as an Account API Token to continue using Cloudflare sync.', 'domainmanager') }}
                     </div>
