@@ -285,17 +285,13 @@ class DnsRecordWriteback
             'domainrecordtypes_id' => $type,
         ]);
 
-        $writeState = DomainState::getForDomain($domains_id);
-        self::logWriteAttempt(
-            $domains_id,
-            self::typeName($type) ?? '?',
-            $item->fields['name'] ?: '@',
-            $writeState !== null ? self::driverLabel(self::configuredDriverName($writeState)) : self::driverLabel(null),
-            __('create', 'domainmanager'),
-            true,
-            sprintf(__('%s → %s (TTL %d)', 'domainmanager'), $item->fields['name'] ?: '@', $item->fields['data'], (int) $item->fields['ttl']),
-        );
-
+        // §9 Phase 74: no logWriteAttempt() here for the success case —
+        // `DomainRecord` (dohistory=true, a genuine CommonDBChild of
+        // `Domain`) already logged a native HISTORY_ADD_SUBITEM entry on
+        // the Domain the moment `$item->add()` committed, just before this
+        // hook ran; logging again here would be a plain duplicate. The
+        // failure path above (onPreAdd(), before any local row exists) has
+        // no such native equivalent and keeps its own logWriteAttempt call.
         self::pushInitialComment($item, $created->remoteId, $domains_id);
     }
 
@@ -508,16 +504,14 @@ class DnsRecordWriteback
                 'domainrecordtypes_id' => (int) $item->fields['domainrecordtypes_id'],
             ]);
 
-            self::logWriteAttempt(
-                $domains_id,
-                $type,
-                $name,
-                self::driverLabel(self::configuredDriverName($state)),
-                __('update', 'domainmanager'),
-                true,
-                sprintf(__('data %s → %s', 'domainmanager'), $item->fields['data'], $data),
-            );
-
+            // §9 Phase 74: no logWriteAttempt() here for the success case —
+            // this hook runs pre-commit, so the native update() that
+            // follows still logs its own HISTORY_UPDATE_SUBITEM entry per
+            // changed field (`data`/`ttl` both have search options,
+            // confirmed against `DomainRecord::getSearchOptionsNew()`),
+            // making a second, redundant line here. The failure path below
+            // has no such native equivalent (the update never committed)
+            // and keeps its own logWriteAttempt call.
             return true;
         } catch (Throwable $e) {
             $message = $e instanceof DriverException ? $e->getMessage() : __('An error occurred while updating the record at the provider', 'domainmanager');
@@ -1161,14 +1155,27 @@ class DnsRecordWriteback
 
     /**
      * ARCHITECTURE.md §15 Phase 57: one `Log::history()` line per *attempted*
-     * provider write (success or failure), on the Domain, following
-     * §3.7.1's convention exactly (`id_search_option = 0`, `"[Domain
-     * Manager] "` prefix — no new search option). The line is the event,
-     * not the payload: type/name/provider/operation/outcome only, never the
-     * full RDATA — `Log::history()` truncates at 255 chars via
-     * `mb_substr()`, which would silently mangle e.g. a DKIM `p=` value.
-     * The untruncated detail already lives in `domainmanager.log` via the
-     * `PluginLogger::error()` call at each failing call site.
+     * provider write, on the Domain, following §3.7.1's convention exactly
+     * (`id_search_option = 0`, `"[Domain Manager] "` prefix — no new search
+     * option). The line is the event, not the payload: type/name/provider/
+     * operation/outcome only, never the full RDATA — `Log::history()`
+     * truncates at 255 chars via `mb_substr()`, which would silently mangle
+     * e.g. a DKIM `p=` value. The untruncated detail already lives in
+     * `domainmanager.log` via the `PluginLogger::error()` call at each
+     * failing call site.
+     *
+     * §9 Phase 74: every *failure* call site still calls this (nothing else
+     * records a provider write that never committed locally), but a
+     * *success* call site only calls this when the local
+     * `DomainRecord`/`ImportedRecord` mutation it follows carries no native
+     * history of its own — a genuine field add/update on `DomainRecord`
+     * itself (dohistory=true CommonDBChild of `Domain`) already gets a
+     * native HISTORY_ADD_SUBITEM/HISTORY_UPDATE_SUBITEM entry for free, so
+     * those two success call sites were retired as plain duplicates. Soft
+     * delete/restore and the proxy-toggle/comment side-pushes have no such
+     * native equivalent (soft delete/restore only auto-log for *dynamic*
+     * items, and proxy/comment touch `ImportedRecord`, not `DomainRecord`
+     * itself) and keep logging both outcomes here.
      *
      * @param  int    $domains_id
      * @param  string $type

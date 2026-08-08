@@ -3621,6 +3621,32 @@ blocked IP — every 403 branch in `CloudflareDriver` previously discarded that 
   synced ones, and the run summary's error count still matches.
   - [ ] Not yet verified live
 
+### Phase 74: no duplicate history entry on write-back create/update
+
+- **On a write-back-managed domain (Cloudflare/IONOS/Dinahosting driver configured and
+  write-eligible), add a new writable-type record (A/AAAA/CNAME/TXT) via the native "New Domain
+  record" form.** Expected: the Domain's Historical tab shows exactly one entry for the add (the
+  native "Domain record added" / subitem line) — no second "[Domain Manager] Create ... at
+  \<provider\>: succeeded" line alongside it.
+  - [ ] Not yet verified live
+- **Edit that record's data or TTL.** Expected: exactly one Historical entry per changed field
+  (e.g. "Data updated: ... → ..."), still no separate "[Domain Manager] Update ... succeeded"
+  line.
+  - [ ] Not yet verified live
+- **Force a create or update failure** (e.g. temporarily break the driver's credentials or
+  trigger a validation error at the provider). Expected: still see the plugin's own
+  "[Domain Manager] Create/Update ... at \<provider\>: failed: ..." Historical-tab line — the
+  failure-path logging is unchanged.
+  - [ ] Not yet verified live
+- **Trash a write-back-managed record, then restore it.** Expected: unchanged from before this
+  phase — a "[Domain Manager] Delete ... succeeded"/"Restore ... succeeded" line for each, since
+  native soft-delete/restore logging doesn't fire for non-dynamic items.
+  - [ ] Not yet verified live
+- **Toggle a Cloudflare record's proxy status.** Expected: unchanged — a
+  "[Domain Manager] Proxy toggle ... succeeded" line still appears (this path never had a native
+  duplicate).
+  - [ ] Not yet verified live
+
 ### Known upstream GLPI 11 bug: cron task "Logs" detail view never shows per-item lines
 
 Not a Domain Manager bug — confirmed as a genuine GLPI 11 core regression, still present on
