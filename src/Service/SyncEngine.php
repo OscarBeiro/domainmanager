@@ -127,6 +127,11 @@ class SyncEngine
             'dns_status'        => DomainState::STATUS_ERROR,
             'dns_message'       => '',
             'detected_provider' => $detected,
+            // §19 Phase 76: resolved alongside detected_provider below (or left at
+            // its previous value when this sync's DNS leg never runs), so the
+            // controller can rebuild the provider hyperlink instead of the caller
+            // guessing it from detected_provider text alone.
+            'dns_suppliers_id'  => $state !== null ? (int) $state->fields['dns_suppliers_id'] : 0,
             'last_sync_date'    => $now,
             // §9 Phase 7: null unless syncRegistrarLeg() below actually
             // fetches a fresh lifecycle — a leg that never ran (no
@@ -264,6 +269,10 @@ class SyncEngine
                 ImportLock::setLock(Domain::class, (int) $domain->getID(), $date_field, $value);
             }
         }
+
+        // §19 Phase 76: mirror into $result so the controller can rebuild the
+        // provider hyperlink (same value DomainState is about to be given below).
+        $result['dns_suppliers_id'] = $dns_config !== null ? (int) $dns_config->fields['suppliers_id'] : 0;
 
         $state_input = [
             'registrar_suppliers_id' => $registrar_id,

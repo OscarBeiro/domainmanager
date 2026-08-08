@@ -503,7 +503,15 @@
 
             const provider = document.getElementById('domainmanager-provider');
             if (provider && data.detected_provider) {
-                provider.textContent = data.detected_provider;
+                if (data.dns_supplier_link_url) {
+                    provider.textContent = '';
+                    const link = document.createElement('a');
+                    link.href = data.dns_supplier_link_url + '{{ supplier_tab_forcetab }}';
+                    link.textContent = data.detected_provider;
+                    provider.appendChild(link);
+                } else {
+                    provider.textContent = data.detected_provider;
+                }
             }
 
             ['registrar', 'dns'].forEach(function (leg) {

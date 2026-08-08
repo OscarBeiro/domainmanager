@@ -3761,7 +3761,7 @@ style, GLPI theme variables only (already true here). Verify in both light and d
 Files: `templates/domainrecord_new_notice.html.twig`, `templates/domainrecord_edit_panel.html.twig`,
 `templates/domain_panel.html.twig`, `templates/supplier_tab.html.twig`.
 
-### 19.5 Phase 76 (new, user-reported) — Inconsistent DNS provider hyperlink on the domain form
+### 19.5 Phase 76 (new, user-reported; implemented) — Inconsistent DNS provider hyperlink on the domain form
 
 Bug report: on `front/domain.form.php?id=…`, the DNS provider name is sometimes a clickable link
 to the Supplier record and sometimes plain text, with no pattern identifiable from the UI alone.
@@ -3851,3 +3851,32 @@ wrong failure mode; or (c) something else. Needs its own research pass before im
 not assumed from this summary alone.
 
 Files (surveyed, not yet a fix plan): `src/Service/DnsRecordWriteback.php`.
+
+### 19.8 Phase 78 (new, user-reported 2026-08-08, deferred — not yet planned in detail) — Deleted proxied record leaves stale proxy state
+
+Bug report: user observed a record row like:
+
+```
+x    Automatic    4.5.7.9
+104.21.47.37, 172.67.170.91
+```
+
+Interpretation, needs confirming at implementation time: a proxied (Cloudflare orange-cloud) A
+record was deleted upstream, but the local row still shows proxied IPs
+(`104.21.47.37, 172.67.170.91` look like Cloudflare edge IPs, not the origin) and possibly still
+shows a proxy indicator. Expected: once the record is gone, it should read as "not proxied" (no
+proxy symbol / revert to "no") and the stale proxied-IP display should be cleared, not carried
+over from the last-known state.
+
+User was unsure about the proxy-symbol half but confident the leftover proxied-IP display is
+wrong regardless.
+
+Not yet planned: where the stale state lives (is it cached on the local DB row and only cleared
+on the next successful sync of that name, or is it a display-only artifact composed at render
+time from now-orphaned data) and whether the fix is in `RecordReconciler`/`SyncEngine` (clear
+proxy fields when a record disappears upstream) or in the template composing the origin/proxied-IP
+display. Needs its own research pass before implementation. May relate to the pending
+proxy-toggle-right + origin/proxied-IP display work already tracked for branch "8" (see project
+memory `project_proxy_toggle_right_plan`).
+
+Files: not yet surveyed.

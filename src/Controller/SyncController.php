@@ -35,6 +35,7 @@ use Domain;
 use Glpi\Controller\AbstractController;
 use GlpiPlugin\Domainmanager\Service\SyncEngine;
 use Session;
+use Supplier;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -71,6 +72,18 @@ class SyncController extends AbstractController
         $force = (bool) $request->request->getBoolean('force', false);
 
         $result = (new SyncEngine())->sync($domain, false, $force);
+
+        // §19 Phase 76: resolve the link URL here (not in the JS) so the
+        // post-sync provider cell can rebuild the same hyperlink the initial
+        // page load renders — mirrors DomainForm.php's dns_supplier lookup,
+        // null (no link) whenever the resolved supplier no longer exists.
+        $result['dns_supplier_link_url'] = null;
+        if ((int) $result['dns_suppliers_id'] > 0) {
+            $supplier = new Supplier();
+            if ($supplier->getFromDB((int) $result['dns_suppliers_id'])) {
+                $result['dns_supplier_link_url'] = $supplier->getLinkURL();
+            }
+        }
 
         return new JsonResponse($result);
     }

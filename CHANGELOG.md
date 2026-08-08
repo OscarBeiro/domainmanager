@@ -16,6 +16,9 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 - Importing many domains from a supplier at once no longer risks a timeout — newly discovered domains are created immediately and synced shortly after, on the regular daily sync schedule, instead of all at once during the import itself.
 - The daily domain sync now logs each individual domain it processes, not just a run summary.
 
+### Bugs
+- The DNS Provider name on a domain's form now stays a clickable link after clicking "Update Now", instead of turning into plain text until the page is reloaded.
+
 ## [1.6.0] - 2026-08-08
 ### Features
 - Proxied DNS records now show their public-facing address(es) directly under the Target column, saved automatically instead of requiring a click to look them up.
