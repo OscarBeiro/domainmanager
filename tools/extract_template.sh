@@ -26,24 +26,29 @@ fi
 # Clean existing file
 rm -f $LOCALES/$POTFILE && touch $LOCALES/$POTFILE >/dev/null
 
+# GLPI's translation wrappers beyond plain __(): __s, __e (no-op passthrough),
+# _n (plural), _x/_sx (context). Keep in sync if new wrappers are adopted.
+KEYWORDS=(--keyword=__:1,2t --keyword=__s:1,2t --keyword=__e:1,2t --keyword=_n:1,2,4t --keyword=_x:1c,2,3t --keyword=_sx:1c,2,3t)
+
 echo Searching PHP files...
 # Append locales from PHP
 xgettext $(find -type f -name "*.php") -o $LOCALES/$POTFILE -L PHP --add-comments=TRANS --from-code=UTF-8 --force-po --join-existing \
-    --keyword=__:1,2t -d $PLUGINNAME --copyright-holder "TICgal" >/dev/null 2>&1
+    "${KEYWORDS[@]}" -d $PLUGINNAME --copyright-holder "TICgal" >/dev/null 2>&1
 
 echo Searching JS files...
 # Append locales from JavaScript
 xgettext $(find -type f -name "*.js") -o $LOCALES/$POTFILE -L JavaScript --add-comments=TRANS --from-code=UTF-8 --force-po --join-existing \
-    --keyword=__:1,2t -d $PLUGINNAME --copyright-holder "TICgal" >/dev/null 2>&1
+    "${KEYWORDS[@]}" -d $PLUGINNAME --copyright-holder "TICgal" >/dev/null 2>&1
 
 echo Searching TWIG files...
 # Append locales from Twig templates
 for file in $(find ./templates -type f -name "*.twig"); do
-    # 1. Convert file content to replace "{{ function(.*) }}" by "<?php function(.*); ?>" and extract strings via std input
-    # 2. Replace "standard input:line_no" by file location in po file comments
-    contents=$(cat $file | sed -r "s|\{\{\s*([a-z0-9_]+\(.*\))\s*\}\}|<?php \1; ?>|gi")
-    cat $file | perl -0pe "s/\{\{(.*?)\}\}/<?php \1; ?>/gism" | xgettext - -o $LOCALES/$POTFILE -L PHP --add-comments=TRANS --from-code=UTF-8 --force-po --join-existing \
-        --keyword=__:1,2t -d $PLUGINNAME --copyright-holder "TICgal"
+    # Wrap every translation call (__, __s, _n, _x, ...) found anywhere in the file —
+    # inside {{ }} output tags, {% set %} tags, or plain text — as its own PHP statement,
+    # so xgettext picks it up regardless of the surrounding Twig delimiter.
+    # Replace "standard input:line_no" by file location in po file comments (below).
+    cat $file | perl -pe "s/(_[a-z0-9_]*\([^()]*(?:\([^()]*\)[^()]*)*\))/<?php \1; ?>/gi" | xgettext - -o $LOCALES/$POTFILE -L PHP --add-comments=TRANS --from-code=UTF-8 --force-po --join-existing \
+        "${KEYWORDS[@]}" -d $PLUGINNAME --copyright-holder "TICgal"
     sed -i -r "s|standard input:([0-9]+)|$(echo $file | sed "s|./||"):\1|g" $LOCALES/$POTFILE
 done
 
