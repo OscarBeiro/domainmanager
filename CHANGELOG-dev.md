@@ -16,7 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Entries are grouped into **Features** (new capability, UI/UX change, refactor, doc/config
 change) and **Bugs** (something that was actually broken, fixed) — one line each.
 
-## [Unreleased] - 1.6.0-beta6
+## [Unreleased]
+
+## [1.6.0] - 2026-08-08
 ### Features
 - **Cloud icon added in front of the persisted proxy address(es) line under the Target cell** (`domainrecord_proxy_indicators.html.twig`) — same icon/tooltip as the existing Name-cell indicator, so the line reads as "this is the Cloudflare proxy address" on sight instead of an unexplained second IP next to the origin one.
 - **TTL-automatic reminder on the DNS record add/edit forms, for drivers that support it.** New marker interface `Contract\DnsRecordTtlAutoInterface` (pure marker, implemented by `CloudflareDriver` only) and `DnsRecordWriteback::supportsTtlAutoSentinel(DomainState $state)` — same `instanceof`-capability pattern as `supportsProxyToggle()`, never a hardcoded driver name. When a record's TTL field is actually editable (write-back-managed domain, writable type, user holds the per-type UPDATE right) and the configured driver supports the sentinel, both `domainrecord_edit_panel.html.twig` (existing record) and `domainrecord_add_panel.html.twig` (new record, Phase 37's custom add form) show a small note that setting TTL to `1` means "Automatic". GLPI's own generic blank "New Domain record" form (`domainrecord_new_notice.html.twig`) can't resolve the domain's driver at render time (same limitation as its existing write-back banner), so it shows a hedged, always-visible variant ("If this domain uses Cloudflare DNS, ..."). No change to field locking — an unmanageable/non-writable record's TTL field was already cosmetically locked via the pre-existing `locked_fields` mechanism (`can_update ? [] : ['data', 'ttl']`).

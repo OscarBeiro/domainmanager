@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Entries are grouped into **Features** and **Bugs**, one line each.
 
 ## [Unreleased]
+
+## [1.6.0] - 2026-08-08
 ### Features
 - Proxied DNS records now show their public-facing address(es) directly under the Target column, saved automatically instead of requiring a click to look them up.
 - Cloudflare records using "Automatic" TTL now display "Automatic" instead of a confusing "1 second" value.
