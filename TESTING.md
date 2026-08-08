@@ -3607,3 +3607,16 @@ blocked IP — every 403 branch in `CloudflareDriver` previously discarded that 
   (but independent of) the existing write-back warning banner, regardless of which domain ends up
   selected.
   - [ ] Not yet verified live
+
+### Phase 72: per-domain logging on cronDomainSync
+
+- **Trigger `cronDomainSync` manually against a batch of test domains** (Setup > Automatic
+  actions > "domainmanager - domainsync" > Execute, or CLI). Expected: the run's Logs entry shows
+  one line per domain processed (`<entity>: domain #<id> (<name>) — synced`, or `— error (...)`
+  on failure), in addition to the existing run summary and per-entity/per-registrar breakdown
+  lines.
+  - [ ] Not yet verified live
+- **Force one domain in the batch to fail** (e.g. temporarily break its Supplier credentials).
+  Expected: that domain's per-domain log line shows an `error (...)` outcome distinct from the
+  synced ones, and the run summary's error count still matches.
+  - [ ] Not yet verified live

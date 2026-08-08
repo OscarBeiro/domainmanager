@@ -17,6 +17,8 @@ Entries are grouped into **Features** (new capability, UI/UX change, refactor, d
 change) and **Bugs** (something that was actually broken, fixed) — one line each.
 
 ## [Unreleased]
+### Features
+- **Phase 72: per-domain logging in `cronDomainSync()`'s loop** (`src/Cron.php`). Previously the task only logged a run-level summary plus per-entity/per-registrar breakdowns; no line named which individual domain was processed or its outcome. Added one `$task->log()` per domain inside the loop (entity name via `Dropdown::getDropdownName('glpi_entities', ...)`, domain id/name, outcome — `synced`, or `error (registrar: ..., dns: ...)`/the caught exception message on failure), following the shape `cronRdapEnrichment()` already used. Added `glpi_domains.name` to the batch query's `SELECT` to support the new message. Existing summary/breakdown lines are unchanged. `cronRdapEnrichment()` needed no change — it already logged one line per domain processed.
 
 ## [1.6.0] - 2026-08-08
 ### Features

@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Entries are grouped into **Features** and **Bugs**, one line each.
 
 ## [Unreleased]
+### Features
+- The daily domain sync now logs each individual domain it processes, not just a run summary.
 
 ## [1.6.0] - 2026-08-08
 ### Features
