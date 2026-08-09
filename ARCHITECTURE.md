@@ -4262,6 +4262,33 @@ one `DomainForm::injectDomain()`'s `$is_managed` already surfaces on `domain.for
 joining `DomainState` and filtering `is_managed = 1`; verified live (19 managed vs. 20 in-scope
 domains — one domain exists with no state row or `is_managed = 0`).
 
+### 20.9 Phase 85 follow-up 4 — label rename, widened chart-type picker, and a duplicate-bucket bug on registrar status (2026-08-09/10)
+
+Three small, unrelated changes made in the same pass:
+
+- `recordsCount()`'s on-widget `label` changed from `__('Records', ...)` to `__('Managed records',
+  ...)` — the bare "Records" read too generically next to the plugin's other "Managed ..." cards.
+- `plugin_domainmanager_proxied_records`'s `dashboardCards()` entry was `'widgettype' =>
+  ['donut']` only, unlike every sibling breakdown card's `['pie', 'donut', 'multipleNumber', 'bar',
+  'hbar']` — widened to match; no reason found for the original restriction.
+- **A real bug**: `registrarStatusBreakdown()` had the identical GROUP BY-by-alias hazard already
+  fixed once in §20.7's post-ship bugfix pass 2, this time on a `CASE` expression rather than a
+  `COALESCE()` — confirming that pass's note that `domainsByDnsProvider()`/`syncStatusBreakdown()`
+  carry the same latent risk. Verified live against `testing_glpi_1`:
+  `GROUPBY => ['registrar_status']` resolved to `DomainState`'s own real `registrar_status` column
+  (present in the joined scope) instead of the `CASE WHEN ... END AS registrar_status` alias — a
+  domain with no `DomainState` row at all (`NULL` raw column) and a domain with a stale/
+  mismatched-supplier `DomainState` row (a real, non-`NULL` raw column) both render as "Never
+  synchronized" through the `CASE`, but grouped separately on their differing raw values (3 + 1
+  instead of 4). Fixed by repeating the full `CASE` expression in `GROUPBY` as a `QueryExpression`,
+  same "repeat the expression, don't rely on the alias" fix as §20.7.
+
+Separately (data repair only, **not** a code bug): the user's live `testing_glpi_1` dashboard had
+all 4 Phase 85 record cards saved with `card_options.widgettype = ""`, the exact non-bug §20.7
+already documents ("empty card!" from the dashboard-editor UI saving without a chart type picked).
+Repaired directly in the container's `glpi_dashboards_items` rows for this session; no plugin
+change was needed or made for that part.
+
 ### 20.8 Backlog — domain.form: hide the injected panel entirely for a never-synced domain
 
 Raised during the Phase 85 follow-up work above, deferred to its own phase (not yet numbered/

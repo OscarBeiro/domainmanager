@@ -18,8 +18,10 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 - Fixed duplicate Historical-tab entries when adding or editing a DNS record on a write-back-managed domain — you'll now see one line per change instead of two.
 - Importing many domains from a supplier at once no longer risks a timeout — newly discovered domains are created immediately and synced shortly after, on the regular daily sync schedule, instead of all at once during the import itself.
 - The daily domain sync now logs each individual domain it processes, not just a run summary.
+- The "Managed records" dashboard card's number widget now has a clearer label, and the "Proxied records" card can now be displayed as a pie, bar, or number chart, not just a donut.
 
 ### Bugs
+- Fixed the "Registrar sync status" dashboard card showing "Never synchronized" twice instead of once.
 - Fixed a sync that could get permanently stuck on a domain because of a duplicate TXT record that genuinely exists at the DNS provider — that one record is now skipped instead of blocking the rest of the sync.
 - A DNS record deleted at the provider no longer shows its old Cloudflare proxy status and IPs when viewed in the Records tab's trash bin.
 - The DNS Provider name on a domain's form now stays a clickable link after clicking "Update Now", instead of turning into plain text until the page is reloaded.

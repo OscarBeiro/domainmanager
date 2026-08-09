@@ -3786,3 +3786,20 @@ don't rely on the "click date" UI in this GLPI version.
   username and password…") now renders as an `alert-warning` banner instead of a plain muted
   hint, with its "Setup instructions" link still present and working. Check both themes.
   - [ ] Not yet verified live
+
+### Phase 85 follow-up 4: "Managed records" label, widened proxied-records picker, registrar-status duplicate bucket
+
+- **Open the Domain Manager dashboard and check the records-count bigNumber card's on-widget
+  label.** Expected: reads "Managed records" (was "Records").
+  - [x] Pass — verified live 2026-08-09 against `testing_glpi_1` (GLPI 11.0.8): rendered HTML's
+    `<div class="label">` reads "Managed records".
+- **Edit the "Proxied records" card and open its chart-type picker.** Expected: offers Pie,
+  Donut, Number(s), Bar, and Horizontal bar — same set as every other breakdown card, not just
+  Donut.
+  - [x] Pass — verified live 2026-08-09: re-rendered the card with `widgettype=bar` and it
+    returned a valid bar-chart card (previously only `donut` was an allowed option at all).
+- **Open the "Registrar sync status" card and count the "Never synchronized" slice/row.**
+  Expected: exactly one "Never synchronized" entry, not two.
+  - [x] Pass — verified live 2026-08-09: direct SQL reproduction showed the query splitting 4
+    domains into two "never" rows (3 + 1); after the `GROUPBY` fix the same query returns a single
+    row of 4, and the live-rendered card shows one "Never synchronized" label.
