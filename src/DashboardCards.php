@@ -160,7 +160,7 @@ class DashboardCards
         ];
 
         $cards['plugin_domainmanager_proxied_records'] = [
-            'widgettype' => ['donut'],
+            'widgettype' => ['pie', 'donut', 'multipleNumber', 'bar', 'hbar'],
             'itemtype'   => DomainRecord::class,
             'group'      => __s('Domain Manager'),
             'label'      => __s('Proxied records', 'domainmanager'),
