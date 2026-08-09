@@ -28,6 +28,7 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 - Fixed a sync that could get permanently stuck on a domain because of a duplicate TXT record that genuinely exists at the DNS provider — that one record is now skipped instead of blocking the rest of the sync.
 - A DNS record deleted at the provider no longer shows its old Cloudflare proxy status and IPs when viewed in the Records tab's trash bin.
 - The DNS Provider name on a domain's form now stays a clickable link after clicking "Update Now", instead of turning into plain text until the page is reloaded.
+- Deleting or purging a domain no longer pushes real deletions to your DNS provider, and purging a domain no longer shows a confusing "Purge right" error or leaves a leftover DNS record behind.
 - Fixed the "Domains per DNS provider" dashboard card's drill-down showing the wrong (or no) domains; it now correctly filters by the actual matched DNS provider supplier, the same one shown on the domain's own form.
 - Fixed the "DNS sync status" and "Registrar sync status" dashboard cards' drill-downs showing the wrong (or no) domains when clicking into a status; also renamed both cards to match their actual field names (previously "Sync status"/"Registrar status").
 - Fixed DNSSEC status, domain lock, WHOIS privacy, and pending delete/transfer flags never showing a "No" value on a domain's form — they showed nothing at all instead, even when the registrar or RDAP had confirmed the flag was off.

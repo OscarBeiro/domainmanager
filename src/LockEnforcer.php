@@ -54,6 +54,15 @@ class LockEnforcer
     public static bool $sync_in_progress = false;
 
     /**
+     * Runtime flag set while a `Domain` delete/purge is in progress, so the
+     * cascaded pre_item_delete/pre_item_purge fired on each child
+     * `DomainRecord` never pushes a driver deletion or blocks/warns locally
+     * (ARCHITECTURE.md Phase 90) — the whole Domain, records included, is
+     * being removed from GLPI only, not from the DNS provider.
+     */
+    private static bool $domain_removal_in_progress = false;
+
+    /**
      * Field on DomainRecord that is always locked when the record is
      * plugin-owned, regardless of what the DNS driver reported this sync —
      * changing it would break the record/domain relationship the plugin
@@ -213,6 +222,44 @@ class LockEnforcer
     }
 
     /**
+     * pre_item_delete on Domain: marks the removal in progress so the
+     * cascaded child DomainRecord delete never touches the driver
+     * (Phase 90) — reset by HookHandler::domainDeleted().
+     *
+     * @param  Domain $item
+     * @return void
+     */
+    public static function domainPreDelete(Domain $item): void
+    {
+        self::$domain_removal_in_progress = true;
+    }
+
+    /**
+     * pre_item_purge on Domain: marks the removal in progress so the
+     * cascaded child DomainRecord purge never blocks on the per-type
+     * PURGE right nor leaves an orphaned row (Phase 90) — reset by
+     * HookHandler::domainPurged().
+     *
+     * @param  Domain $item
+     * @return void
+     */
+    public static function domainPrePurge(Domain $item): void
+    {
+        self::$domain_removal_in_progress = true;
+    }
+
+    /**
+     * Resets the Domain-removal-in-progress flag once the delete/purge
+     * (and its cascade to child DomainRecords) has finished.
+     *
+     * @return void
+     */
+    public static function domainRemovalComplete(): void
+    {
+        self::$domain_removal_in_progress = false;
+    }
+
+    /**
      * pre_item_delete on DomainRecord
      *
      * @param  DomainRecord $item
@@ -253,6 +300,13 @@ class LockEnforcer
         // right must not skip the write-back push on DomainRecord — only
         // the sync engine's own removals (and cron) bypass.
         if (self::canBypassSync()) {
+            return;
+        }
+
+        // Phase 90: this record is only along for the ride because its
+        // parent Domain is being deleted/purged — never push a driver
+        // deletion and never block/warn locally for a cascaded removal.
+        if (self::$domain_removal_in_progress) {
             return;
         }
 

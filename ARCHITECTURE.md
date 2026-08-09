@@ -4339,6 +4339,36 @@ Seeded into the default `install()` dashboard grid as a new row (`y => 9`, `stac
 existing cards; same "never repopulates an existing admin-edited dashboard" caveat as every card
 before it.
 
+### 20.11 Phase 90 — Domain delete/purge must never cascade into a driver push or a bogus block
+
+Reported symptom: purging a `Domain` showed a bogus ERROR ("Purging this record requires the
+'Purge' right for its DNS record type") even though the purge succeeded. `DomainRecord` is a
+`CommonDBChild` of `Domain`, so GLPI cascades a Domain delete/purge down to each child
+`DomainRecord`, re-firing the plugin's own `PRE_ITEM_DELETE`/`PRE_ITEM_PURGE` hooks
+(`LockEnforcer::domainRecordPreDelete()`/`domainRecordPrePurge()` →
+`blockRecordRemoval()`) for every record along for the ride — with nothing distinguishing that
+from a user deliberately removing one record on its own. On the soft-delete path this meant a
+real upstream `deleteRecord()` push to the DNS provider (IONOS/Cloudflare/Dinahosting) for every
+write-back-managed record under a deleted Domain — deleting/purging a `Domain` in GLPI must be a
+purely local operation that never touches the driver. On the purge path, a user lacking the
+per-type DNS record PURGE right hit the bogus ERROR above and the child `DomainRecord` row was
+left behind orphaned (its plugin `ImportedRecord` bookkeeping was already cleaned up by
+`HookHandler::domainPurged()`, but the `glpi_domainrecords` row itself was not).
+
+Fixed with a Domain-scoped bypass flag on `LockEnforcer`
+(`$domain_removal_in_progress`), mirroring the existing `$sync_in_progress` bypass used by the
+sync engine: `domainPreDelete()`/`domainPrePurge()` set it (registered as new `Domain::class`
+entries in `PRE_ITEM_DELETE`/`PRE_ITEM_PURGE`), `blockRecordRemoval()` checks it immediately
+after the existing `canBypassSync()` check — before `DnsRecordWriteback::onPreDelete()` can be
+called — so cascaded child-record removal never invokes the driver and never blocks/warns
+locally, and `domainRemovalComplete()` resets it once the removal (and its cascade) has finished:
+called from `HookHandler::domainPurged()` (purge path, `ITEM_PURGE`) and a new
+`HookHandler::domainDeleted()` (delete path, a new `ITEM_DELETE` hook registered for
+`Domain::class` — no such hook existed on `Domain` before this phase). A user deliberately
+deleting/purging one `DomainRecord` directly (not via a Domain removal) is unaffected: the flag is
+never set for that path, so `DnsRecordWriteback::onPreDelete()`/`hasPurgeRight()` still run
+exactly as before.
+
 ### 20.8 Phase 88 — domain.form: hide the injected panel entirely when there is nothing to manage
 
 `DomainForm::injectDomain()` now returns immediately, before rendering `domain_panel.html.twig`,

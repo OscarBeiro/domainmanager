@@ -859,9 +859,23 @@ function plugin_init_domainmanager(): void
             // DnsRecordWriteback::onPreDelete(), called from here via
             // LockEnforcer::domainRecordPreDelete().
             DomainRecord::class => [LockEnforcer::class, 'domainRecordPreDelete'],
+            // ARCHITECTURE.md §20.11 (Phase 90): marks a Domain removal in
+            // progress so the delete cascaded to each child DomainRecord
+            // above never pushes a driver deletion.
+            Domain::class       => [LockEnforcer::class, 'domainPreDelete'],
         ];
         $PLUGIN_HOOKS[Hooks::PRE_ITEM_PURGE]['domainmanager'] = [
             DomainRecord::class => [LockEnforcer::class, 'domainRecordPrePurge'],
+            // ARCHITECTURE.md §20.11 (Phase 90): same as above, purge path —
+            // avoids the bogus per-type PURGE-right ERROR and the orphaned
+            // glpi_domainrecords row it otherwise leaves behind.
+            Domain::class       => [LockEnforcer::class, 'domainPrePurge'],
+        ];
+        // ARCHITECTURE.md §20.11 (Phase 90): resets the Domain-removal flag
+        // once the soft-delete (and its cascade) has finished — paired with
+        // domainPurged() above for the purge path.
+        $PLUGIN_HOOKS[Hooks::ITEM_DELETE]['domainmanager'] = [
+            Domain::class => [HookHandler::class, 'domainDeleted'],
         ];
 
         // ARCHITECTURE.md §14.3 (Phase 48 bug fix): paired counterpart to the

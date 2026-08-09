@@ -248,6 +248,21 @@ class HookHandler
         $DB->delete(DomainState::getTable(), ['domains_id' => $domains_id]);
         $DB->delete(ImportedRecord::getTable(), ['domains_id' => $domains_id]);
         ImportLock::deleteForItem(Domain::class, $domains_id);
+
+        LockEnforcer::domainRemovalComplete();
+    }
+
+    /**
+     * item_delete on Domain (Phase 90): resets the removal-in-progress flag
+     * set by LockEnforcer::domainPreDelete() once the soft-delete (and its
+     * cascade to child DomainRecords) has finished.
+     *
+     * @param  Domain $domain
+     * @return void
+     */
+    public static function domainDeleted(Domain $domain): void
+    {
+        LockEnforcer::domainRemovalComplete();
     }
 
     /**

@@ -3888,3 +3888,21 @@ don't rely on the "click date" UI in this GLPI version.
   - [ ] Pass — reasoned from code (`fetchTransferDateFromRelated()` wraps its own request in a
     `try`/`catch (Throwable)` returning `null`), not separately exercised live against a
     deliberately-broken related URL.
+
+## Phase 90: Domain delete/purge must never cascade into a driver push or a bogus block
+
+- **Direct record delete (must be unchanged):** soft-delete one write-back-managed
+  `DomainRecord` directly. Expected: upstream provider delete call still fires as before.
+  - [x] Pass — verified live against `testing_glpi_1`.
+- **Domain delete must not touch the driver:** soft-delete the parent `Domain` with that
+  record still attached. Expected: `deleteRecord()` is not invoked; the record is soft-deleted
+  locally only.
+  - [x] Pass — verified live against `testing_glpi_1`.
+- **Domain purge, no bogus message, no orphan:** as a user holding Domain PURGE but lacking the
+  per-type DNS record PURGE right, purge that Domain. Expected: no ERROR message, the domain is
+  purged, and `SELECT * FROM glpi_domainrecords WHERE domains_id = <id>` returns no rows.
+  - [x] Pass — verified live against `testing_glpi_1`.
+- **Direct record purge (must be unchanged):** purge a `DomainRecord` directly (not via a Domain
+  purge) as a user lacking the per-type PURGE right. Expected: existing ERROR still appears and
+  the record is not purged.
+  - [x] Pass — verified live against `testing_glpi_1`.
