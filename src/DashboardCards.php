@@ -159,6 +159,15 @@ class DashboardCards
             'cache'      => false,
         ];
 
+        $cards['plugin_domainmanager_records_by_dns_provider_and_type'] = [
+            'widgettype' => ['bars', 'hBars', 'stackedbars', 'stackedHBars', 'lines'],
+            'itemtype'   => DomainRecord::class,
+            'group'      => __s('Domain Manager'),
+            'label'      => __s('Managed records per DNS provider by type', 'domainmanager'),
+            'provider'   => self::class . '::recordsByDnsProviderAndType',
+            'cache'      => false,
+        ];
+
         $cards['plugin_domainmanager_proxied_records'] = [
             'widgettype' => ['pie', 'donut', 'multipleNumber', 'bar', 'hbar'],
             'itemtype'   => DomainRecord::class,
@@ -860,6 +869,154 @@ class DashboardCards
     }
 
     /**
+     * "Managed records per DNS provider by type" (Phase 87): a genuinely
+     * multi-dimensional card — mirrors core's own
+     * `Provider::nbTicketsBySlaStatusAndTechnician()` shape
+     * (`data: {labels: [], series: [{name, data: []}]}`, one series per
+     * `DomainRecordType`, one label per DNS-provider bucket). Only
+     * `bars`/`hBars`/`stackedbars`/`stackedHBars`/`lines` read this shape
+     * (`Glpi\Dashboard\Widget::getBarsGraph()`/`getLinesGraph()` with
+     * `'multiple' => true`) — `pie`/`donut`/`bigNumber`/single-series `bar`
+     * would silently misrender it (see `toChartData()`'s doc comment for the
+     * single-series equivalent of this trap).
+     *
+     * No SQL `LIMIT`/pre-ranking here: the dashboard editor's per-card
+     * "limit" control (default 7, confirmed against `Glpi\Dashboard\Grid`)
+     * never reaches the provider at all — it's applied purely client-side by
+     * `Widget::getBarsGraph()`, which keeps the *last* N labels/series
+     * entries (`array_splice($labels, 0, -$nb_labels)`), not the largest N.
+     * So the providers here are sorted ascending by total record count
+     * (`asort($providerTotals)`) precisely so that client-side "keep the
+     * tail" trim retains the *biggest* buckets — matches the "top N by
+     * volume" behaviour the user actually wants, without duplicating core's
+     * slicing logic here.
+     *
+     * There is no per-point drill-down `url` in this shape — same as core's
+     * own SLA-by-technician card, `Widget`'s multi-series bar/line renderers
+     * never read a `url` key per data point, only `name`/`data`.
+     */
+    public static function recordsByDnsProviderAndType(array $params = []): array
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $recordsTable = ImportedRecord::getTable();
+        // Same "repeat the expression, don't rely on the alias" fix as
+        // recordsByDnsProvider() — DomainState has a real dns_suppliers_id
+        // column that would otherwise win GROUP BY resolution over this
+        // COALESCE'd alias.
+        $dnsSuppliersIdExpr = 'COALESCE(' . $DB->quoteName(DomainState::getTable() . '.dns_suppliers_id') . ', 0)';
+
+        $iterator = $DB->request([
+            'SELECT'    => [
+                new QueryExpression($dnsSuppliersIdExpr . ' AS ' . $DB->quoteName('dns_suppliers_id')),
+                new QueryExpression('MAX(' . $DB->quoteName('supplier.name') . ') AS ' . $DB->quoteName('supplier_name')),
+                'domainrecordtype.id AS domainrecordtypes_id',
+                new QueryExpression('MAX(' . $DB->quoteName('domainrecordtype.name') . ') AS ' . $DB->quoteName('type_name')),
+                'COUNT DISTINCT' => $recordsTable . '.id AS cpt',
+            ],
+            // See recordsCount() for why FROM stays unaliased.
+            'FROM'      => $recordsTable,
+            'INNER JOIN' => [
+                DomainRecord::getTable() . ' AS domainrecord' => [
+                    'ON' => [$recordsTable => 'domainrecords_id', 'domainrecord' => 'id'],
+                ],
+                'glpi_domains' => [
+                    'ON' => ['domainrecord' => 'domains_id', 'glpi_domains' => 'id'],
+                ],
+                DomainRecordType::getTable() . ' AS domainrecordtype' => [
+                    'ON' => ['domainrecord' => 'domainrecordtypes_id', 'domainrecordtype' => 'id'],
+                ],
+            ],
+            'LEFT JOIN' => [
+                DomainState::getTable() => [
+                    'ON' => [DomainState::getTable() => 'domains_id', 'glpi_domains' => 'id'],
+                ],
+                'glpi_suppliers AS supplier' => [
+                    'ON' => ['supplier' => 'id', DomainState::getTable() => 'dns_suppliers_id'],
+                ],
+            ],
+            'WHERE'     => array_merge(
+                [
+                    $recordsTable . '.is_managed' => 1,
+                    'glpi_domains.is_deleted'     => 0,
+                    'glpi_domains.is_template'    => 0,
+                ],
+                getEntitiesRestrictCriteria('glpi_domains', '', '', true),
+            ),
+            'GROUPBY'   => [new QueryExpression($dnsSuppliersIdExpr), 'domainrecordtype.id'],
+        ]);
+
+        $providerTotals = [];
+        $providerNames  = [];
+        $typeNames      = [];
+        $matrix         = [];
+
+        foreach ($iterator as $row) {
+            $grp    = (int) ($row['dns_suppliers_id'] ?? 0);
+            $typeId = (int) ($row['domainrecordtypes_id'] ?? 0);
+            $cpt    = (int) ($row['cpt'] ?? 0);
+
+            $providerTotals[$grp] = ($providerTotals[$grp] ?? 0) + $cpt;
+            $providerNames[$grp]  = $row['supplier_name'] ?? null;
+            $typeNames[$typeId]   = $row['type_name'] ?? __('Not set');
+            $matrix[$grp][$typeId] = $cpt;
+        }
+
+        if (count($providerTotals) === 0) {
+            return [
+                'data'  => ['nodata' => true],
+                'label' => __('Records per provider by type', 'domainmanager'),
+                'alt'   => __('Managed records per DNS provider by type', 'domainmanager'),
+                'icon'  => self::ICON,
+            ];
+        }
+
+        // Ascending, deliberately — see this method's doc comment: the
+        // widget's own client-side "limit" trim keeps the *tail* of the
+        // labels array, so the biggest buckets must be last here.
+        asort($providerTotals);
+
+        $labelMap = ['0' => __('Not matched to a supplier', 'domainmanager')];
+
+        $labels     = [];
+        $seriesData = [];
+        foreach ($providerTotals as $grp => $total) {
+            if (isset($labelMap[(string) $grp])) {
+                $name = $labelMap[(string) $grp];
+            } else {
+                $name = $providerNames[$grp] ?? null;
+                if ($name === null || $name === '') {
+                    $name = __('Not set');
+                }
+            }
+            $labels[] = $name;
+
+            foreach ($typeNames as $typeId => $typeName) {
+                $seriesData[$typeId][] = $matrix[$grp][$typeId] ?? 0;
+            }
+        }
+
+        $series = [];
+        foreach ($typeNames as $typeId => $typeName) {
+            $series[] = [
+                'name' => $typeName,
+                'data' => $seriesData[$typeId],
+            ];
+        }
+
+        return [
+            'data'  => [
+                'labels' => $labels,
+                'series' => $series,
+            ],
+            'label' => __('Records per provider by type', 'domainmanager'),
+            'alt'   => __('Managed records per DNS provider by type', 'domainmanager'),
+            'icon'  => self::ICON,
+        ];
+    }
+
+    /**
      * "Proxied records" (Phase 85): managed A/AAAA/CNAME records whose
      * domain's DNS provider resolves to a Cloudflare-driven Supplier —
      * mirrors `DnsRecordWriteback::PROXIABLE_TYPES` and the Cloudflare-only
@@ -1170,6 +1327,15 @@ class DashboardCards
                 'width'        => 4,
                 'height'       => 3,
                 'card_options' => ['widgettype' => 'donut'],
+            ],
+            [
+                'gridstack_id' => 'plugin_domainmanager_records_by_dns_provider_and_type_' . Uuid::uuid4(),
+                'card_id'      => 'plugin_domainmanager_records_by_dns_provider_and_type',
+                'x'            => 0,
+                'y'            => 9,
+                'width'        => 6,
+                'height'       => 3,
+                'card_options' => ['widgettype' => 'stackedbars'],
             ],
         ];
 

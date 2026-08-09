@@ -4289,6 +4289,56 @@ already documents ("empty card!" from the dashboard-editor UI saving without a c
 Repaired directly in the container's `glpi_dashboards_items` rows for this session; no plugin
 change was needed or made for that part.
 
+### 20.10 Phase 89 — "Managed records per DNS provider by type", the first multi-dimensional card
+
+Every prior card here is single-series (`{data: [{number, label, url}]}`, `toChartData()`'s shape).
+This one is genuinely 3D — an X axis (DNS provider), a series dimension (record type), and a value
+(count) per cell — matching core's own `Provider::nbTicketsBySlaStatusAndTechnician()` (the
+"Tickets by SLA status and technician" card). That shape is `data: {labels: [], series: [{name,
+data: []}]}`, one array entry per label position across every series, and it's read by exactly one
+family of `Glpi\Dashboard\Widget` functions: `multipleBars`/`multipleHBars`/`StackedBars`/
+`stackedHBars` (all delegating to `getBarsGraph()` with `'multiple' => true`) and `multipleLines`
+(via `getLinesGraph()`). `pie`/`donut`/`bigNumber`/single-series `bar`/`hbar`/`multipleNumber` all
+read the *other* shape (`toChartData()`'s) — mixing the two up is the multi-series equivalent of
+the "wrong shape → TypeError deep in core" trap §20.3c already hit for single-series cards, so
+`dashboardCards()`'s `widgettype` array for this card is restricted to `['bars', 'hBars',
+'stackedbars', 'stackedHBars', 'lines']` only.
+
+`recordsByDnsProviderAndType()` groups managed records by the same matched-Supplier DNS-provider
+relationship `recordsByDnsProvider()` already uses (`DomainState.dns_suppliers_id`, `COALESCE`'d to
+0 for "not matched", same "repeat the expression in GROUPBY" fix as that card), cross-tabulated
+against `DomainRecordType`. One SQL query returns every (provider, type) cell; PHP then pivots it
+into `labels` (one per provider) and `series` (one per record type, `data` aligned to `labels`).
+
+**No SQL `LIMIT`, and that's deliberate, not an oversight.** Confirmed against
+`Glpi\Dashboard\Grid::getCardHtml()`: the dashboard editor's per-card "limit" control (`$cardopt['limit']
+?? 7`) is merged into `$widget_args` *after* the provider already ran — it never reaches the
+provider's own `$params` at all. It's applied entirely client-side, inside `Widget::getBarsGraph()`
+(`$nb_labels = min($p['limit'], count($labels))`, then `array_splice($labels, 0, -$nb_labels)` for
+the non-distributed case) — which keeps the *tail* of the array, not the largest N by value.
+`recordsByDnsProviderAndType()` therefore returns **every** provider, sorted **ascending** by total
+record count (`asort($providerTotals)` before building `labels`/`series`), so that the widget's own
+"keep the last N" trim happens to retain the biggest N buckets — i.e. "top N providers by volume,
+biggest first" without duplicating core's own slicing logic in the provider.
+
+There is no per-point drill-down `url` in this card, matching core's own SLA-by-technician card:
+none of `Widget`'s multi-series bar/line renderers read a `url` key per data point, only
+`name`/`data`.
+
+**Verification done:** the raw SQL shape (join structure, the `COALESCE(...)`-repeated-in-GROUPBY
+fix, real table/column names — `glpi_domainrecords`, `glpi_domainrecordtypes`,
+`glpi_plugin_domainmanager_records`, `glpi_plugin_domainmanager_states`) was run directly against
+`testing_glpi_1`'s live data and returned correct per-provider/per-type counts with no ambiguous-
+column errors. A full authenticated dashboard-editor render (add the card, pick `stackedbars`,
+confirm it actually paints) was **not** completed in this pass — a curl-based login/CSRF flow
+didn't succeed and PHP's bare `inc/includes.php` bootstrap doesn't give a working `Session`/`DB`
+without the full front-controller lifecycle (see the `glpi-plugin-builder` skill's Trap 14). Still
+needs a manual browser check.
+
+Seeded into the default `install()` dashboard grid as a new row (`y => 9`, `stackedbars`) below the
+existing cards; same "never repopulates an existing admin-edited dashboard" caveat as every card
+before it.
+
 ### 20.8 Backlog — domain.form: hide the injected panel entirely for a never-synced domain
 
 Raised during the Phase 85 follow-up work above, deferred to its own phase (not yet numbered/

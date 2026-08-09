@@ -19,6 +19,7 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 - Importing many domains from a supplier at once no longer risks a timeout — newly discovered domains are created immediately and synced shortly after, on the regular daily sync schedule, instead of all at once during the import itself.
 - The daily domain sync now logs each individual domain it processes, not just a run summary.
 - The "Managed records" dashboard card's number widget now has a clearer label, and the "Proxied records" card can now be displayed as a pie, bar, or number chart, not just a donut.
+- Added a "Managed records per DNS provider by type" dashboard card — a bar/line chart showing your busiest DNS providers (biggest first) broken down by record type.
 
 ### Bugs
 - Fixed the "Registrar sync status" dashboard card showing "Never synchronized" twice instead of once.
