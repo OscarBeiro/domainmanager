@@ -570,7 +570,14 @@ class DashboardCards
             }
 
             foreach ($tldNames as $tld => $tldLabel) {
-                $seriesData[$tld][] = $matrix[$suppliers_id][$tld] ?? 0;
+                // null, not 0 — a registrar/TLD combo that never occurred
+                // shouldn't fabricate a data point (0-value stack segments
+                // still show up in the tooltip/legend as real entries; every
+                // other card in this file only ever emits rows that exist,
+                // via toChartData()'s SQL-grouped iterator, so this matrix
+                // build is the one place that must replicate that "absent,
+                // not zero" behaviour by hand).
+                $seriesData[$tld][] = $matrix[$suppliers_id][$tld] ?? null;
             }
         }
 
@@ -1231,7 +1238,10 @@ class DashboardCards
             $labels[] = $name;
 
             foreach ($typeNames as $typeId => $typeName) {
-                $seriesData[$typeId][] = $matrix[$grp][$typeId] ?? 0;
+                // null, not 0 — see domainsByRegistrarAndTld()'s matching
+                // comment: an absent provider/type combo shouldn't fabricate
+                // a real (tooltip/legend-visible) data point.
+                $seriesData[$typeId][] = $matrix[$grp][$typeId] ?? null;
             }
         }
 

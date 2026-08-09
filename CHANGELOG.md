@@ -36,6 +36,7 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 - Fixed the "DNS sync status" and "Registrar sync status" dashboard cards' drill-downs showing the wrong (or no) domains when clicking into a status; also renamed both cards to match their actual field names (previously "Sync status"/"Registrar status").
 - Fixed DNSSEC status, domain lock, WHOIS privacy, and pending delete/transfer flags never showing a "No" value on a domain's form — they showed nothing at all instead, even when the registrar or RDAP had confirmed the flag was off.
 - Fixed the "Last transfer" date never being found for domains registered through certain registrars, where it was previously only looked up from a source that doesn't track transfer history.
+- Fixed the "Domains per registrar by TLD" and "Managed records per DNS provider by type" dashboard cards showing a "0" for combinations that never happened (e.g. a registrar with no domains of a given TLD), instead of just leaving them out like every other chart.
 
 ## [1.6.0] - 2026-08-08
 ### Features

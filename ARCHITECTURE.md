@@ -4339,6 +4339,30 @@ Seeded into the default `install()` dashboard grid as a new row (`y => 9`, `stac
 existing cards; same "never repopulates an existing admin-edited dashboard" caveat as every card
 before it.
 
+### 20.10b Post-ship bugfix: matrix cells filled with `0` instead of `null` for absent combinations
+
+Both `recordsByDnsProviderAndType()` and `domainsByRegistrarAndTld()` (§20.10, §20.4) build their
+matrix via `$matrix[$label][$series] ?? 0` when pivoting the SQL result set into `labels`/`series`.
+User-reported: both cards showed "0 data" cluttering the chart, specifically unlike every other card
+in this file. Root cause: a `(label, series)` combination that never occurred in the query results
+(e.g. a registrar with no `.eu` domains, a DNS provider with no `NS` records) got a fabricated `0`
+data point — a real, tooltip/legend-visible entry — instead of being left out the way a single-series
+card's SQL-grouped result set naturally leaves out empty buckets. Fix: fill absent cells with `null`
+instead of `0`, so ECharts renders no segment and no tooltip/legend line for them.
+
+Verified live against `testing_glpi_1` end-to-end, including the full authenticated-render step
+§20.10 flagged as not yet done: booted the Symfony `Kernel` directly from a CLI script
+(`require 'vendor/autoload.php'; (new \Glpi\Kernel\Kernel('production', false))->boot();`, faking
+`$_SESSION` by hand — no login/CSRF round-trip needed), called both provider methods directly against
+real data, then fed that output straight into `Widget::stackedHBars()` the same way
+`Grid::getCardHtml()` does and inspected the generated ECharts `series[i].data`. Confirmed the fix
+changes a combination with no underlying rows from `[1, 0]` to `[1, null]`, with genuine same-cell
+counts elsewhere unaffected. New skill-level trap recorded in the `glpi-plugin-builder` skill
+(`references/dashboard-widgets.md`) covering both this matrix-fill quirk and the working CLI
+bootstrap technique itself, since the skill previously only documented that the bare
+`inc/includes.php` bootstrap *doesn't* work (Trap 14) without offering a working alternative for
+one-off verification scripts.
+
 ### 20.11 Phase 90 — Domain delete/purge must never cascade into a driver push or a bogus block
 
 Reported symptom: purging a `Domain` showed a bogus ERROR ("Purging this record requires the
