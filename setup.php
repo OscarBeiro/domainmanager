@@ -137,6 +137,18 @@ define('PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_GLPI_CREATED', 9430);
 // above, same "Native" label/is_glpi_created-style field, backed by its own
 // column on the states table rather than the records table.
 define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_GLPI_CREATED', 9431);
+// Real, filterable search option on Domain (Phase 84 follow-up): the
+// Domain-side counterpart to PLUGIN_DOMAINMANAGER_SO_SUPPLIER_NS_PROVIDER
+// above — "which Supplier is the *matched* DNS provider for this domain",
+// mirroring native id 53's own registrar dropdown (Infocom's suppliers_id),
+// not PLUGIN_DOMAINMANAGER_SO_DOMAIN_NS_PROVIDER's free-text
+// `detected_provider` string. See its own registration below for why a
+// dedicated FK-dropdown option was needed instead of reusing 9407. NOT
+// 9411: that id was briefly documented (ARCHITECTURE.md §16, Phase 16) for
+// a "Domains" count option that was cut before shipping — a
+// previously-documented id stays a permanent gap, same reasoning as
+// 9425/9426/9429 above.
+define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_SUPPLIER', 9432);
 
 /**
  * Plugin_Version_Domainmanager
@@ -256,44 +268,99 @@ function plugin_domainmanager_getAddSearchOptionsNew($itemtype): array
         // class<->table mapping (`DomainState::getTable()` is an explicit
         // override, not derived from the class name).
         $options[] = [
-            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN_NS_PROVIDER,
-            'itemtype'      => DomainState::class,
-            'table'         => DomainState::getTable(),
-            'field'         => 'detected_provider',
-            'linkfield'     => 'domains_id',
-            'name'          => __('NS Provider', 'domainmanager'),
-            'datatype'      => 'specific',
-            'searchtype'    => ['equals', 'notequals'],
+            'id'                  => PLUGIN_DOMAINMANAGER_SO_DOMAIN_NS_PROVIDER,
+            'itemtype'            => DomainState::class,
+            'table'               => DomainState::getTable(),
+            'field'               => 'detected_provider',
+            'linkfield'           => 'domains_id',
+            'name'                => __('NS Provider', 'domainmanager'),
+            'datatype'            => 'specific',
+            'searchtype'          => ['equals', 'notequals'],
+            // Without this, SQLProvider::getWhereCriteria()'s generic
+            // 'equals'/'notequals' default case (this option's 'table'
+            // isn't Domain's own, and 'specific' isn't one of the datatypes
+            // it special-cases) compares against
+            // `glpi_plugin_domainmanager_states.id` instead of `.field` —
+            // an "equals 'Cloudflare'" search silently becomes `id =
+            // 'Cloudflare'` (coerced to `id = 0`, matching nothing). This
+            // is what broke the "Domains per DNS provider" dashboard
+            // card's drill-down links.
+            'searchequalsonfield' => true,
+            'massiveaction'       => false,
+            'joinparams'          => [
+                'jointype' => 'child',
+            ],
+        ];
+        // "DNS provider (matched Supplier)": unlike NS_PROVIDER above (a
+        // free-text `detected_provider` string, whatever name the sync
+        // resolved — may not correspond to any Supplier configured in
+        // GLPI at all), this is the *actual* Supplier link
+        // (`DomainState.dns_suppliers_id`), mirroring how native id 53
+        // exposes Domain's registrar via Infocom's `suppliers_id`. Native
+        // 'dropdown' datatype (not 'specific'): a real FK-to-Supplier
+        // column, so core's own dropdown search/display code applies
+        // directly, and — since 'dropdown' is one of the datatypes
+        // SQLProvider::getWhereCriteria() special-cases — this option
+        // doesn't need `searchequalsonfield` the way NS_PROVIDER does.
+        // Two-hop join, same beforejoin shape as
+        // PLUGIN_DOMAINMANAGER_SO_SUPPLIER_NS_PROVIDER's own (inverted
+        // direction): Domain -> DomainState (child, linkfield
+        // 'domains_id') -> glpi_suppliers (linkfield 'dns_suppliers_id'
+        // overriding the default 'suppliers_id' guess).
+        $options[] = [
+            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_SUPPLIER,
+            'table'         => 'glpi_suppliers',
+            'field'         => 'name',
+            'linkfield'     => 'dns_suppliers_id',
+            'name'          => __('DNS provider (Supplier)', 'domainmanager'),
+            'datatype'      => 'dropdown',
             'massiveaction' => false,
             'joinparams'    => [
+                'beforejoin' => [
+                    'table'      => DomainState::getTable(),
+                    'joinparams' => [
+                        'jointype' => 'child',
+                    ],
+                ],
+            ],
+        ];
+        $options[] = [
+            'id'                  => PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR_STATUS,
+            'itemtype'            => DomainState::class,
+            'table'               => DomainState::getTable(),
+            'field'               => 'registrar_status',
+            'linkfield'           => 'domains_id',
+            'name'                => __('Registrar sync status', 'domainmanager'),
+            'datatype'            => 'specific',
+            'searchtype'          => ['equals', 'notequals'],
+            // Same SQLProvider::getWhereCriteria() default-case trap as
+            // PLUGIN_DOMAINMANAGER_SO_DOMAIN_NS_PROVIDER above (this
+            // option's 'table' isn't Domain's own, 'specific' isn't
+            // special-cased): without this, 'equals'/'notequals' silently
+            // compared against `glpi_plugin_domainmanager_states.id`
+            // instead of `.registrar_status`, breaking the "Registrar
+            // status" dashboard card's drill-down the same way.
+            'searchequalsonfield' => true,
+            'massiveaction'       => false,
+            'joinparams'          => [
                 'jointype' => 'child',
             ],
         ];
         $options[] = [
-            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR_STATUS,
-            'itemtype'      => DomainState::class,
-            'table'         => DomainState::getTable(),
-            'field'         => 'registrar_status',
-            'linkfield'     => 'domains_id',
-            'name'          => __('Registrar sync status', 'domainmanager'),
-            'datatype'      => 'specific',
-            'searchtype'    => ['equals', 'notequals'],
-            'massiveaction' => false,
-            'joinparams'    => [
-                'jointype' => 'child',
-            ],
-        ];
-        $options[] = [
-            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_STATUS,
-            'itemtype'      => DomainState::class,
-            'table'         => DomainState::getTable(),
-            'field'         => 'dns_status',
-            'linkfield'     => 'domains_id',
-            'name'          => __('DNS sync status', 'domainmanager'),
-            'datatype'      => 'specific',
-            'searchtype'    => ['equals', 'notequals'],
-            'massiveaction' => false,
-            'joinparams'    => [
+            'id'                  => PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_STATUS,
+            'itemtype'            => DomainState::class,
+            'table'               => DomainState::getTable(),
+            'field'               => 'dns_status',
+            'linkfield'           => 'domains_id',
+            'name'                => __('DNS sync status', 'domainmanager'),
+            'datatype'            => 'specific',
+            'searchtype'          => ['equals', 'notequals'],
+            // Same fix as PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR_STATUS
+            // above, same reason — breaking the "Sync status" dashboard
+            // card's drill-down.
+            'searchequalsonfield' => true,
+            'massiveaction'       => false,
+            'joinparams'          => [
                 'jointype' => 'child',
             ],
         ];

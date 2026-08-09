@@ -43,8 +43,10 @@ use Toolbox;
 /**
  * Phase 80 proved the registration/drill-down/install mechanism with two
  * cards; Phase 81 (ARCHITECTURE.md §20) adds two more on top of it —
- * registrar status and domains expiring soon. Phases 82-83 continue from
- * there.
+ * registrar status and domains expiring soon. Phase 84 (not 82/83, which
+ * are reserved backlog stubs — see ARCHITECTURE.md §20.4/docs/plans/)
+ * continues from there: a "Domains per DNS provider" card, plus
+ * `searchequalsonfield` drill-down fixes for the status cards.
  */
 class DashboardCards
 {
@@ -77,11 +79,24 @@ class DashboardCards
             'cache'      => false,
         ];
 
+        $cards['plugin_domainmanager_domains_by_dns_provider'] = [
+            'widgettype' => ['pie', 'donut', 'multipleNumber', 'bar', 'hbar'],
+            'itemtype'   => Domain::class,
+            'group'      => __s('Domain Manager'),
+            'label'      => __s('Managed domains per DNS provider', 'domainmanager'),
+            'provider'   => self::class . '::domainsByDnsProvider',
+            'cache'      => false,
+        ];
+
         $cards['plugin_domainmanager_sync_status'] = [
             'widgettype' => ['pie', 'donut', 'multipleNumber', 'bar', 'hbar'],
             'itemtype'   => Domain::class,
             'group'      => __s('Domain Manager'),
-            'label'      => __s('Sync status', 'domainmanager'),
+            // Matches PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_STATUS's own
+            // search-option name ("DNS sync status") — the card id/gridstack
+            // slot stays 'sync_status' (already installed on existing
+            // dashboards), only the displayed picker title changed.
+            'label'      => __s('DNS sync status', 'domainmanager'),
             'provider'   => self::class . '::syncStatusBreakdown',
             'cache'      => false,
         ];
@@ -90,7 +105,9 @@ class DashboardCards
             'widgettype' => ['pie', 'donut', 'multipleNumber', 'bar', 'hbar'],
             'itemtype'   => Domain::class,
             'group'      => __s('Domain Manager'),
-            'label'      => __s('Registrar status', 'domainmanager'),
+            // Matches PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR_STATUS's own
+            // search-option name.
+            'label'      => __s('Registrar sync status', 'domainmanager'),
             'provider'   => self::class . '::registrarStatusBreakdown',
             'cache'      => false,
         ];
@@ -208,9 +225,93 @@ class DashboardCards
     }
 
     /**
-     * "Sync status" card: groups Domain by the existing
+     * "Domains per DNS provider" card: groups Domain by
+     * `DomainState.dns_suppliers_id` — the *matched* Supplier record for
+     * the resolved DNS provider (same relationship the domain panel's own
+     * "DNS Provider" badge and `DomainState::getDomainsForSupplier()` use),
+     * not `detected_provider`'s free-text sync-resolved name, which may not
+     * correspond to any Supplier configured in GLPI at all and (§ search
+     * option 9407's own `searchequalsonfield` fix) isn't reliably
+     * filterable via the Search UI to begin with. A domain with no match —
+     * never synced, or synced to a provider with no linked Supplier —
+     * folds into a single "Not matched to a supplier" bucket, same
+     * reasoning as `domainsByRegistrar()`'s "No driver linked" catch-all.
+     */
+    public static function domainsByDnsProvider(array $params = []): array
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $iterator = $DB->request([
+            'SELECT'    => [
+                new QueryExpression(
+                    'COALESCE(' . $DB->quoteName(DomainState::getTable() . '.dns_suppliers_id')
+                    . ', 0) AS ' . $DB->quoteName('dns_suppliers_id'),
+                ),
+                new QueryExpression('MAX(' . $DB->quoteName('supplier.name') . ') AS ' . $DB->quoteName('supplier_name')),
+                'COUNT DISTINCT' => 'glpi_domains.id AS cpt',
+            ],
+            'FROM'      => 'glpi_domains',
+            'LEFT JOIN' => [
+                DomainState::getTable() => [
+                    'ON' => [DomainState::getTable() => 'domains_id', 'glpi_domains' => 'id'],
+                ],
+                'glpi_suppliers AS supplier' => [
+                    'ON' => ['supplier' => 'id', DomainState::getTable() => 'dns_suppliers_id'],
+                ],
+            ],
+            'WHERE'     => array_merge(
+                [
+                    'glpi_domains.is_deleted'  => 0,
+                    'glpi_domains.is_template' => 0,
+                ],
+                getEntitiesRestrictCriteria('glpi_domains', '', '', true),
+            ),
+            'GROUPBY'   => ['dns_suppliers_id'],
+            'ORDER'     => 'cpt DESC',
+        ]);
+
+        return self::toChartData(
+            $iterator,
+            'dns_suppliers_id',
+            'supplier_name',
+            'cpt',
+            PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_SUPPLIER,
+            // __(), not __s() — see the escaping note inside toChartData().
+            ['0' => __('Not matched to a supplier', 'domainmanager')],
+            static function (array $row) {
+                $suppliers_id = (int) ($row['dns_suppliers_id'] ?? 0);
+                if ($suppliers_id <= 0) {
+                    // No single supplier id represents this bucket, same
+                    // reasoning as the registrar card's "no driver linked"
+                    // catch-all.
+                    return null;
+                }
+
+                $criteria = [
+                    'criteria' => [[
+                        'field'      => PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_SUPPLIER,
+                        'searchtype' => 'equals',
+                        'value'      => $suppliers_id,
+                    ]],
+                    'reset'    => 'reset',
+                ];
+
+                return Domain::getSearchURL() . '?' . Toolbox::append_params($criteria);
+            },
+            __('Domains per DNS provider', 'domainmanager'),
+            __('Managed domains per DNS provider', 'domainmanager'),
+        );
+    }
+
+    /**
+     * "DNS sync status" card (picker title/search option name;
+     * "DNS status" on-widget): groups Domain by the existing
      * PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_STATUS search option (9409) —
-     * already registered and searchable, no new option allocated.
+     * already registered and searchable, no new option allocated. That
+     * option needed its own `searchequalsonfield` fix (Phase 84 follow-up)
+     * for the same reason PLUGIN_DOMAINMANAGER_SO_DOMAIN_NS_PROVIDER did —
+     * see that option's own comment in setup.php.
      */
     public static function syncStatusBreakdown(array $params = []): array
     {
@@ -250,20 +351,26 @@ class DashboardCards
             PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_STATUS,
             DomainStatusResolver::getStatusLabels(),
             null,
-            __('Sync status', 'domainmanager'),
-            __('Sync status', 'domainmanager'),
+            // Short on-widget label; 'alt' repeats the card's own picker
+            // title (PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_STATUS's search
+            // option name), per the 3-name-slot convention.
+            __('DNS status', 'domainmanager'),
+            __('DNS sync status', 'domainmanager'),
         );
     }
 
     /**
-     * "Registrar status" card (Phase 81): groups Domain by the existing
+     * "Registrar sync status" card (Phase 81; picker title/search option
+     * name, "Registrar status" on-widget): groups Domain by the existing
      * PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR_STATUS search option
-     * (9408) — mirrors the "Sync status" card's shape, plus the same
-     * live-Infocom reconciliation `DomainState::getDomainsForSupplier()`
-     * already does: a state row whose `registrar_suppliers_id` mirror no
-     * longer matches the domain's *current* Infocom supplier describes a
-     * stale, now-superseded registrar relationship, so it's folded into
-     * `STATUS_NEVER` here rather than shown as-is.
+     * (9408) — mirrors the "DNS sync status" card's shape (same
+     * `searchequalsonfield` fix applies here too, Phase 84 follow-up),
+     * plus the same live-Infocom reconciliation
+     * `DomainState::getDomainsForSupplier()` already does: a state row
+     * whose `registrar_suppliers_id` mirror no longer matches the domain's
+     * *current* Infocom supplier describes a stale, now-superseded
+     * registrar relationship, so it's folded into `STATUS_NEVER` here
+     * rather than shown as-is.
      */
     public static function registrarStatusBreakdown(array $params = []): array
     {
@@ -313,8 +420,11 @@ class DashboardCards
             PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR_STATUS,
             DomainStatusResolver::getStatusLabels(),
             null,
+            // Short on-widget label; 'alt' repeats the card's own picker
+            // title (PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR_STATUS's
+            // search option name), per the 3-name-slot convention.
             __('Registrar status', 'domainmanager'),
-            __('Registrar status', 'domainmanager'),
+            __('Registrar sync status', 'domainmanager'),
         );
     }
 
@@ -414,9 +524,14 @@ class DashboardCards
      * entry and reads `$entry['number']`/`$entry['label']`/`$entry['url']`
      * directly.
      *
-     * @param array<string, string>|null $labelMap   raw grouped value =>
+     * @param array<int|string, string>|null $labelMap   raw grouped value =>
      *     human label (e.g. `DomainStatusResolver::getStatusLabels()`);
      *     falls back to the raw value itself when a value has no entry.
+     *     Keyed `int|string`, not just `string`: a numeric-looking string
+     *     key like `'0'` is silently coerced to an int array key by PHP
+     *     itself (canonical decimal integer string rule), so a literal
+     *     `['0' => ...]` is `array<int, string>` at runtime regardless of
+     *     how it's written.
      * @param (callable(array<string, mixed>): (string|null))|null $urlBuilder
      *     overrides the default single-value `equals` drill-down when a
      *     bucket's URL can't be expressed that way (e.g. a "no driver
@@ -535,9 +650,18 @@ class DashboardCards
                 'card_options' => ['widgettype' => 'donut'],
             ],
             [
+                'gridstack_id' => 'plugin_domainmanager_domains_by_dns_provider_' . Uuid::uuid4(),
+                'card_id'      => 'plugin_domainmanager_domains_by_dns_provider',
+                'x'            => 4,
+                'y'            => 0,
+                'width'        => 4,
+                'height'       => 3,
+                'card_options' => ['widgettype' => 'donut'],
+            ],
+            [
                 'gridstack_id' => 'plugin_domainmanager_sync_status_' . Uuid::uuid4(),
                 'card_id'      => 'plugin_domainmanager_sync_status',
-                'x'            => 4,
+                'x'            => 8,
                 'y'            => 0,
                 'width'        => 4,
                 'height'       => 3,
@@ -546,8 +670,8 @@ class DashboardCards
             [
                 'gridstack_id' => 'plugin_domainmanager_registrar_status_' . Uuid::uuid4(),
                 'card_id'      => 'plugin_domainmanager_registrar_status',
-                'x'            => 8,
-                'y'            => 0,
+                'x'            => 0,
+                'y'            => 3,
                 'width'        => 4,
                 'height'       => 3,
                 'card_options' => ['widgettype' => 'donut'],
@@ -555,7 +679,7 @@ class DashboardCards
             [
                 'gridstack_id' => 'plugin_domainmanager_expiring_soon_' . Uuid::uuid4(),
                 'card_id'      => 'plugin_domainmanager_expiring_soon',
-                'x'            => 0,
+                'x'            => 4,
                 'y'            => 3,
                 'width'        => 3,
                 'height'       => 2,

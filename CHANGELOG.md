@@ -11,7 +11,7 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 
 ## [Unreleased]
 ### Features
-- Added a Domain Manager dashboard with cards showing domains per registrar, sync status, registrar status, and domains expiring soon at a glance.
+- Added a Domain Manager dashboard with cards showing domains per registrar, domains per DNS provider, DNS sync status, registrar sync status, and domains expiring soon at a glance.
 - Warning banners across the plugin now look and behave consistently, and are properly announced to screen readers.
 - Fixed duplicate Historical-tab entries when adding or editing a DNS record on a write-back-managed domain — you'll now see one line per change instead of two.
 - Importing many domains from a supplier at once no longer risks a timeout — newly discovered domains are created immediately and synced shortly after, on the regular daily sync schedule, instead of all at once during the import itself.
@@ -21,6 +21,8 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 - Fixed a sync that could get permanently stuck on a domain because of a duplicate TXT record that genuinely exists at the DNS provider — that one record is now skipped instead of blocking the rest of the sync.
 - A DNS record deleted at the provider no longer shows its old Cloudflare proxy status and IPs when viewed in the Records tab's trash bin.
 - The DNS Provider name on a domain's form now stays a clickable link after clicking "Update Now", instead of turning into plain text until the page is reloaded.
+- Fixed the "Domains per DNS provider" dashboard card's drill-down showing the wrong (or no) domains; it now correctly filters by the actual matched DNS provider supplier, the same one shown on the domain's own form.
+- Fixed the "DNS sync status" and "Registrar sync status" dashboard cards' drill-downs showing the wrong (or no) domains when clicking into a status; also renamed both cards to match their actual field names (previously "Sync status"/"Registrar status").
 
 ## [1.6.0] - 2026-08-08
 ### Features
