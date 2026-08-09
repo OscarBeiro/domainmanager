@@ -4339,16 +4339,34 @@ Seeded into the default `install()` dashboard grid as a new row (`y => 9`, `stac
 existing cards; same "never repopulates an existing admin-edited dashboard" caveat as every card
 before it.
 
-### 20.8 Phase 88 — domain.form: hide the injected panel entirely for a never-synced domain
+### 20.8 Phase 88 — domain.form: hide the injected panel entirely when there is nothing to manage
 
 `DomainForm::injectDomain()` now returns immediately, before rendering `domain_panel.html.twig`,
-whenever `!$is_new && $state === null` — a domain never picked up by sync shows no Domain Manager
-section at all, not even the "not managed" message (that message stays reserved for a domain that
-*has* a `DomainState` row with `is_managed = 0`). `onShowTab()` needed no change: it independently
-computes `$is_managed` and calls `renderManagedIndicator($is_managed)` on every other Domain tab,
-but that helper already no-ops when `$is_managed` is false, so a never-synced domain already showed
-no indicator there before this phase too. No template change — `domain_panel.html.twig`'s existing
-`is_managed` branch remains the "synced but not managed" path. Verified live 2026-08-09 against
-`testing_glpi_1`: a domain with no `DomainState` row shows no panel at all, `ticgal.internal`
-(id 20, state row with `is_managed = 0`) still shows the "not managed" message, and a managed
-domain (id 2) is unaffected — see TESTING.md's Phase 88 entry.
+whenever `!$is_new` and either:
+
+- `$state === null` (never picked up by sync at all), or
+- `$state` exists but is_managed is 0 *and* neither `registrar_suppliers_id` nor
+  `dns_suppliers_id` resolves to an active driver (`DomainState::resolvesToActiveDriver()` —
+  requires the linked Supplier to be active, have a real `api_driver`, and have non-empty
+  decrypted credentials).
+
+In both cases, no Domain Manager section renders at all — not even the "not managed" message.
+That message is reserved for the one remaining `is_managed = 0` case: a Supplier that *does*
+resolve to an active driver but still ended up unmanaged (e.g. sync ran and hit a real error) —
+the only state that's actually actionable from this form.
+
+This condition was widened twice after the initial ship, both found live against
+`testing_glpi_1`: first, a manually-created domain with a state row but no supplier linked at
+all (`ticgal.internal`, id 20 — `registrar_suppliers_id = 0`, `dns_suppliers_id = 0`) still
+showed the message, since it has a non-null `$state`; second, a domain whose Infocom Supplier
+was set to one with no Domain Manager driver configured at all (id 26, Supplier "Upcloud" —
+`api_driver = NULL`) still counted as "has a supplier link" under the first fix and kept
+showing the message, even though that supplier can never resolve to managed.
+
+`onShowTab()` needed no change: it independently computes `$is_managed` straight from
+`$state->fields['is_managed']` and calls `renderManagedIndicator($is_managed)` on every other
+Domain tab, but that helper already no-ops when `$is_managed` is false — so a domain in any of
+the hidden-panel states above already showed no indicator there, both before this phase and
+after both amendments. No template change — `domain_panel.html.twig`'s existing `is_managed`
+branch remains the "linked to a working driver, but genuinely not managed" path. See
+TESTING.md's Phase 88 entry for the live verification matrix.
