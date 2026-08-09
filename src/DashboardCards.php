@@ -426,15 +426,24 @@ class DashboardCards
         /** @var \DBmysql $DB */
         global $DB;
 
+        // Repeated below (SELECT + GROUPBY), never referenced by its SELECT
+        // alias: `DomainState` has a real `registrar_status` column of its
+        // own, so a bare `GROUPBY => ['registrar_status']` resolves to that
+        // raw column instead of this CASE expression's alias (a real column
+        // always wins over a same-named alias in MySQL/MariaDB's GROUP BY
+        // resolution) — rows whose raw column differs (NULL vs a stale
+        // stored status) but whose CASE result is identically STATUS_NEVER
+        // silently split into separate "Never synchronized" buckets. Same
+        // hazard/fix as recordsByDnsProvider()'s dns_suppliers_id.
+        $registrarStatusExpr = 'CASE WHEN ' . $DB->quoteName(DomainState::getTable() . '.registrar_suppliers_id')
+            . ' = ' . $DB->quoteName('infocom.suppliers_id')
+            . ' THEN COALESCE(' . $DB->quoteName(DomainState::getTable() . '.registrar_status')
+            . ', \'' . DomainState::STATUS_NEVER . '\')'
+            . ' ELSE \'' . DomainState::STATUS_NEVER . '\' END';
+
         $iterator = $DB->request([
             'SELECT'    => [
-                new QueryExpression(
-                    'CASE WHEN ' . $DB->quoteName(DomainState::getTable() . '.registrar_suppliers_id')
-                    . ' = ' . $DB->quoteName('infocom.suppliers_id')
-                    . ' THEN COALESCE(' . $DB->quoteName(DomainState::getTable() . '.registrar_status')
-                    . ', \'' . DomainState::STATUS_NEVER . '\')'
-                    . ' ELSE \'' . DomainState::STATUS_NEVER . '\' END AS ' . $DB->quoteName('registrar_status'),
-                ),
+                new QueryExpression($registrarStatusExpr . ' AS ' . $DB->quoteName('registrar_status')),
                 'COUNT DISTINCT' => 'glpi_domains.id AS cpt',
             ],
             'FROM'      => 'glpi_domains',
@@ -457,7 +466,7 @@ class DashboardCards
                 ],
                 getEntitiesRestrictCriteria('glpi_domains', '', '', true),
             ),
-            'GROUPBY'   => ['registrar_status'],
+            'GROUPBY'   => [new QueryExpression($registrarStatusExpr)],
             'ORDER'     => 'cpt DESC',
         ]);
 
