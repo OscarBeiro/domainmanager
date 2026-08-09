@@ -3961,3 +3961,114 @@ genuinely informational, not a warning, same distinction Phase 75 already drew f
 
 Files: `templates/domainrecord_edit_panel.html.twig`, `templates/supplier_tab.html.twig`,
 `templates/domainrecord_add_panel.html.twig`.
+
+## 20. Phases 80–83 — GLPI dashboard cards (plan, 2026-08-09)
+
+### 20.1 Context and scope
+
+`feature/10-dashboard-widgets` adds GLPI dashboard cards to the plugin. Phase 80 (this plan)
+proves the registration/drill-down/install mechanism with exactly two cards; Phases 81–83 build
+more cards on top once the mechanism is validated. GLPI version pinned: `11.0/bugfixes`.
+
+### 20.2 Research findings
+
+**Reference implementation:** the sibling `cloudinventory` plugin's `src/Dashboard.php` is the
+in-repo model to follow (same author, same GLPI core version) — hook registration
+(`dashboardCards()`), a `bigNumber` provider (`nbItems()`), and idempotent install/uninstall
+(`install()`/`uninstall()` using `Glpi\Dashboard\Dashboard` +
+`Glpi\Dashboard\Item::addForDashboard()`, guarded by `getFromDBByCrit(['key' => ...])`).
+
+**GLPI 11 core dashboard mechanism** (confirmed against `11.0/bugfixes` source, not just
+CloudInventory):
+- Hook constant `Hooks::DASHBOARD_CARDS` (`'dashboard_cards'`,
+  `src/Glpi/Plugin/Hooks.php:1020`), invoked via `Plugin::doHookFunction(Hooks::DASHBOARD_CARDS)`
+  in `src/Glpi/Dashboard/Grid.php:1507`.
+- Card array shape: keyed by a unique `card_id` string; values have `widgettype` (array),
+  `itemtype`, `group`, `label`, `provider` (callable string), `args.params`, `cache`, `filters`.
+- Widget types (`src/Glpi/Dashboard/Widget.php:113-341`): `pie`, `donut`, `halfpie`, `halfdonut`,
+  `bar`, `line`, `lines`, `area`, `areas`, `bars`, `hBars`, `stackedbars`, `stackedHBars`, `hbar`,
+  `bigNumber`, `multipleNumber`, `markdown`, `searchShowList`, `summaryNumbers`, `articleList`.
+  Single-series chart types take `data: [{number, url, label}]`; multi-series take
+  `data: {labels: [], series: [{name, data: [{value, url}]}]}`; `bigNumber` takes
+  `{number, url, label, icon, alt}` directly (no `data` wrapper).
+- Drill-down is just a `url` key per data point/series entry, rendered as a plain `href`
+  (`Widget.php:390-391`) — a `Search`-style URL with `criteria[]` params, no core-vs-plugin
+  distinction. `Search::getDatas()` already respects the active entity/child-entities session
+  state on its own — no extra entity-scoping code is needed in a provider beyond calling it
+  normally.
+- **No separate short-label mechanism** — one `label` field serves both the card picker and the
+  on-dashboard render (`Grid.php:823-859`, `Dashboard.php:1248-1254`). `icon` is a separate,
+  already-distinct param. **Convention for phases 80+:** keep the on-dashboard label short by
+  design (e.g. "Sync status", not "Domain Manager — Sync status breakdown"); rely on `group`
+  (`"Domain Manager"`) for picker-side disambiguation instead of stuffing it into `label`.
+- Dashboard creation: `Glpi\Dashboard\Dashboard::add()`/`saveNew()`; cards placed via
+  `Glpi\Dashboard\Item::addForDashboard(int $dashboards_id, array $items)`. Tables:
+  `glpi_dashboards`, `glpi_dashboards_items` (gridstack_id, card_id, x, y, width, height,
+  card_options JSON), `glpi_dashboards_rights`.
+
+**Search-option registry status** — the `resources/search-options-registry.json` file
+referenced elsewhere in this doc never actually existed (see §3.7.4/§15.3's own correction, and
+the top-of-file note); the real source of truth is the `define('PLUGIN_DOMAINMANAGER_SO_*', ...)`
+block in `setup.php:48-138`. Current highest id in use: 9431
+(`PLUGIN_DOMAINMANAGER_SO_DOMAIN_GLPI_CREATED`). Options already registered and relevant to
+phases 80/81: `DOMAIN_NS_PROVIDER` (9407), `DOMAIN_REGISTRAR_STATUS` (9408), `DOMAIN_DNS_STATUS`
+(9409) — sync status is already searchable today, no new option needed for the sync-status card.
+There is no dedicated "registrar" grouping field on `Domain`; registrar assignment reuses native
+Infocom `suppliers_id` (native search option id 53).
+
+**`DomainRecord` drill-down target** — resolved, no gap. The plugin does not define its own
+`DomainRecord` class; search options 9404/9405/9430 are registered directly onto GLPI core's own
+`\DomainRecord`. GLPI 11's `LegacyItemtypeRouteListener` auto-resolves `/front/{itemtype}.php`
+for any `CommonGLPI` subclass via `getItemForItemtype()` even with no physical file — confirmed
+live at `/front/domainrecord.php`, which renders core's native `DomainRecord` search/list page.
+Net effect: DomainRecord-based cards have a real, working drill-down today (see §5.7's own
+correction, dated 2026-08-08, for the full writeup of this finding).
+
+### 20.3 Phase 80 implementation plan
+
+1. New `src/DashboardCards.php` (namespace `GlpiPlugin\Domainmanager`), modeled on
+   `CloudInventory\Dashboard`:
+   - `dashboardCards($cards)` merges in two cards.
+   - **Card 1 — "Domains per registrar"**: `bigNumber`/`multipleNumber`/`pie`/`donut`,
+     `itemtype` = `Domain::class`, grouped on native Infocom `suppliers_id` (search option id
+     53 — no new option).
+   - **Card 2 — "Sync status breakdown"**: `pie`/`donut`/`multipleNumber`, `itemtype` =
+     `Domain::class`, grouped on the existing `PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_STATUS` (9409)
+     — no new option allocated.
+   - Both cards use `'group' => __s('Domain Manager')`.
+   - `install(Migration $migration)`: idempotent, `getFromDBByCrit(['key' =>
+     'plugin_domainmanager_dashboard'])` guard before creating; `uninstall()` is symmetric.
+2. `setup.php`: register
+   `$PLUGIN_HOOKS[Hooks::DASHBOARD_CARDS]['domainmanager'] = [DashboardCards::class, 'dashboardCards'];`
+   in `plugin_init_domainmanager()`.
+3. `src/Installer.php`: call `DashboardCards::install()`/`uninstall()` from the existing
+   `install()`/`uninstall()` methods.
+4. Dual changelog entries (`CHANGELOG.md`, `CHANGELOG-dev.md`) under `[Unreleased]` /
+   `### Features`.
+
+### 20.4 Backlog — phases 84+ (not yet designed, do not start without a follow-up design pass)
+
+- **Per-supplier/driver widgets** (e.g. "Domains registered via Dinahosting", "Proxied records
+  via Cloudflare"). Must be **driver-registry-driven, not hardcoded per name** —
+  `DriverRegistry` already enumerates configured suppliers, so cards should be generated from
+  that list at runtime rather than one hardcoded card per known driver, or the card picker
+  becomes unusable once real installs have dozens of suppliers a given user mostly doesn't care
+  about. Needs a UX decision on how to avoid listing N near-identical per-supplier cards (e.g.
+  one configurable "by supplier" grouped card, mirroring CloudInventory's
+  `getCloudInstanceByForeignKey()` pattern, rather than N flat bigNumber cards).
+- **Per-TLD breakdown** (sector/donut chart: `.com`, `.gal`, `.net`, …). Same dynamic-cardinality
+  concern as suppliers, plus a real performance gap: there is no dedicated, indexed TLD column
+  today, so grouping/filtering by TLD would mean a `LIKE '%.com'`-style match against the domain
+  name, which doesn't scale. Needs a new searchable field (e.g. a stored/derived TLD column,
+  populated the same way `name_ascii` is cached today) before this widget can be built without an
+  expensive full-table string-match query on every dashboard render.
+
+### 20.5 Verification
+
+- `php tools/getsearchoptions.php --type=Domain` to confirm search option 9409 is unchanged and
+  no new id was introduced.
+- Install/upgrade on a live GLPI 11 instance, open the dashboard picker, confirm both cards
+  appear under "Domain Manager" and render with real counts; drill-down links land on a
+  correctly-filtered `Domain` search page scoped to the active entity.
+- Re-run install/upgrade and confirm the dashboard is not recreated once it already exists, nor
+  recreated after an admin manually deletes/edits it.
