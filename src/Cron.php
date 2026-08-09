@@ -447,9 +447,25 @@ class Cron
     private static function upsertState(int $domains_id, ?DomainState $state, array $input): void
     {
         if ($state !== null) {
-            $state->update(['id' => $state->getID()] + $input);
+            // §9: DomainState::forceUpdate(), not $state->update() — the
+            // gaps this filling (pending_delete/pending_transfer,
+            // registrar_dnssec_enabled etc.) are nullable tinyints RDAP can
+            // legitimately report as `false`, which CommonDBTM::update()'s
+            // loose-comparison change-detection silently drops when the
+            // stored value is still NULL (null != 0 is false in PHP) — see
+            // forceUpdate()'s own docblock.
+            DomainState::forceUpdate($state->getID(), $input);
         } else {
-            (new DomainState())->add(['domains_id' => $domains_id] + $input);
+            // Unlike the update branch above, a brand-new state row here
+            // has no prior HookHandler::domainSaved() run to have cached
+            // `tld` for it (this can be the very first state row a domain
+            // ever gets, created straight from RDAP enrichment) — compute
+            // it now rather than leaving it empty until an unrelated Domain
+            // edit happens to trigger the hook.
+            $domain = new Domain();
+            $tld    = $domain->getFromDB($domains_id) ? TldExtractor::extract((string) $domain->fields['name']) : '';
+
+            (new DomainState())->add(['domains_id' => $domains_id, 'tld' => $tld] + $input);
         }
     }
 

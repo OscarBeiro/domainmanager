@@ -149,6 +149,12 @@ class DomainImportController extends AbstractController
                 $domain_data = [
                     'name'        => $name,
                     'entities_id' => $entities_id,
+                    // Native `glpi_domains.is_active` defaults to 0 —
+                    // Cron::cronDomainSync() filters on `is_active = 1`, so
+                    // leaving this unset would make a freshly-discovered
+                    // domain permanently invisible to sync until someone
+                    // manually flips the native "Active" toggle.
+                    'is_active'   => 1,
                 ];
                 if ($domaintypes_id > 0) {
                     $domain_data['domaintypes_id'] = $domaintypes_id;

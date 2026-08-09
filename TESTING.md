@@ -3786,3 +3786,123 @@ don't rely on the "click date" UI in this GLPI version.
   username and password…") now renders as an `alert-warning` banner instead of a plain muted
   hint, with its "Setup instructions" link still present and working. Check both themes.
   - [ ] Not yet verified live
+
+### Phase 85 follow-up 4: "Managed records" label, widened proxied-records picker, registrar-status duplicate bucket
+
+- **Open the Domain Manager dashboard and check the records-count bigNumber card's on-widget
+  label.** Expected: reads "Managed records" (was "Records").
+  - [x] Pass — verified live 2026-08-09 against `testing_glpi_1` (GLPI 11.0.8): rendered HTML's
+    `<div class="label">` reads "Managed records".
+- **Edit the "Proxied records" card and open its chart-type picker.** Expected: offers Pie,
+  Donut, Number(s), Bar, and Horizontal bar — same set as every other breakdown card, not just
+  Donut.
+  - [x] Pass — verified live 2026-08-09: re-rendered the card with `widgettype=bar` and it
+    returned a valid bar-chart card (previously only `donut` was an allowed option at all).
+- **Open the "Registrar sync status" card and count the "Never synchronized" slice/row.**
+  Expected: exactly one "Never synchronized" entry, not two.
+  - [x] Pass — verified live 2026-08-09: direct SQL reproduction showed the query splitting 4
+    domains into two "never" rows (3 + 1); after the `GROUPBY` fix the same query returns a single
+    row of 4, and the live-rendered card shows one "Never synchronized" label.
+
+### Phase 88: hide the Domain Manager panel entirely for a domain with nothing to manage (ARCHITECTURE.md §20.8)
+
+- **Open a domain that has never been picked up by sync (no `glpi_plugin_domainmanager_states`
+  row for it at all) and check the main tab.** Expected: no Domain Manager section renders at
+  all — not even the "Not managed by Domain Manager" message.
+  - [x] Pass — verified live 2026-08-09 against `testing_glpi_1` (GLPI 11.0.8): created a
+    domain with no state row, fetched its main tab via `ajax/common.tabs.php?_glpi_tab=Domain$main`
+    directly (authenticated session), 0 occurrences of `domainmanager-panel` in the response.
+- **Open a manually-created domain with a state row but no registrar/DNS supplier linked at
+  all (`ticgal.internal`, id 20 — `registrar_suppliers_id = 0`, `dns_suppliers_id = 0`,
+  `is_managed = 0`).** Expected: no Domain Manager section at all, same as the no-state-row
+  case — amended after first finding it still showed the "not managed" message.
+  - [x] Pass — verified live 2026-08-09 in the browser: no Domain Manager section on the
+    domain's form.
+- **Open a domain linked to a supplier with no Domain Manager driver configured at all
+  (id 26 "Fake domain from Upcloud" — Infocom Supplier = Upcloud, `api_driver = NULL`,
+  `is_managed = 0`).** Expected: no Domain Manager section either — that supplier can never
+  resolve to managed (`DomainState::resolvesToActiveDriver()` requires an active supplier with
+  a real `api_driver` and non-empty credentials), so it's the same "nothing to manage yet" case
+  as no link at all — amended after first finding it still showed the "not managed" message.
+  - [x] Pass — verified live 2026-08-09 in the browser: no Domain Manager section on the
+    domain's form.
+- **Open a domain linked to a supplier that *does* resolve to an active driver (e.g. Dinahosting/
+  Cloudflare/IONOS) but still ended up `is_managed = 0`** (a real, actionable failure — e.g. sync
+  ran and hit an error). Expected: existing "Not managed by Domain Manager" message still
+  renders, unchanged.
+  - [ ] Pass — not yet re-verified live after the second amendment; reasoned from code
+    (`resolves_to_driver` becomes `true` for any of these suppliers, so the early return no
+    longer fires and the template's own `is_managed` branch renders the message as before).
+- **Open a domain with `is_managed = 1` (id 2).** Expected: full panel renders normally, no
+  "not managed" message.
+  - [x] Pass — verified live 2026-08-09: `domainmanager-panel` present, "Not managed by Domain
+    Manager" text absent.
+- **Check `onShowTab()`'s indicator on other tabs (Records, Historical, …) for a domain in any
+  of the hidden-panel states above.** Expected: no "managed" indicator shown there either —
+  confirmed no code change was needed since `renderManagedIndicator()` already no-ops when
+  `is_managed` is false.
+  - [x] Pass — reasoned from code (`onShowTab()` computes `is_managed` straight from
+    `$state->fields['is_managed']`, independent of `injectDomain()`'s new `resolves_to_driver`
+    gate, and `renderManagedIndicator()` already no-ops when it's `false`), not separately
+    re-verified live per-tab.
+
+## Nullable registrar/RDAP tri-state boolean fields persist `false`, not just `true`
+
+- **Trigger an RDAP-only DNSSEC lookup for a domain with `registrar_dnssec_enabled` still NULL,
+  where RDAP reports `secureDNS.delegationSigned: false`** (domain #14, scavogados.com).
+  Expected: `registrar_dnssec_enabled` becomes `0` in the DB, not left at NULL.
+  - [x] Pass — verified live 2026-08-09 against `testing_glpi_1`: called
+    `GlpiPlugin\Domainmanager\Service\SyncEngine::sync()` directly (Kernel-booted CLI script),
+    confirmed the computed value was `int(0)` both before and after `DomainState::forceUpdate()`,
+    and confirmed via direct DB query the stored value is now `0` (previously reverted to NULL
+    after the very next registrar sync, before this fix).
+- **Re-run a full registrar sync afterward and confirm the `0` isn't wiped back to NULL.**
+  Expected: `registrar_dnssec_enabled` stays `0` across subsequent sync cron ticks.
+  - [x] Pass — verified live: re-ran `SyncEngine::sync()` a second time for the same domain,
+    value remained `0`.
+- **Aggregate check across all domains for `registrar_privacy_enabled`, `registrar_domain_lock`,
+  `registrar_dnssec_enabled`, `pending_delete`, `pending_transfer`.** Expected (pre-fix, root
+  cause confirmation): every one of these columns had never once stored `0` for any of the 24
+  domains in `testing_glpi_1` — only ever NULL or `1`. Not independently re-verified post-fix
+  across all 24 (would require live data where a driver/RDAP actually reports `false` for each
+  field; DNSSEC case above is the one confirmed live end-to-end).
+  - [x] Pass (root cause) — confirmed via aggregate SQL query pre-fix.
+
+## RDAP transfer date falls back to the registrar's own ("thick") RDAP server
+
+- **Look up a domain whose registry RDAP server is "thin" (no `transfer` event at all) but
+  whose registrar's own RDAP server reports one** (scavogados.com — Verisign `.com` registry
+  via `rdap.org` has no transfer event; the registry response's own `related` link,
+  `rdap.ionos.com/domain/SCAVOGADOS.COM`, reports `transfer: 2018-11-07T05:16:32Z`). Expected:
+  `RdapClient::lookup()` returns that date as `transferDate`, not null.
+  - [x] Pass — verified live 2026-08-09 against `testing_glpi_1`: called
+    `RdapClient::lookup('scavogados.com')` directly (Kernel-booted script), got
+    `transferDate = 2018-11-07 05:16:32`.
+- **Run the RDAP gap-fill cron logic for that domain and confirm the date persists to the DB.**
+  Expected: `glpi_plugin_domainmanager_states.transfer_date` becomes `2018-11-07 05:16:32`.
+  - [x] Pass — verified live: invoked `Cron::processRdapEnrichment()` directly for domain #14,
+    logged "filled transfer_date, ...", confirmed via DB query.
+- **Confirm a related-link fetch failure doesn't break the primary lookup.** Expected: any
+  error fetching/parsing the registrar's RDAP response is swallowed; the primary (registry)
+  result is still returned with `transferDate = null`, not an exception.
+  - [ ] Pass — reasoned from code (`fetchTransferDateFromRelated()` wraps its own request in a
+    `try`/`catch (Throwable)` returning `null`), not separately exercised live against a
+    deliberately-broken related URL.
+
+## Phase 90: Domain delete/purge must never cascade into a driver push or a bogus block
+
+- **Direct record delete (must be unchanged):** soft-delete one write-back-managed
+  `DomainRecord` directly. Expected: upstream provider delete call still fires as before.
+  - [x] Pass — verified live against `testing_glpi_1`.
+- **Domain delete must not touch the driver:** soft-delete the parent `Domain` with that
+  record still attached. Expected: `deleteRecord()` is not invoked; the record is soft-deleted
+  locally only.
+  - [x] Pass — verified live against `testing_glpi_1`.
+- **Domain purge, no bogus message, no orphan:** as a user holding Domain PURGE but lacking the
+  per-type DNS record PURGE right, purge that Domain. Expected: no ERROR message, the domain is
+  purged, and `SELECT * FROM glpi_domainrecords WHERE domains_id = <id>` returns no rows.
+  - [x] Pass — verified live against `testing_glpi_1`.
+- **Direct record purge (must be unchanged):** purge a `DomainRecord` directly (not via a Domain
+  purge) as a user lacking the per-type PURGE right. Expected: existing ERROR still appears and
+  the record is not purged.
+  - [x] Pass — verified live against `testing_glpi_1`.

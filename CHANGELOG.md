@@ -10,16 +10,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Entries are grouped into **Features** and **Bugs**, one line each.
 
 ## [Unreleased]
+
+## [1.7.0] - 2026-08-09
 ### Features
+- Added a Domain Manager dashboard with cards showing domains per registrar, domains per DNS provider, DNS sync status, registrar sync status, and domains expiring soon at a glance.
+- The Domain Manager dashboard now also shows managed DNS records at a glance: how many, broken down by record type and by DNS provider, and how many are proxied.
+- Added a "Number of Managed Domains" card to the Domain Manager dashboard, distinct from GLPI's generic "Number of Domain" card (which counts every domain, including deleted/template ones outside your current entity).
+- Added a "Domains by TLD" dashboard card and a filterable "TLD" dropdown field, so you can see (and search) how your domains break down by `.com`/`.gal`/`.net`/etc. Non-internet domains (e.g. an internal `.internal`/`.local` test entry, or a malformed name with no TLD at all) are left out of the breakdown.
+- Added a "Domains per registrar by TLD" dashboard card, showing how each registrar's domains break down by TLD, available in every bar/line chart style.
 - Warning banners across the plugin now look and behave consistently, and are properly announced to screen readers.
 - Fixed duplicate Historical-tab entries when adding or editing a DNS record on a write-back-managed domain — you'll now see one line per change instead of two.
 - Importing many domains from a supplier at once no longer risks a timeout — newly discovered domains are created immediately and synced shortly after, on the regular daily sync schedule, instead of all at once during the import itself.
 - The daily domain sync now logs each individual domain it processes, not just a run summary.
+- The "Managed records" dashboard card's number widget now has a clearer label, and the "Proxied records" card can now be displayed as a pie, bar, or number chart, not just a donut.
+- Added a "Managed records per DNS provider by type" dashboard card — a bar/line chart showing your busiest DNS providers (biggest first) broken down by record type.
 
 ### Bugs
+- A domain discovered via a registrar import is now marked active on creation, so it's no longer skipped forever by the daily sync.
+- A domain that has never been synced, or that isn't linked to a supplier with working registrar/DNS credentials, now shows no Domain Manager section at all on its form, instead of a "not managed" message.
+- Fixed the "Registrar sync status" dashboard card showing "Never synchronized" twice instead of once.
 - Fixed a sync that could get permanently stuck on a domain because of a duplicate TXT record that genuinely exists at the DNS provider — that one record is now skipped instead of blocking the rest of the sync.
+- Fixed the "Domains per DNS provider" and "DNS sync status" dashboard cards failing to load on installs with more than a couple of domains.
 - A DNS record deleted at the provider no longer shows its old Cloudflare proxy status and IPs when viewed in the Records tab's trash bin.
 - The DNS Provider name on a domain's form now stays a clickable link after clicking "Update Now", instead of turning into plain text until the page is reloaded.
+- Deleting or purging a domain no longer pushes real deletions to your DNS provider, and purging a domain no longer shows a confusing "Purge right" error or leaves a leftover DNS record behind.
+- Fixed the "Domains per DNS provider" dashboard card's drill-down showing the wrong (or no) domains; it now correctly filters by the actual matched DNS provider supplier, the same one shown on the domain's own form.
+- Fixed the "DNS sync status" and "Registrar sync status" dashboard cards' drill-downs showing the wrong (or no) domains when clicking into a status; also renamed both cards to match their actual field names (previously "Sync status"/"Registrar status").
+- Fixed DNSSEC status, domain lock, WHOIS privacy, and pending delete/transfer flags never showing a "No" value on a domain's form — they showed nothing at all instead, even when the registrar or RDAP had confirmed the flag was off.
+- Fixed the "Last transfer" date never being found for domains registered through certain registrars, where it was previously only looked up from a source that doesn't track transfer history.
+- Fixed the "Domains per registrar by TLD" and "Managed records per DNS provider by type" dashboard cards showing a "0" for combinations that never happened (e.g. a registrar with no domains of a given TLD), instead of just leaving them out like every other chart.
 
 ## [1.6.0] - 2026-08-08
 ### Features

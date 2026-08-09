@@ -356,7 +356,15 @@ class SyncEngine
         }
 
         if ($state !== null) {
-            $state->update(['id' => $state->getID()] + $state_input);
+            // §9: DomainState::forceUpdate(), not $state->update() — several
+            // of these columns (registrar_dnssec_enabled,
+            // registrar_domain_lock, registrar_privacy_enabled) are
+            // nullable tinyints a driver can legitimately report as
+            // `false`, which CommonDBTM::update()'s loose-comparison
+            // change-detection silently drops when the stored value is
+            // still NULL (null != 0 is false in PHP) — see forceUpdate()'s
+            // own docblock.
+            DomainState::forceUpdate($state->getID(), $state_input);
         } else {
             // §14.2 (Phase 47): set once, only on the row's first creation —
             // an update never carries this key, so an already-existing

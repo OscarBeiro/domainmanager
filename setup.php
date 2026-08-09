@@ -31,6 +31,7 @@
 
 use Glpi\Plugin\Hooks;
 use GlpiPlugin\Domainmanager\Config\Config as DomainmanagerConfig;
+use GlpiPlugin\Domainmanager\DashboardCards;
 use GlpiPlugin\Domainmanager\DomainForm;
 use GlpiPlugin\Domainmanager\DomainState;
 use GlpiPlugin\Domainmanager\HookHandler;
@@ -40,7 +41,7 @@ use GlpiPlugin\Domainmanager\Profile as DomainmanagerProfile;
 use GlpiPlugin\Domainmanager\Service\DnsRecordWriteback;
 use GlpiPlugin\Domainmanager\SupplierTab;
 
-define('PLUGIN_DOMAINMANAGER_VERSION', '1.7.0-beta3');
+define('PLUGIN_DOMAINMANAGER_VERSION', '1.7.0');
 define('PLUGIN_DOMAINMANAGER_MIN_GLPI', '11.0.0');
 define('PLUGIN_DOMAINMANAGER_MAX_GLPI', '11.0.99');
 define('PLUGIN_DOMAINMANAGER_REPOSITORY_URL', 'https://github.com/TICGAL-GLPI-Plugins/domainmanager');
@@ -136,6 +137,25 @@ define('PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_GLPI_CREATED', 9430);
 // above, same "Native" label/is_glpi_created-style field, backed by its own
 // column on the states table rather than the records table.
 define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_GLPI_CREATED', 9431);
+// Real, filterable search option on Domain (Phase 84 follow-up): the
+// Domain-side counterpart to PLUGIN_DOMAINMANAGER_SO_SUPPLIER_NS_PROVIDER
+// above — "which Supplier is the *matched* DNS provider for this domain",
+// mirroring native id 53's own registrar dropdown (Infocom's suppliers_id),
+// not PLUGIN_DOMAINMANAGER_SO_DOMAIN_NS_PROVIDER's free-text
+// `detected_provider` string. See its own registration below for why a
+// dedicated FK-dropdown option was needed instead of reusing 9407. NOT
+// 9411: that id was briefly documented (ARCHITECTURE.md §16, Phase 16) for
+// a "Domains" count option that was cut before shipping — a
+// previously-documented id stays a permanent gap, same reasoning as
+// 9425/9426/9429 above.
+define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_SUPPLIER', 9432);
+// Real, filterable search option on Domain (Phase 83 "per-TLD dashboard
+// breakdown"): the cached `tld` column on the states table (see
+// Installer::addTldColumn(), TldExtractor). Plain direct column, not a
+// derived CASE/COALESCE expression, so `searchequalsonfield` isn't needed
+// here (contrast PLUGIN_DOMAINMANAGER_SO_DOMAIN_NS_PROVIDER's
+// `detected_provider`, ARCHITECTURE.md §20.6).
+define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_TLD', 9433);
 
 /**
  * Plugin_Version_Domainmanager
@@ -255,44 +275,127 @@ function plugin_domainmanager_getAddSearchOptionsNew($itemtype): array
         // class<->table mapping (`DomainState::getTable()` is an explicit
         // override, not derived from the class name).
         $options[] = [
-            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN_NS_PROVIDER,
-            'itemtype'      => DomainState::class,
-            'table'         => DomainState::getTable(),
-            'field'         => 'detected_provider',
-            'linkfield'     => 'domains_id',
-            'name'          => __('NS Provider', 'domainmanager'),
-            'datatype'      => 'specific',
-            'searchtype'    => ['equals', 'notequals'],
+            'id'                  => PLUGIN_DOMAINMANAGER_SO_DOMAIN_NS_PROVIDER,
+            'itemtype'            => DomainState::class,
+            'table'               => DomainState::getTable(),
+            'field'               => 'detected_provider',
+            'linkfield'           => 'domains_id',
+            'name'                => __('NS Provider', 'domainmanager'),
+            'datatype'            => 'specific',
+            'searchtype'          => ['equals', 'notequals'],
+            // Without this, SQLProvider::getWhereCriteria()'s generic
+            // 'equals'/'notequals' default case (this option's 'table'
+            // isn't Domain's own, and 'specific' isn't one of the datatypes
+            // it special-cases) compares against
+            // `glpi_plugin_domainmanager_states.id` instead of `.field` —
+            // an "equals 'Cloudflare'" search silently becomes `id =
+            // 'Cloudflare'` (coerced to `id = 0`, matching nothing). This
+            // is what broke the "Domains per DNS provider" dashboard
+            // card's drill-down links.
+            'searchequalsonfield' => true,
+            'massiveaction'       => false,
+            'joinparams'          => [
+                'jointype' => 'child',
+            ],
+        ];
+        // "DNS provider (matched Supplier)": unlike NS_PROVIDER above (a
+        // free-text `detected_provider` string, whatever name the sync
+        // resolved — may not correspond to any Supplier configured in
+        // GLPI at all), this is the *actual* Supplier link
+        // (`DomainState.dns_suppliers_id`), mirroring how native id 53
+        // exposes Domain's registrar via Infocom's `suppliers_id`. Native
+        // 'dropdown' datatype (not 'specific'): a real FK-to-Supplier
+        // column, so core's own dropdown search/display code applies
+        // directly, and — since 'dropdown' is one of the datatypes
+        // SQLProvider::getWhereCriteria() special-cases — this option
+        // doesn't need `searchequalsonfield` the way NS_PROVIDER does.
+        // Two-hop join, same beforejoin shape as
+        // PLUGIN_DOMAINMANAGER_SO_SUPPLIER_NS_PROVIDER's own (inverted
+        // direction): Domain -> DomainState (child, linkfield
+        // 'domains_id') -> glpi_suppliers (linkfield 'dns_suppliers_id'
+        // overriding the default 'suppliers_id' guess).
+        $options[] = [
+            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_SUPPLIER,
+            'table'         => 'glpi_suppliers',
+            'field'         => 'name',
+            'linkfield'     => 'dns_suppliers_id',
+            'name'          => __('DNS provider (Supplier)', 'domainmanager'),
+            'datatype'      => 'dropdown',
             'massiveaction' => false,
             'joinparams'    => [
+                'beforejoin' => [
+                    'table'      => DomainState::getTable(),
+                    'joinparams' => [
+                        'jointype' => 'child',
+                    ],
+                ],
+            ],
+        ];
+        // Cached `tld` column (Phase 83 "per-TLD dashboard breakdown").
+        // 'datatype' => 'specific' (not free-text 'text'): a typed TLD is
+        // easy to get wrong (leading dot, wrong case, a value nothing
+        // actually uses) — DomainState::getSpecificValueToSelect()/
+        // getSpecificValueToDisplay() render/populate this as a dropdown of
+        // the TLDs actually present in the data instead, same dispatch
+        // pattern as NS_PROVIDER/registrar_status/dns_status above.
+        // 'searchequalsonfield' => true for the same reason as
+        // PLUGIN_DOMAINMANAGER_SO_DOMAIN_NS_PROVIDER above: this option's
+        // 'table' isn't Domain's own, and 'specific' isn't one of the
+        // datatypes SQLProvider::getWhereCriteria() special-cases, so
+        // without this an "equals" search compares against
+        // `glpi_plugin_domainmanager_states.id` instead of `.tld`.
+        $options[] = [
+            'id'                  => PLUGIN_DOMAINMANAGER_SO_DOMAIN_TLD,
+            'itemtype'            => DomainState::class,
+            'table'               => DomainState::getTable(),
+            'field'               => 'tld',
+            'linkfield'           => 'domains_id',
+            'name'                => __('TLD', 'domainmanager'),
+            'datatype'            => 'specific',
+            'searchtype'          => ['equals', 'notequals'],
+            'searchequalsonfield' => true,
+            'massiveaction'       => false,
+            'joinparams'          => [
                 'jointype' => 'child',
             ],
         ];
         $options[] = [
-            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR_STATUS,
-            'itemtype'      => DomainState::class,
-            'table'         => DomainState::getTable(),
-            'field'         => 'registrar_status',
-            'linkfield'     => 'domains_id',
-            'name'          => __('Registrar sync status', 'domainmanager'),
-            'datatype'      => 'specific',
-            'searchtype'    => ['equals', 'notequals'],
-            'massiveaction' => false,
-            'joinparams'    => [
+            'id'                  => PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR_STATUS,
+            'itemtype'            => DomainState::class,
+            'table'               => DomainState::getTable(),
+            'field'               => 'registrar_status',
+            'linkfield'           => 'domains_id',
+            'name'                => __('Registrar sync status', 'domainmanager'),
+            'datatype'            => 'specific',
+            'searchtype'          => ['equals', 'notequals'],
+            // Same SQLProvider::getWhereCriteria() default-case trap as
+            // PLUGIN_DOMAINMANAGER_SO_DOMAIN_NS_PROVIDER above (this
+            // option's 'table' isn't Domain's own, 'specific' isn't
+            // special-cased): without this, 'equals'/'notequals' silently
+            // compared against `glpi_plugin_domainmanager_states.id`
+            // instead of `.registrar_status`, breaking the "Registrar
+            // status" dashboard card's drill-down the same way.
+            'searchequalsonfield' => true,
+            'massiveaction'       => false,
+            'joinparams'          => [
                 'jointype' => 'child',
             ],
         ];
         $options[] = [
-            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_STATUS,
-            'itemtype'      => DomainState::class,
-            'table'         => DomainState::getTable(),
-            'field'         => 'dns_status',
-            'linkfield'     => 'domains_id',
-            'name'          => __('DNS sync status', 'domainmanager'),
-            'datatype'      => 'specific',
-            'searchtype'    => ['equals', 'notequals'],
-            'massiveaction' => false,
-            'joinparams'    => [
+            'id'                  => PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_STATUS,
+            'itemtype'            => DomainState::class,
+            'table'               => DomainState::getTable(),
+            'field'               => 'dns_status',
+            'linkfield'           => 'domains_id',
+            'name'                => __('DNS sync status', 'domainmanager'),
+            'datatype'            => 'specific',
+            'searchtype'          => ['equals', 'notequals'],
+            // Same fix as PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR_STATUS
+            // above, same reason — breaking the "Sync status" dashboard
+            // card's drill-down.
+            'searchequalsonfield' => true,
+            'massiveaction'       => false,
+            'joinparams'          => [
                 'jointype' => 'child',
             ],
         ];
@@ -791,9 +894,23 @@ function plugin_init_domainmanager(): void
             // DnsRecordWriteback::onPreDelete(), called from here via
             // LockEnforcer::domainRecordPreDelete().
             DomainRecord::class => [LockEnforcer::class, 'domainRecordPreDelete'],
+            // ARCHITECTURE.md §20.11 (Phase 90): marks a Domain removal in
+            // progress so the delete cascaded to each child DomainRecord
+            // above never pushes a driver deletion.
+            Domain::class       => [LockEnforcer::class, 'domainPreDelete'],
         ];
         $PLUGIN_HOOKS[Hooks::PRE_ITEM_PURGE]['domainmanager'] = [
             DomainRecord::class => [LockEnforcer::class, 'domainRecordPrePurge'],
+            // ARCHITECTURE.md §20.11 (Phase 90): same as above, purge path —
+            // avoids the bogus per-type PURGE-right ERROR and the orphaned
+            // glpi_domainrecords row it otherwise leaves behind.
+            Domain::class       => [LockEnforcer::class, 'domainPrePurge'],
+        ];
+        // ARCHITECTURE.md §20.11 (Phase 90): resets the Domain-removal flag
+        // once the soft-delete (and its cascade) has finished — paired with
+        // domainPurged() above for the purge path.
+        $PLUGIN_HOOKS[Hooks::ITEM_DELETE]['domainmanager'] = [
+            Domain::class => [HookHandler::class, 'domainDeleted'],
         ];
 
         // ARCHITECTURE.md §14.3 (Phase 48 bug fix): paired counterpart to the
@@ -825,5 +942,8 @@ function plugin_init_domainmanager(): void
         // is initialized, but front/*.php hasn't yet called
         // QueryBuilder::manageParams()) to strip it before it's read.
         $PLUGIN_HOOKS[Hooks::POST_INIT]['domainmanager'] = [HookHandler::class, 'scrubStaleSearchSessionCriteria'];
+
+        // Phase 80 (ARCHITECTURE.md §20): dashboard cards.
+        $PLUGIN_HOOKS[Hooks::DASHBOARD_CARDS]['domainmanager'] = [DashboardCards::class, 'dashboardCards'];
     }
 }

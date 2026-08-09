@@ -321,7 +321,14 @@ A third search option (`Domain`, id `9403`, `"Registrar (Financial information)"
 
 The two remaining, real, non-duplicate options this plugin still registers — `PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_MANAGED`/`_PROXY` (§5.7/§9 Phase 7 addendum) and the new `PLUGIN_DOMAINMANAGER_SO_DOMAIN_MANAGED` (§9 Phase 14) — now each open their itemtype's option group with an explicit category-tab entry (`'id' => 'domainmanager', 'name' => __('Domain Manager', 'domainmanager')`, the same convention core's own `Infocom::rawSearchOptionsToAdd()` uses for its `'id' => 'financial'` header), so they group under a clearly-labeled "Domain Manager" section in the Search UI instead of the generic, unlabeled "Plugins" catch-all a plugin's options fall into without one.
 
-`search-options-registry.json` (repo root) is the TICGAL-wide ledger of every search-option ID any TICGAL plugin registers, keyed by plugin then itemtype — it exists to keep IDs collision-free *between TICGAL's own plugins* (mechanically checkable). Its `removed` array now documents `9401`/`9402`/`9403`'s removal and why, alongside the still-active `9404`/`9405`/`9406`. Update it in the same change whenever a new search option is added here or in any sibling TICGAL plugin.
+**Correction (2026-08-08): no `search-options-registry.json` file was ever created.** Earlier
+revisions of this document described a planned TICGAL-wide, cross-plugin ledger file at the repo
+root; it was never actually built. The real, current source of truth is the
+`define('PLUGIN_DOMAINMANAGER_SO_*', ...)` block in `setup.php` (currently `48-138`), whose
+comments already document each id's purpose and the removed/retired ones (`9401`/`9402`/`9403`
+dropped as placeholders/duplicate of native id 53; `9425`/`9426`/`9429` permanent gaps from a
+same-day-superseded RDAP design). Update that block directly whenever a new search option is
+added, and re-check it (not a JSON file) for collisions before allocating a new id.
 
 ### 3.7.2 Phase 15: "Unknown column ...states_domains_id.is_managed" crash — real root cause was a missed version bump, not a wrong table/hook
 
@@ -357,7 +364,7 @@ Goal: make every field this plugin tracks on `glpi_plugin_domainmanager_states` 
 
 **`last_sync_date` deliberately has no dropdown**: its values aren't a bounded set, so `'datatype' => 'datetime'` (a plain native GLPI datatype, no custom code) is the correct, simpler choice — its built-in `equals`/`morethan`/`lessthan`/`empty` criteria already satisfy "sort and check validity" (e.g. filter for domains whose last sync predates a given date, or that show `empty` because they've never synced at all).
 
-`search-options-registry.json`'s reserved block widened `9400-9409` → `9400-9429` to leave room for the remaining `glpi_plugin_domainmanager_states` fields (the 7 registrar administrative-metadata columns from §9 Phase 7, `is_managed` already covered) a later phase will expose the same way.
+`setup.php`'s reserved block widened `9400-9409` → `9400-9429` to leave room for the remaining `glpi_plugin_domainmanager_states` fields (the 7 registrar administrative-metadata columns from §9 Phase 7, `is_managed` already covered) a later phase will expose the same way.
 
 ### 3.7.2 What gets logged
 
@@ -605,7 +612,7 @@ result object {registrar_status, dns_status, messages} → controller JSON / cro
 - **§5.7 "Managed" search option on DomainRecord (addendum "Searchable 'Managed' Field on Domain Records"):** whether a native `DomainRecord` was imported/is tracked by this plugin (`1`) or created manually by a user, never touched by sync (no row at all — equivalent to "unmanaged" for search purposes). **No new table was created** — deliberate deviation from the addendum's own "e.g. `glpi_plugin_domainmanager_recordmeta`" example: `ImportedRecord`/`glpi_plugin_domainmanager_records` already *is* exactly that shape (a plugin table with a unique `domainrecords_id` FK, one row per plugin-tracked record, created only when the reconciler first touches a record) — adding a second table with the identical relationship would have been a redundant abstraction. `is_managed` (tinyint, default `1`) was added to that existing table instead via `Installer::migrateRecordManagedColumn()`, which also **drops the now-superseded `is_stale` column** in the same step (§5.4). `RecordReconciler::createRecord()` sets `is_managed = 1` once, at creation, and never changes it again — it stays `1` through updated/trashed/restored (§5.4); only a real purge (removing the `ImportedRecord` row via `HookHandler::domainRecordPurged()`, `ITEM_PURGE` only) ends the relationship, matching the addendum's rule that editing/going-stale never revokes provenance.
   - **Search option**: registered in the existing `plugin_domainmanager_getAddSearchOptionsNew()` hook (`setup.php`, same mechanism already used elsewhere, §3.7.1) — `PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_MANAGED = 9404`. Uses `'joinparams' => ['jointype' => 'child']`, confirmed directly against `Glpi\Search\Provider\SQLProvider::getLeftJoinCriteria()` on this exact installed `11.0.8` source (not assumed): this jointype builds `LEFT JOIN glpi_plugin_domainmanager_records ON glpi_domainrecords.id = glpi_plugin_domainmanager_records.domainrecords_id` — the correct shape for a satellite table with a direct, non-polymorphic FK back to the parent item. `linkfield` is set explicitly to `domainrecords_id` for clarity even though it also matches what `getForeignKeyFieldForTable('glpi_domainrecords')` would derive by default (confirmed: `substr('glpi_domainrecords', 5) . '_id'`). `datatype => 'bool'`, `massiveaction => false` (this value is plugin-derived, never meant to be set directly via bulk edit). A manually-created record with no `ImportedRecord` row at all reads as `NULL` through the `LEFT JOIN`, which GLPI's `bool` datatype already renders/filters as "No" — no extra default-value handling needed.
   - **Verified two ways**: (1) the option array's exact shape was confirmed correct by directly invoking the registered `plugin_domainmanager_getAddSearchOptionsNew('DomainRecord')` function inside the live container (returned exactly the expected `{id, table, field, linkfield, name, datatype, massiveaction, joinparams}` shape); (2) getting `Search::getCleanedOptions()`/`Search::getDatas()` to pick it up end-to-end inside a bare throwaway console-command test harness hit `Plugin::isPluginActive()`/`Plugin::getPlugins()` returning empty — a limitation of that specific synthetic bootstrap (a real HTTP request through the Kernel initializes the active-plugins list very differently and much more completely than a bare console command does; `bootPlugins()` alone didn't reproduce it either), **not** evidence of a problem with the option itself.
-  - **Known real gap, flagged rather than glossed over: `DomainRecord` has no native, `Search::show()`-based list/search page in GLPI 11 core.** Confirmed directly: `front/domainrecord.form.php` (single-item form) exists, but there is no `front/domainrecord.php`, and `bin/console debug:router` shows no generic itemtype-agnostic search route either. The *only* existing UI for browsing multiple `DomainRecord`s is `DomainRecord::showForDomain()` (the "Records" tab on each `Domain`), which builds its own raw query and renders via `components/datatable.html.twig` — it does **not** consult `Search::getOptions()`/the search engine at all, so it cannot show or filter by this new option today. The search option is correctly registered per GLPI's supported plugin mechanism (satisfying the addendum's literal ask, and making the field available to any consumer that *does* call the generic search engine for this itemtype — e.g. Reports, a future dedicated list page), but there is currently no dedicated top-level place in the native UI where a user would go to filter Domain Records by "Managed" specifically. Building one (either a new `front/domainrecord.php`-equivalent, or reworking `showForDomain()`'s tab to route through `Search::show()`) would be a separate, larger change with its own regression surface on core-owned add/edit-record UI already living in that tab — not attempted here without being asked.
+  - **Correction (2026-08-08): a working `Search::show()`-based list/search page for `DomainRecord` DOES exist, reachable at `/front/domainrecord.php` despite no physical file at that path.** The earlier claim here ("no front/domainrecord.php, no debug:router route, therefore no search page") was drawn from file-existence and explicit-routing checks alone, missing GLPI 11's generic legacy fallback: `Glpi\Kernel\Listener\RequestListener\LegacyItemtypeRouteListener` (`src/Glpi/Kernel/Listener/RequestListener/LegacyItemtypeRouteListener.php`) intercepts any `/front/{itemtype}.php` request with no matching physical file or explicit route, resolves the itemtype name via `getItemForItemtype()`, and — for any `CommonGLPI` subclass whose `canView()` passes — renders it through `GenericListController` → `templates/pages/generic_list.html.twig` → `Glpi\Search\SearchEngine::show($class)`. Verified live at `http://127.0.0.1:65108/front/domainrecord.php`. Because this plugin never defines its own `DomainRecord` class (search options 9404/9405/9430 are registered directly onto **GLPI core's own `\DomainRecord`** — see above), `getItemForItemtype('domainrecord')` resolves to exactly the class these search options already target, so the "Managed"/"Proxy status"/"Native" options are filterable today through this generic page — no dedicated front file or Search-page build-out needed. `DomainRecord::showForDomain()` (the "Records" tab) remains a separate, purpose-built raw-query view and is unaffected by this.
 
 ---
 
@@ -843,7 +850,7 @@ Right registered per-profile via `Migration::addRight` at install and manageable
     - **"Registrar"** (id 9412, `datatype` => `itemlink`) and **"NS Provider"** (id 9413, `itemlink`) now show the actual clickable Domain names for that role, via a two-hop `beforejoin` chain (Supplier -> `glpi_infocoms`/`glpi_plugin_domainmanager_states` -> `glpi_domains`), each paired with a `count`-only companion — **"Number of domains (Registrar)"** (id 9414) and **"Number of domains (NS Provider)"** (id 9415) — for sorting/filtering by quantity without pulling the name list.
     - **"Domains"** (id 9411, unchanged) stays count-only: it reuses `DomainState`'s `registrar_suppliers_id` mirror column to OR both roles in one join, since a single search-option join can only OR two columns on one table, and there's no way to union two different tables' matching rows into one name list within the search framework's one-join-per-option model. Good enough for "is this supplier worth a closer look" filtering; the authoritative per-domain cross-check is still `DomainState::getDomainsForSupplier()` on the Supplier's own tab.
     - **Live-verified**, not just read from docs: built a throwaway bootstrap script against the `glpi-claude` 11.0.8 dev container (`Glpi\Kernel\Kernel` + `Search::getDatas('Supplier', ..., [9411..9415])`) and confirmed the generated SQL — both `itemlink` two-hop joins and the `count` single-hop joins — executes cleanly (returned 3 rows, all-null values only because that dev instance currently has zero domains linked to any supplier, not a query defect).
-    See `search-options-registry.json` for the full per-option collision-check record.
+    See `setup.php`'s `PLUGIN_DOMAINMANAGER_SO_*` define block for the full per-option collision-check record (no separate registry file exists — see §3.7.1 correction).
 
 15. **Phases 21-23 (implemented 2026-07-28) — RDAP as a fallback/supplementary data source (`PHASE21_PLAN.md`).** Registrar drivers each report a different subset of lifecycle/lock metadata (§3.6-§3.10); RDAP (`rdap.org`) is queried as a driver-agnostic supplement to fill whatever gaps the configured driver leaves, never to override or duplicate what a driver already reports.
     - **No IANA bootstrap-file cache, no per-TLD authoritative-server map.** The cron design's own rate-limit ceiling (one lookup per 10-minute tick) caps worst case at ~144 requests/day to `rdap.org`, nowhere near its 10-req/10s limit — the engineering cost of a bootstrap cache buys nothing at this call volume.
@@ -2524,21 +2531,26 @@ by one"; §14.2 then assigns `9431` with nothing widening the block to cover it.
 broken. Only the bookkeeping diverged, and it diverged because the number is written in prose in two
 sections as well as in the JSON file.
 
-Resolution, decided 2026-08-03:
+Resolution, decided 2026-08-03, **corrected 2026-08-08**: the `resources/search-options-registry.json`
+file described below was never created — see the §3.7.1 correction. The actual single source of truth
+is **`setup.php`'s own `PLUGIN_DOMAINMANAGER_SO_*` define block** (currently ids up to `9431`, see
+§3.7.1). §3.7.4 and §14.2 keep the rule and a pointer to that block; neither restates the number, to
+avoid recreating the drift this section was written to fix.
 
-- **`resources/search-options-registry.json` is the single source of truth** for the current ceiling and
-  for retired IDs. §3.7.4 and §14.2 keep the rule and a pointer to that file; neither restates the
+- **`setup.php`'s define block is the single source of truth** for the current ceiling and
+  for retired IDs. §3.7.4 and §14.2 keep the rule and a pointer to it; neither restates the
   number. Adding a fourth prose copy — including in this section — would recreate the drift.
 - **Fold an enforcement check into this phase.** Assert at install (or in a dev-only check) that every
-  ID returned by `plugin_domainmanager_getAddSearchOptionsNew()` appears in the registry and falls
-  inside the reserved block. `NsProviderRegistry`'s validated-JSON-resource pattern is the precedent, so
-  this is idiomatic rather than new machinery — and it converts a documentation-discipline problem into
-  one the code catches, which is the only kind that survives twenty phases.
+  ID returned by `plugin_domainmanager_getAddSearchOptionsNew()` matches one of `setup.php`'s own
+  `PLUGIN_DOMAINMANAGER_SO_*` constants and falls inside the reserved block. This converts a
+  documentation-discipline problem into one the code catches, which is the only kind that survives
+  twenty phases.
 - **IDs needed here: five.** §11.6 gives four per-type rights rows (`domainmanager:dns_records_a`,
   `_aaaa`, `_cname`, `_txt`) plus `domainmanager:unlock_imported`. Search options are per right *name*,
   one per `glpi_profilerights` row — the `CREATE`/`UPDATE`/`DELETE`/`PURGE` bits are rendered by
-  `getRights()` and need no IDs of their own. Presumed `9432`–`9436`, pending the registry's actual
-  highest value.
+  `getRights()` and need no IDs of their own. Confirmed highest existing id is `9431`
+  (`PLUGIN_DOMAINMANAGER_SO_DOMAIN_GLPI_CREATED`, `setup.php:138`), so these five allocate as
+  `9432`–`9436`.
 
 **Note on §11.6 and Phase 52:** §11.6 states that "every entry point checks rights server-side,
 entity-aware." That reduces Phase 52 to confirming the code matches its own documentation — still worth
@@ -2938,10 +2950,10 @@ the cron may trigger these lookups.
 3. Phase 51b — whether the `request()` error-mapping correction belongs in Group A at all, or is
    small enough to fold into whichever phase next touches `DinahostingDriver`.
 4. Phase 52's outcome is unknown by design — it may be a bug fix or a no-op with a regression test.
-5. Phase 57b's ID allocation — the registry file is the last thing blocking that phase. The plan
-   presumes `9432`–`9436` and makes `search-options-registry.json` the single source of truth for the
-   ceiling, with the prose in §3.7.4/§14.2 reduced to a pointer. Confirm the file's actual highest
-   value, and confirm the enforcement check is wanted rather than just the corrected number.
+5. **Resolved 2026-08-08** — no registry file exists or is planned; `setup.php`'s own define block is
+   the single source of truth, confirmed highest id is `9431`, so Phase 57b allocates `9432`–`9436`.
+   Still open: confirm the enforcement check (assert registered ids match `setup.php` constants) is
+   wanted rather than just the corrected numbers.
 
 ---
 
@@ -3949,3 +3961,466 @@ genuinely informational, not a warning, same distinction Phase 75 already drew f
 
 Files: `templates/domainrecord_edit_panel.html.twig`, `templates/supplier_tab.html.twig`,
 `templates/domainrecord_add_panel.html.twig`.
+
+## 20. Phases 80–83 — GLPI dashboard cards (plan, 2026-08-09)
+
+### 20.1 Context and scope
+
+`feature/10-dashboard-widgets` adds GLPI dashboard cards to the plugin. Phase 80 (this plan)
+proves the registration/drill-down/install mechanism with exactly two cards; Phases 81–83 build
+more cards on top once the mechanism is validated. GLPI version pinned: `11.0/bugfixes`.
+
+### 20.2 Research findings
+
+**Reference implementation:** the sibling `cloudinventory` plugin's `src/Dashboard.php` is the
+in-repo model to follow (same author, same GLPI core version) — hook registration
+(`dashboardCards()`), a `bigNumber` provider (`nbItems()`), and idempotent install/uninstall
+(`install()`/`uninstall()` using `Glpi\Dashboard\Dashboard` +
+`Glpi\Dashboard\Item::addForDashboard()`, guarded by `getFromDBByCrit(['key' => ...])`).
+
+**GLPI 11 core dashboard mechanism** (confirmed against `11.0/bugfixes` source, not just
+CloudInventory):
+- Hook constant `Hooks::DASHBOARD_CARDS` (`'dashboard_cards'`,
+  `src/Glpi/Plugin/Hooks.php:1020`), invoked via `Plugin::doHookFunction(Hooks::DASHBOARD_CARDS)`
+  in `src/Glpi/Dashboard/Grid.php:1507`.
+- Card array shape: keyed by a unique `card_id` string; values have `widgettype` (array),
+  `itemtype`, `group`, `label`, `provider` (callable string), `args.params`, `cache`, `filters`.
+- Widget types (`src/Glpi/Dashboard/Widget.php:113-341`): `pie`, `donut`, `halfpie`, `halfdonut`,
+  `bar`, `line`, `lines`, `area`, `areas`, `bars`, `hBars`, `stackedbars`, `stackedHBars`, `hbar`,
+  `bigNumber`, `multipleNumber`, `markdown`, `searchShowList`, `summaryNumbers`, `articleList`.
+  Single-series chart types take `data: [{number, url, label}]`; multi-series take
+  `data: {labels: [], series: [{name, data: [{value, url}]}]}`; `bigNumber` takes
+  `{number, url, label, icon, alt}` directly (no `data` wrapper).
+- Drill-down is just a `url` key per data point/series entry, rendered as a plain `href`
+  (`Widget.php:390-391`) — a `Search`-style URL with `criteria[]` params, no core-vs-plugin
+  distinction. `Search::getDatas()` already respects the active entity/child-entities session
+  state on its own — no extra entity-scoping code is needed in a provider beyond calling it
+  normally.
+- **Correction (2026-08-09 bugfix pass, §20.3c): there IS a separate short/long label
+  mechanism — this section's original claim above was wrong.** `dashboardCards()`'s own `label`
+  (picker entry + dashboard-editor default title) is *not* the only label a card has. Every
+  provider's own return array carries a second, independent `label`/`alt` pair
+  (`Widget::pie()`/`getBarsGraph()`/`multipleNumber()`/`bigNumber()` all read a top-level `label`
+  as the widget's own always-visible on-card title, separate from anything `dashboardCards()`
+  set), rendered live by the *widget*, not the picker. `alt` is a hover-tooltip (`title=""`
+  attribute) read **only** by `multipleNumber`/`bigNumber` — pie/donut/bar/hbar ignore it
+  entirely. Confirmed convention (see `dashboard-widgets.md` in the `glpi-plugin-builder` skill
+  for the authoritative writeup): `group` = one value for the whole plugin; `dashboardCards()`'s
+  `label` = the long, fully descriptive card title (picker/editor only); provider's own `label`
+  = short on-widget title; provider's own `alt` = same text as the card title. A provider that
+  returns bare `['data' => $data]` renders with a *blank* on-widget title even though
+  `dashboardCards()`'s `label` looks like it should have covered it — it doesn't, it's a
+  different consumer entirely. `icon` is a third, separate param, same as originally noted.
+- Dashboard creation: `Glpi\Dashboard\Dashboard::add()`/`saveNew()`; cards placed via
+  `Glpi\Dashboard\Item::addForDashboard(int $dashboards_id, array $items)`. Tables:
+  `glpi_dashboards`, `glpi_dashboards_items` (gridstack_id, card_id, x, y, width, height,
+  card_options JSON), `glpi_dashboards_rights`.
+
+**Search-option registry status** — the `resources/search-options-registry.json` file
+referenced elsewhere in this doc never actually existed (see §3.7.4/§15.3's own correction, and
+the top-of-file note); the real source of truth is the `define('PLUGIN_DOMAINMANAGER_SO_*', ...)`
+block in `setup.php:48-138`. Current highest id in use: 9431
+(`PLUGIN_DOMAINMANAGER_SO_DOMAIN_GLPI_CREATED`). Options already registered and relevant to
+phases 80/81: `DOMAIN_NS_PROVIDER` (9407), `DOMAIN_REGISTRAR_STATUS` (9408), `DOMAIN_DNS_STATUS`
+(9409) — sync status is already searchable today, no new option needed for the sync-status card.
+There is no dedicated "registrar" grouping field on `Domain`; registrar assignment reuses native
+Infocom `suppliers_id` (native search option id 53).
+
+**`DomainRecord` drill-down target** — resolved, no gap. The plugin does not define its own
+`DomainRecord` class; search options 9404/9405/9430 are registered directly onto GLPI core's own
+`\DomainRecord`. GLPI 11's `LegacyItemtypeRouteListener` auto-resolves `/front/{itemtype}.php`
+for any `CommonGLPI` subclass via `getItemForItemtype()` even with no physical file — confirmed
+live at `/front/domainrecord.php`, which renders core's native `DomainRecord` search/list page.
+Net effect: DomainRecord-based cards have a real, working drill-down today (see §5.7's own
+correction, dated 2026-08-08, for the full writeup of this finding).
+
+### 20.3 Phase 80 implementation plan
+
+1. New `src/DashboardCards.php` (namespace `GlpiPlugin\Domainmanager`), modeled on
+   `CloudInventory\Dashboard`:
+   - `dashboardCards($cards)` merges in two cards.
+   - **Card 1 — "Domains per registrar"**: `bigNumber`/`multipleNumber`/`pie`/`donut`,
+     `itemtype` = `Domain::class`, grouped on native Infocom `suppliers_id` (search option id
+     53 — no new option).
+   - **Card 2 — "Sync status breakdown"**: `pie`/`donut`/`multipleNumber`, `itemtype` =
+     `Domain::class`, grouped on the existing `PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_STATUS` (9409)
+     — no new option allocated.
+   - Both cards use `'group' => __s('Domain Manager')`.
+   - `install(Migration $migration)`: idempotent, `getFromDBByCrit(['key' =>
+     'plugin_domainmanager_dashboard'])` guard before creating; `uninstall()` is symmetric.
+2. `setup.php`: register
+   `$PLUGIN_HOOKS[Hooks::DASHBOARD_CARDS]['domainmanager'] = [DashboardCards::class, 'dashboardCards'];`
+   in `plugin_init_domainmanager()`.
+3. `src/Installer.php`: call `DashboardCards::install()`/`uninstall()` from the existing
+   `install()`/`uninstall()` methods.
+4. Dual changelog entries (`CHANGELOG.md`, `CHANGELOG-dev.md`) under `[Unreleased]` /
+   `### Features`.
+
+### 20.3b Phase 81 — two more cards (implemented 2026-08-09)
+
+Built directly on Phase 80's proven mechanism, no new research needed:
+
+- **Card 3 — "Registrar status"**: same shape as Card 2 (`pie`/`donut`/`multipleNumber`),
+  grouped on the existing `PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR_STATUS` (9408) — no new
+  search option.
+- **Card 4 — "Domains expiring soon"**: `bigNumber`, counts `Domain` rows whose native
+  `date_expiration` (search option id 6, `Domain::rawSearchOptions()`) falls within a fixed
+  30-day lookahead window. Deliberately **not** reusing core's own
+  `Domain::closeExpiriesDomainsCriteria()`/`send_domains_alert_close_expiries_delay` —  that
+  method is scoped to a single entity id, whereas every card here spans the active
+  entity+children selection via `getEntitiesRestrictCriteria()`.
+- Both providers follow the exact query idiom Phase 80 established (`getEntitiesRestrictCriteria('glpi_domains', '', '', true)`
+  + `is_deleted`/`is_template` exclusion), verified against the live testing container: fresh
+  install seeds all four card items, and each provider's underlying grouped-count query returns
+  correct data (registrar status "ok": 19; 1 domain expiring within 30 days, matching the test
+  data's nearest `date_expiration`).
+- Card seeding on `install()` only fires for a **freshly created** dashboard (same guard as
+  Phase 80) — an admin's already-existing Domain Manager dashboard does not retroactively gain
+  Card 3/4; this matches the documented idempotency guarantee (an admin-edited/deleted dashboard
+  is never touched by upgrade).
+
+Files: `src/DashboardCards.php`.
+
+### 20.4 Backlog — Phases 82–83 (not yet designed, do not start without a follow-up design pass)
+
+The original plan (`~/.claude/plans/go-glowing-scone.md`, 2026-08-08) framed this as a 4-phase
+arc, 80–83, with 81–83 generically "building more cards" once Phase 80 proved the mechanism —
+without pinning a specific card to each number. Phase 81 ended up shipping *two* cards
+(registrar status + expiring soon) in one pass, so 82/83 as separate delivery phases were never
+used; these two backlog items are what they were always going to be, renumbered here to close
+that gap rather than starting the next new work at an arbitrary "84":
+
+- **Phase 82 — Per-supplier/driver widgets** (e.g. "Domains registered via Dinahosting", "Proxied
+  records via Cloudflare"). Must be **driver-registry-driven, not hardcoded per name** —
+  `DriverRegistry` already enumerates configured suppliers, so cards should be generated from
+  that list at runtime rather than one hardcoded card per known driver, or the card picker
+  becomes unusable once real installs have dozens of suppliers a given user mostly doesn't care
+  about. Needs a UX decision on how to avoid listing N near-identical per-supplier cards (e.g.
+  one configurable "by supplier" grouped card, mirroring CloudInventory's
+  `getCloudInstanceByForeignKey()` pattern, rather than N flat bigNumber cards).
+- **Phase 83 — Per-TLD breakdown** (sector/donut chart: `.com`, `.gal`, `.net`, …). Same
+  dynamic-cardinality concern as suppliers, plus a real performance gap: there is no dedicated,
+  indexed TLD column today, so grouping/filtering by TLD would mean a `LIKE '%.com'`-style match
+  against the domain name, which doesn't scale. Needs a new searchable field (e.g. a
+  stored/derived TLD column, populated the same way `name_ascii` is cached today) before this
+  widget can be built without an expensive full-table string-match query on every dashboard
+  render.
+
+Next genuinely new dashboard work after these two starts at Phase 84.
+
+### 20.5 Verification
+
+- `php tools/getsearchoptions.php --type=Domain` to confirm search option 9409 is unchanged and
+  no new id was introduced.
+- Install/upgrade on a live GLPI 11 instance, open the dashboard picker, confirm both cards
+  appear under "Domain Manager" and render with real counts; drill-down links land on a
+  correctly-filtered `Domain` search page scoped to the active entity.
+- Re-run install/upgrade and confirm the dashboard is not recreated once it already exists, nor
+  recreated after an admin manually deletes/edits it.
+
+### 20.3c — Post-ship bugfix pass (2026-08-09, `src/DashboardCards.php`)
+
+Live testing on the `testing_glpi_1` container (source bind-mounted from this repo, port 65108)
+found all three grouped cards (registrar/sync/registrar-status) broken — only "Domains expiring
+soon" rendered. Root causes, most severe first:
+
+1. **Wrong chart-data shape — the actual "Error rendering card!" cause.** `toChartData()`
+   returned the *multi-series* nested shape (`{labels: [], series: [{name, data: [{value,
+   url}]}]}`) for cards whose widget types are all *single-series* (pie/donut/bar/hbar/
+   multipleNumber). Every one of `Widget`'s single-series chart functions does
+   `array_merge($default_entry, $entry)` per top-level `data` entry and reads
+   `$entry['number']` directly; `$default_entry['number']` defaults to `''` (not `0`/`null`), so
+   `$total += $entry['number']` on an entry shaped as `{value, url}` (no `number` key at all)
+   threw `TypeError: Unsupported operand types: int + string` deep inside `Widget.php`, caught by
+   `Grid::getCardHtml()`'s generic `catch (Throwable $e)` and surfaced only as the generic
+   "Error rendering card!" — the query itself was never the problem in this failure mode. Fixed
+   by rewriting `toChartData()` to the flat `{number, label, url}`-per-entry shape, matching core's
+   own `Provider::itemsByFk()` reference pattern exactly. See `dashboard-widgets.md`'s new Trap
+   entry in the `glpi-plugin-builder` skill for the full symptom writeup — this is easy to
+   mis-diagnose as a SQL bug since the logged query is completely valid on its own.
+2. **`GROUP BY` alias ambiguity.** `domainsByRegistrar()`'s original `GROUP BY suppliers_id`
+   (referencing a `SELECT`-list alias) collided with real, unqualified `suppliers_id` columns on
+   two different joined tables (`glpi_infocoms`, the plugin's own supplierconfigs table) — MySQL
+   rejects that as "Column '...' in group statement is ambiguous" even though the alias itself
+   is unambiguous in isolation. Fixed by repeating the full `CASE WHEN ... END` expression (as a
+   `QueryExpression`) in `GROUPBY` instead of the alias, and renaming the alias itself to
+   `registrar_suppliers_id` so it can't collide with any joined column again.
+3. **Missing `url` key threw `Undefined array key`.** `Widget`'s chart builders read
+   `$entry['url']` unconditionally (only `strlen()`-guarded, never `isset()`-guarded) — a data
+   point that omitted the key entirely (the "no driver linked" catch-all bucket, which has no
+   single supplier id to drill down to) threw. Fixed by always setting `url` (empty string when
+   there's genuinely nothing to link to).
+4. **Label double-escaping.** `toChartData()`'s fallback labels used `__s()` (pre-escaped), but
+   `Widget::multipleNumber()`/`simpleBar()` call `htmlescape()` on the label themselves — same
+   double-encoding trap already documented for `bigNumber`'s `label`/`alt`. Switched to `__()`.
+
+**Product-level change made in the same pass, per user direction:** "Domains per registrar" only
+counts a Supplier as a real registrar once it has an active driver linked via `SupplierConfig`
+(`api_driver <> DriverRegistry::DRIVER_NONE`) — any Infocom supplier used for unrelated
+billing/vendor purposes, or no supplier at all, now buckets into a single "No driver linked"
+catch-all instead of being mixed in under its own name. Card retitled "Managed domains per
+registrar" (long/picker form) to make this explicit; on-widget short label stays "Domains per
+registrar" per the label-slot convention in §20.2's correction above. "Registrar status" also
+gained the same live-Infocom reconciliation `DomainState::getDomainsForSupplier()` already used
+(a state row whose `registrar_suppliers_id` mirror no longer matches the domain's *current*
+Infocom supplier folds into `STATUS_NEVER` rather than showing a stale prior supplier's status),
+and both status cards now `COALESCE(...,'never')` their grouped column so a domain with no state
+row buckets under "Never synchronized" instead of an unlabeled "Not set"/`NULL` group. All four
+cards now use `self::ICON` (`'ti ti-world-cog'`, the same icon `DomainState`/`SupplierConfig`/
+`Profile` already use for this plugin) instead of core's `Domain::getIcon()`.
+
+### 20.6 Phase 84 — "Domains per DNS provider" card, plus `searchequalsonfield` drill-down fixes
+
+Follow-up to §20.3c, same session run: added `domainsByDnsProvider()`/
+`plugin_domainmanager_domains_by_dns_provider`, grouped on the *matched* Supplier
+(`DomainState.dns_suppliers_id`) rather than `detected_provider`'s free-text sync-resolved name —
+a domain with no match folds into "Not matched to a supplier", same catch-all shape as
+`domainsByRegistrar()`'s "No driver linked". A new Domain-side search option,
+`PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_SUPPLIER` (9432, native `'dropdown'` datatype, two-hop
+`beforejoin` through `DomainState`), replaced an initial `detected_provider`-based version once
+its drill-down turned out broken for the same reason described next. Separately, "DNS sync
+status"/"Registrar sync status" (search options 9409/9408) had the identical
+`searchequalsonfield`-missing bug already fixed once for 9407 (`detected_provider`): `'specific'`
+datatype + a `table` that isn't the card's own itemtype's own table falls through
+`SQLProvider::getWhereCriteria()`'s default case, comparing `equals`/`notequals` against the
+joined table's `.id` instead of its real field — fixed with `'searchequalsonfield' => true` on
+both. Both cards' displayed names were also corrected to match their own search options' names
+("DNS sync status"/"Registrar sync status", previously "Sync status"/"Registrar status") — card
+ids/gridstack slots unchanged.
+
+### 20.7 Phase 85 — four record-level cards, plus two post-ship bugfix passes (2026-08-09/10)
+
+Phases 80/81/84 covered *domain*-level cards only; Phase 85 adds four *record*-level ones (same
+`dashboardCards()`/`toChartData()`/`install()` machinery, `itemtype => \DomainRecord::class`):
+
+- `plugin_domainmanager_records_count` — bigNumber, `ImportedRecord.is_managed = 1` joined back
+  to `DomainRecord`/`Domain` for the usual deleted/template/entity filters.
+- `plugin_domainmanager_records_by_type` — grouped on native `DomainRecordType` (SO 3 on
+  `DomainRecord`); drill-down needs both the type *and* the "Managed" flag (SO 9404), so it builds
+  a two-criteria URL manually rather than using `toChartData()`'s default single-field builder.
+- `plugin_domainmanager_records_by_dns_provider` — same `DomainState`/Supplier matching shape as
+  `domainsByDnsProvider()`, counted over records. No `DomainRecord`-side search option exposes
+  `DomainState.dns_suppliers_id` (9432 is registered only under the `Domain` itemtype block in
+  `setup.php`), so the drill-down can only carry the "Managed" criterion — a superset of each
+  segment's exact scope, same accepted tradeoff as `domainsByRegistrar()`'s "no driver" bucket.
+- `plugin_domainmanager_proxied_records` — managed A/AAAA/CNAME records whose domain's matched
+  Supplier is Cloudflare-driven (`SupplierConfig.api_driver`), grouped on `is_proxied`. Drill-down
+  carries only SO 9405 (proxy flag), not the type/Cloudflare scope — same superset tradeoff.
+
+Per user instruction, on-widget labels never repeat "Managed" (mirrors `domainsExpiringSoon()`'s
+existing convention). "Managed" here means strictly `ImportedRecord.is_managed = 1` (SO 9404) —
+a DNS *record*-level ownership flag on a different table entirely from the *domain*-level
+"Managed" flag (`DomainState.is_managed`, SO 9406) used elsewhere (see the Phase 85 follow-up 3
+entry below for where conflating the two went wrong).
+
+**Post-ship bugfix pass 1 — "Error rendering card!" on all 4 new cards.** Verified live on the
+`testing_glpi_1` test container (port 65108, real data). Each provider's `'FROM'` used a plain
+aliased string (`ImportedRecord::getTable() . ' AS record'`) — `DBmysqlIterator::buildQuery()`
+runs `DBmysql::quoteName()` over the *entire* `'FROM'` value when it's a scalar, wrapping the
+whole `"<table> AS record"` string in one pair of backticks as a single broken identifier, a
+silent SQL syntax error surfaced generically as "Error rendering card!" (a *different* root cause
+than §20.3c's `TypeError`, same generic symptom). Join aliases (`'... AS domainrecord'` etc.) are
+unaffected — they go through a separate join-builder code path that does support aliasing. Fixed
+by keeping `'FROM'` unaliased (the real table name) and referencing it by that name directly in
+`SELECT`/`WHERE`/join `ON` criteria, matching every other provider in this file.
+
+**Post-ship bugfix pass 2 — duplicate "unmatched"/"not proxied" buckets.** Same live container,
+same session: `recordsByDnsProvider()`/`proxiedRecordsBreakdown()` each returned *two* rows for
+what should have been one bucket (e.g. "Not proxied" split 49 + 1 instead of 50). Root cause:
+`GROUPBY => ['is_proxied']`/`['dns_suppliers_id']` referenced the `COALESCE(...)` `SELECT` alias
+by name, but a *real* column of that same name also exists in the query's joined tables
+(`ImportedRecord.is_proxied`, `DomainState.dns_suppliers_id`) — MySQL's `GROUP BY` name resolution
+prefers a real column over a same-named `SELECT` alias when both exist, so rows grouped on the
+raw (pre-`COALESCE`) value, splitting `NULL` and literal `0`/no-match apart. Fixed both by
+repeating the full `COALESCE(...)` expression in `GROUPBY` (as a `QueryExpression`) instead of
+referencing the alias — same "repeat the expression, don't rely on the alias" pattern
+`domainsByRegistrar()`'s `CASE` expression already uses (§20.3c, fix 2).
+**`domainsByDnsProvider()` (Phase 84) has the identical latent hazard** (same
+alias/real-column-name collision, same GROUPBY-by-alias-name shape) — not fixed here since it
+didn't manifest in the test data (no unmatched-supplier rows to observe the split) and wasn't in
+scope for this pass; fix it the same way next time that card is touched.
+
+Separately, the 4 new cards also appeared broken ("empty card!") when the user first added them
+to their live dashboard — this turned out to be a dashboard *configuration* issue, not a code
+bug: GLPI's "add card" UI had saved them with `card_options.widgettype = ""` (no chart type
+picked). `Grid::getCardHtml()` looks up the render function by `widgettype`; empty resolves to no
+function, `$html` stays `''`, and `getCardHtml()`'s own `if ($html === '') { return
+$notfound_html; }` branch returns the exact same "empty card!" text as its `!isset($cards[$id])`
+branch — the two failure modes are indistinguishable from the rendered HTML alone. Confirmed live
+by forcing a real `widgettype` onto the same saved rows and re-rendering successfully with no code
+changes. No fix needed in this repo; resolved by picking a chart type in the dashboard UI.
+
+**Phase 85 follow-up 3 — "Number of Managed Domains" card, and a real bug it caught.** Added
+`domainsCount()`/`plugin_domainmanager_domains_count` after user feedback that
+`recordsCount()`'s "Managed Records" number could be mistaken for a domain count, and that core's
+own generic `bn_count_Domain` card (no deleted/template/entity scoping at all) isn't the same
+number either. The first implementation only applied the usual `is_deleted`/`is_template`/entity
+scope — **not** an actual "managed" filter — conflating "domains GLPI knows about" with "domains
+this plugin manages": there already is a domain-level `is_managed` flag
+(`DomainState.is_managed`, SO `PLUGIN_DOMAINMANAGER_SO_DOMAIN_MANAGED`/9406, §14 below), the exact
+one `DomainForm::injectDomain()`'s `$is_managed` already surfaces on `domain.form.php`. Fixed by
+joining `DomainState` and filtering `is_managed = 1`; verified live (19 managed vs. 20 in-scope
+domains — one domain exists with no state row or `is_managed = 0`).
+
+### 20.9 Phase 85 follow-up 4 — label rename, widened chart-type picker, and a duplicate-bucket bug on registrar status (2026-08-09/10)
+
+Three small, unrelated changes made in the same pass:
+
+- `recordsCount()`'s on-widget `label` changed from `__('Records', ...)` to `__('Managed records',
+  ...)` — the bare "Records" read too generically next to the plugin's other "Managed ..." cards.
+- `plugin_domainmanager_proxied_records`'s `dashboardCards()` entry was `'widgettype' =>
+  ['donut']` only, unlike every sibling breakdown card's `['pie', 'donut', 'multipleNumber', 'bar',
+  'hbar']` — widened to match; no reason found for the original restriction.
+- **A real bug**: `registrarStatusBreakdown()` had the identical GROUP BY-by-alias hazard already
+  fixed once in §20.7's post-ship bugfix pass 2, this time on a `CASE` expression rather than a
+  `COALESCE()` — confirming that pass's note that `domainsByDnsProvider()`/`syncStatusBreakdown()`
+  carry the same latent risk. Verified live against `testing_glpi_1`:
+  `GROUPBY => ['registrar_status']` resolved to `DomainState`'s own real `registrar_status` column
+  (present in the joined scope) instead of the `CASE WHEN ... END AS registrar_status` alias — a
+  domain with no `DomainState` row at all (`NULL` raw column) and a domain with a stale/
+  mismatched-supplier `DomainState` row (a real, non-`NULL` raw column) both render as "Never
+  synchronized" through the `CASE`, but grouped separately on their differing raw values (3 + 1
+  instead of 4). Fixed by repeating the full `CASE` expression in `GROUPBY` as a `QueryExpression`,
+  same "repeat the expression, don't rely on the alias" fix as §20.7.
+
+Separately (data repair only, **not** a code bug): the user's live `testing_glpi_1` dashboard had
+all 4 Phase 85 record cards saved with `card_options.widgettype = ""`, the exact non-bug §20.7
+already documents ("empty card!" from the dashboard-editor UI saving without a chart type picked).
+Repaired directly in the container's `glpi_dashboards_items` rows for this session; no plugin
+change was needed or made for that part.
+
+### 20.10 Phase 89 — "Managed records per DNS provider by type", the first multi-dimensional card
+
+Every prior card here is single-series (`{data: [{number, label, url}]}`, `toChartData()`'s shape).
+This one is genuinely 3D — an X axis (DNS provider), a series dimension (record type), and a value
+(count) per cell — matching core's own `Provider::nbTicketsBySlaStatusAndTechnician()` (the
+"Tickets by SLA status and technician" card). That shape is `data: {labels: [], series: [{name,
+data: []}]}`, one array entry per label position across every series, and it's read by exactly one
+family of `Glpi\Dashboard\Widget` functions: `multipleBars`/`multipleHBars`/`StackedBars`/
+`stackedHBars` (all delegating to `getBarsGraph()` with `'multiple' => true`) and `multipleLines`
+(via `getLinesGraph()`). `pie`/`donut`/`bigNumber`/single-series `bar`/`hbar`/`multipleNumber` all
+read the *other* shape (`toChartData()`'s) — mixing the two up is the multi-series equivalent of
+the "wrong shape → TypeError deep in core" trap §20.3c already hit for single-series cards, so
+`dashboardCards()`'s `widgettype` array for this card is restricted to `['bars', 'hBars',
+'stackedbars', 'stackedHBars', 'lines']` only.
+
+`recordsByDnsProviderAndType()` groups managed records by the same matched-Supplier DNS-provider
+relationship `recordsByDnsProvider()` already uses (`DomainState.dns_suppliers_id`, `COALESCE`'d to
+0 for "not matched", same "repeat the expression in GROUPBY" fix as that card), cross-tabulated
+against `DomainRecordType`. One SQL query returns every (provider, type) cell; PHP then pivots it
+into `labels` (one per provider) and `series` (one per record type, `data` aligned to `labels`).
+
+**No SQL `LIMIT`, and that's deliberate, not an oversight.** Confirmed against
+`Glpi\Dashboard\Grid::getCardHtml()`: the dashboard editor's per-card "limit" control (`$cardopt['limit']
+?? 7`) is merged into `$widget_args` *after* the provider already ran — it never reaches the
+provider's own `$params` at all. It's applied entirely client-side, inside `Widget::getBarsGraph()`
+(`$nb_labels = min($p['limit'], count($labels))`, then `array_splice($labels, 0, -$nb_labels)` for
+the non-distributed case) — which keeps the *tail* of the array, not the largest N by value.
+`recordsByDnsProviderAndType()` therefore returns **every** provider, sorted **ascending** by total
+record count (`asort($providerTotals)` before building `labels`/`series`), so that the widget's own
+"keep the last N" trim happens to retain the biggest N buckets — i.e. "top N providers by volume,
+biggest first" without duplicating core's own slicing logic in the provider.
+
+There is no per-point drill-down `url` in this card, matching core's own SLA-by-technician card:
+none of `Widget`'s multi-series bar/line renderers read a `url` key per data point, only
+`name`/`data`.
+
+**Verification done:** the raw SQL shape (join structure, the `COALESCE(...)`-repeated-in-GROUPBY
+fix, real table/column names — `glpi_domainrecords`, `glpi_domainrecordtypes`,
+`glpi_plugin_domainmanager_records`, `glpi_plugin_domainmanager_states`) was run directly against
+`testing_glpi_1`'s live data and returned correct per-provider/per-type counts with no ambiguous-
+column errors. A full authenticated dashboard-editor render (add the card, pick `stackedbars`,
+confirm it actually paints) was **not** completed in this pass — a curl-based login/CSRF flow
+didn't succeed and PHP's bare `inc/includes.php` bootstrap doesn't give a working `Session`/`DB`
+without the full front-controller lifecycle (see the `glpi-plugin-builder` skill's Trap 14). Still
+needs a manual browser check.
+
+Seeded into the default `install()` dashboard grid as a new row (`y => 9`, `stackedbars`) below the
+existing cards; same "never repopulates an existing admin-edited dashboard" caveat as every card
+before it.
+
+### 20.10b Post-ship bugfix: matrix cells filled with `0` instead of `null` for absent combinations
+
+Both `recordsByDnsProviderAndType()` and `domainsByRegistrarAndTld()` (§20.10, §20.4) build their
+matrix via `$matrix[$label][$series] ?? 0` when pivoting the SQL result set into `labels`/`series`.
+User-reported: both cards showed "0 data" cluttering the chart, specifically unlike every other card
+in this file. Root cause: a `(label, series)` combination that never occurred in the query results
+(e.g. a registrar with no `.eu` domains, a DNS provider with no `NS` records) got a fabricated `0`
+data point — a real, tooltip/legend-visible entry — instead of being left out the way a single-series
+card's SQL-grouped result set naturally leaves out empty buckets. Fix: fill absent cells with `null`
+instead of `0`, so ECharts renders no segment and no tooltip/legend line for them.
+
+Verified live against `testing_glpi_1` end-to-end, including the full authenticated-render step
+§20.10 flagged as not yet done: booted the Symfony `Kernel` directly from a CLI script
+(`require 'vendor/autoload.php'; (new \Glpi\Kernel\Kernel('production', false))->boot();`, faking
+`$_SESSION` by hand — no login/CSRF round-trip needed), called both provider methods directly against
+real data, then fed that output straight into `Widget::stackedHBars()` the same way
+`Grid::getCardHtml()` does and inspected the generated ECharts `series[i].data`. Confirmed the fix
+changes a combination with no underlying rows from `[1, 0]` to `[1, null]`, with genuine same-cell
+counts elsewhere unaffected. New skill-level trap recorded in the `glpi-plugin-builder` skill
+(`references/dashboard-widgets.md`) covering both this matrix-fill quirk and the working CLI
+bootstrap technique itself, since the skill previously only documented that the bare
+`inc/includes.php` bootstrap *doesn't* work (Trap 14) without offering a working alternative for
+one-off verification scripts.
+
+### 20.11 Phase 90 — Domain delete/purge must never cascade into a driver push or a bogus block
+
+Reported symptom: purging a `Domain` showed a bogus ERROR ("Purging this record requires the
+'Purge' right for its DNS record type") even though the purge succeeded. `DomainRecord` is a
+`CommonDBChild` of `Domain`, so GLPI cascades a Domain delete/purge down to each child
+`DomainRecord`, re-firing the plugin's own `PRE_ITEM_DELETE`/`PRE_ITEM_PURGE` hooks
+(`LockEnforcer::domainRecordPreDelete()`/`domainRecordPrePurge()` →
+`blockRecordRemoval()`) for every record along for the ride — with nothing distinguishing that
+from a user deliberately removing one record on its own. On the soft-delete path this meant a
+real upstream `deleteRecord()` push to the DNS provider (IONOS/Cloudflare/Dinahosting) for every
+write-back-managed record under a deleted Domain — deleting/purging a `Domain` in GLPI must be a
+purely local operation that never touches the driver. On the purge path, a user lacking the
+per-type DNS record PURGE right hit the bogus ERROR above and the child `DomainRecord` row was
+left behind orphaned (its plugin `ImportedRecord` bookkeeping was already cleaned up by
+`HookHandler::domainPurged()`, but the `glpi_domainrecords` row itself was not).
+
+Fixed with a Domain-scoped bypass flag on `LockEnforcer`
+(`$domain_removal_in_progress`), mirroring the existing `$sync_in_progress` bypass used by the
+sync engine: `domainPreDelete()`/`domainPrePurge()` set it (registered as new `Domain::class`
+entries in `PRE_ITEM_DELETE`/`PRE_ITEM_PURGE`), `blockRecordRemoval()` checks it immediately
+after the existing `canBypassSync()` check — before `DnsRecordWriteback::onPreDelete()` can be
+called — so cascaded child-record removal never invokes the driver and never blocks/warns
+locally, and `domainRemovalComplete()` resets it once the removal (and its cascade) has finished:
+called from `HookHandler::domainPurged()` (purge path, `ITEM_PURGE`) and a new
+`HookHandler::domainDeleted()` (delete path, a new `ITEM_DELETE` hook registered for
+`Domain::class` — no such hook existed on `Domain` before this phase). A user deliberately
+deleting/purging one `DomainRecord` directly (not via a Domain removal) is unaffected: the flag is
+never set for that path, so `DnsRecordWriteback::onPreDelete()`/`hasPurgeRight()` still run
+exactly as before.
+
+### 20.8 Phase 88 — domain.form: hide the injected panel entirely when there is nothing to manage
+
+`DomainForm::injectDomain()` now returns immediately, before rendering `domain_panel.html.twig`,
+whenever `!$is_new` and either:
+
+- `$state === null` (never picked up by sync at all), or
+- `$state` exists but is_managed is 0 *and* neither `registrar_suppliers_id` nor
+  `dns_suppliers_id` resolves to an active driver (`DomainState::resolvesToActiveDriver()` —
+  requires the linked Supplier to be active, have a real `api_driver`, and have non-empty
+  decrypted credentials).
+
+In both cases, no Domain Manager section renders at all — not even the "not managed" message.
+That message is reserved for the one remaining `is_managed = 0` case: a Supplier that *does*
+resolve to an active driver but still ended up unmanaged (e.g. sync ran and hit a real error) —
+the only state that's actually actionable from this form.
+
+This condition was widened twice after the initial ship, both found live against
+`testing_glpi_1`: first, a manually-created domain with a state row but no supplier linked at
+all (`ticgal.internal`, id 20 — `registrar_suppliers_id = 0`, `dns_suppliers_id = 0`) still
+showed the message, since it has a non-null `$state`; second, a domain whose Infocom Supplier
+was set to one with no Domain Manager driver configured at all (id 26, Supplier "Upcloud" —
+`api_driver = NULL`) still counted as "has a supplier link" under the first fix and kept
+showing the message, even though that supplier can never resolve to managed.
+
+`onShowTab()` needed no change: it independently computes `$is_managed` straight from
+`$state->fields['is_managed']` and calls `renderManagedIndicator($is_managed)` on every other
+Domain tab, but that helper already no-ops when `$is_managed` is false — so a domain in any of
+the hidden-panel states above already showed no indicator there, both before this phase and
+after both amendments. No template change — `domain_panel.html.twig`'s existing `is_managed`
+branch remains the "linked to a working driver, but genuinely not managed" path. See
+TESTING.md's Phase 88 entry for the live verification matrix.

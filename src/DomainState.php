@@ -166,6 +166,10 @@ class DomainState extends CommonDBTM
                 return $value === ''
                     ? \htmlescape(__('Not on file', 'domainmanager'))
                     : \htmlescape(__('On file', 'domainmanager'));
+
+            case 'tld':
+                $value = (string) ($values[$field] ?? '');
+                return $value === '' ? \htmlescape(__('Not set')) : \htmlescape($value);
         }
 
         return parent::getSpecificValueToDisplay($field, $values, $options);
@@ -204,6 +208,32 @@ class DomainState extends CommonDBTM
 
                 $options['value'] = $values[$field] ?? '';
                 return Dropdown::showFromArray($name, $choices, $options);
+
+            case 'tld':
+                // Not a fixed enum (unlike registrar_status/dns_status)
+                // and not worth hand-maintaining a full public-suffix list
+                // just for this select — the choices offered are whatever
+                // TldExtractor has actually resolved and stored so far,
+                // same "reflect the real data" reasoning as
+                // detected_provider's own provider list, just sourced from
+                // this table directly instead of a registry.
+                /** @var \DBmysql $DB */
+                global $DB;
+                $choices = [];
+                foreach (
+                    $DB->request([
+                        'SELECT'   => 'tld',
+                        'DISTINCT' => true,
+                        'FROM'     => self::getTable(),
+                        'WHERE'    => ['tld' => ['<>', '']],
+                        'ORDER'    => 'tld',
+                    ]) as $row
+                ) {
+                    $choices[$row['tld']] = $row['tld'];
+                }
+
+                $options['value'] = $values[$field] ?? '';
+                return Dropdown::showFromArray($name, $choices, $options);
         }
 
         return parent::getSpecificValueToSelect($field, $name, $values, $options);
@@ -223,6 +253,45 @@ class DomainState extends CommonDBTM
         }
 
         return null;
+    }
+
+    /**
+     * Force-write a set of columns on an existing row, bypassing
+     * `CommonDBTM::update()`'s own change-detection.
+     *
+     * That detection compares the stored value against the incoming one
+     * with loose PHP `!=`, under which `null != 0` is `false` — so the
+     * very first time a nullable tinyint column (registrar_dnssec_enabled,
+     * registrar_domain_lock, registrar_privacy_enabled, pending_delete,
+     * pending_transfer — every RDAP/registrar-reported tri-state boolean
+     * this plugin stores) needs to go from "never reported" (NULL) to a
+     * legitimate `false`/`0`, `update()` silently decides nothing changed
+     * and drops the column from its own SQL UPDATE. The value is then
+     * stuck at NULL forever, no matter how many times RDAP or a registrar
+     * driver reports it — confirmed live (2026-08-09) against domain
+     * #14/scavogados.com: RDAP reported delegationSigned=false correctly,
+     * update() computed registrar_dnssec_enabled=0, but the row stayed
+     * NULL. `$DB->update()` (the query builder, not raw SQL — see this
+     * plugin's own "no raw SQL" convention) writes exactly what it's
+     * given, so it's used here instead for these specific columns.
+     *
+     * @param  int   $id    state row id
+     * @param  array $input columns to write, id/domains_id excluded
+     * @return void
+     */
+    public static function forceUpdate(int $id, array $input): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        if ($input === []) {
+            return;
+        }
+
+        unset($input['id'], $input['domains_id']);
+        $input['date_mod'] = $_SESSION['glpi_currenttime'] ?? date('Y-m-d H:i:s');
+
+        $DB->update(self::getTable(), $input, ['id' => $id]);
     }
 
     /**
