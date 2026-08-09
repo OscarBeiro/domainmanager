@@ -34,18 +34,26 @@ namespace GlpiPlugin\Domainmanager;
 use Domain;
 use Glpi\Dashboard\Dashboard;
 use Glpi\Dashboard\Item;
+use Glpi\DBAL\QueryExpression;
 use Migration;
 use Ramsey\Uuid\Uuid;
 use Toolbox;
 
 /**
- * Phase 80: GLPI dashboard cards for Domain Manager. Proves the
- * registration/drill-down/install mechanism with two cards; phases 81-83
- * (ARCHITECTURE.md §20) add more cards on top once this is validated.
+ * Phase 80 proved the registration/drill-down/install mechanism with two
+ * cards; Phase 81 (ARCHITECTURE.md §20) adds two more on top of it —
+ * registrar status and domains expiring soon. Phases 82-83 continue from
+ * there.
  */
 class DashboardCards
 {
     public const DASHBOARD_KEY = 'plugin_domainmanager_dashboard';
+
+    /** Native `Domain::rawSearchOptions()` id for `date_expiration`. */
+    private const SO_DOMAIN_EXPIRATION_DATE = 6;
+
+    /** Phase 81: fixed lookahead window for the "expiring soon" card. */
+    private const EXPIRING_SOON_DAYS = 30;
 
     public static function dashboardCards($cards)
     {
@@ -68,6 +76,24 @@ class DashboardCards
             'group'      => __s('Domain Manager'),
             'label'      => __s('Sync status', 'domainmanager'),
             'provider'   => self::class . '::syncStatusBreakdown',
+            'cache'      => false,
+        ];
+
+        $cards['plugin_domainmanager_registrar_status'] = [
+            'widgettype' => ['pie', 'donut', 'multipleNumber', 'bar', 'hbar'],
+            'itemtype'   => Domain::class,
+            'group'      => __s('Domain Manager'),
+            'label'      => __s('Registrar status', 'domainmanager'),
+            'provider'   => self::class . '::registrarStatusBreakdown',
+            'cache'      => false,
+        ];
+
+        $cards['plugin_domainmanager_expiring_soon'] = [
+            'widgettype' => ['bigNumber'],
+            'itemtype'   => Domain::class,
+            'group'      => __s('Domain Manager'),
+            'label'      => __s('Domains expiring soon', 'domainmanager'),
+            'provider'   => self::class . '::domainsExpiringSoon',
             'cache'      => false,
         ];
 
@@ -153,6 +179,103 @@ class DashboardCards
     }
 
     /**
+     * "Registrar status" card (Phase 81): groups Domain by the existing
+     * PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR_STATUS search option
+     * (9408) — already registered and searchable, mirrors the "Sync
+     * status" card's shape exactly.
+     */
+    public static function registrarStatusBreakdown(array $params = []): array
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $iterator = $DB->request([
+            'SELECT'    => [
+                DomainState::getTable() . '.registrar_status AS registrar_status',
+                'COUNT DISTINCT' => 'glpi_domains.id AS cpt',
+            ],
+            'FROM'      => 'glpi_domains',
+            'LEFT JOIN' => [
+                DomainState::getTable() => [
+                    'ON' => [DomainState::getTable() => 'domains_id', 'glpi_domains' => 'id'],
+                ],
+            ],
+            'WHERE'     => array_merge(
+                [
+                    'glpi_domains.is_deleted'  => 0,
+                    'glpi_domains.is_template' => 0,
+                ],
+                getEntitiesRestrictCriteria('glpi_domains', '', '', true),
+            ),
+            'GROUPBY'   => [DomainState::getTable() . '.registrar_status'],
+            'ORDER'     => 'cpt DESC',
+        ]);
+
+        return self::toChartData($iterator, 'registrar_status', 'registrar_status', 'cpt', PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR_STATUS);
+    }
+
+    /**
+     * "Domains expiring soon" card (Phase 81): bigNumber count of Domain
+     * rows whose native `date_expiration` falls within the next
+     * self::EXPIRING_SOON_DAYS days — a fixed window, not the per-entity
+     * `send_domains_alert_close_expiries_delay` config core's own
+     * `Domain::closeExpiriesDomainsCriteria()` uses, since that method is
+     * scoped to a single entity and this card spans the active
+     * entity+children selection like every other card here.
+     */
+    public static function domainsExpiringSoon(array $params = []): array
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $where = array_merge(
+            [
+                'glpi_domains.is_deleted'  => 0,
+                'glpi_domains.is_template' => 0,
+                'NOT'                      => ['glpi_domains.date_expiration' => null],
+                new QueryExpression('glpi_domains.date_expiration >= CURDATE()'),
+                new QueryExpression(
+                    'glpi_domains.date_expiration <= DATE_ADD(CURDATE(), INTERVAL '
+                    . self::EXPIRING_SOON_DAYS . ' DAY)',
+                ),
+            ],
+            getEntitiesRestrictCriteria('glpi_domains', '', '', true),
+        );
+
+        $iterator = $DB->request([
+            'SELECT' => ['COUNT DISTINCT' => 'glpi_domains.id AS cpt'],
+            'FROM'   => 'glpi_domains',
+            'WHERE'  => $where,
+        ]);
+        $count = (int) ($iterator->current()['cpt'] ?? 0);
+
+        $criteria = [
+            'criteria' => [
+                [
+                    'link'       => 'AND',
+                    'field'      => self::SO_DOMAIN_EXPIRATION_DATE,
+                    'searchtype' => 'morethan',
+                    'value'      => '-1 day',
+                ],
+                [
+                    'link'       => 'AND',
+                    'field'      => self::SO_DOMAIN_EXPIRATION_DATE,
+                    'searchtype' => 'lessthan',
+                    'value'      => sprintf('+%d days', self::EXPIRING_SOON_DAYS),
+                ],
+            ],
+            'reset'    => 'reset',
+        ];
+
+        return [
+            'number' => $count,
+            'url'    => Domain::getSearchURL() . '?' . Toolbox::append_params($criteria),
+            'label'  => sprintf(__s('Domains expiring soon (%d days)', 'domainmanager'), self::EXPIRING_SOON_DAYS),
+            'icon'   => Domain::getIcon(),
+        ];
+    }
+
+    /**
      * Shared chart-shape builder: one series, drill-down `url` per point
      * built from the given search-option id + raw grouped value.
      */
@@ -235,6 +358,24 @@ class DashboardCards
                 'width'        => 4,
                 'height'       => 3,
                 'card_options' => ['widgettype' => 'donut'],
+            ],
+            [
+                'gridstack_id' => 'plugin_domainmanager_registrar_status_' . Uuid::uuid4(),
+                'card_id'      => 'plugin_domainmanager_registrar_status',
+                'x'            => 8,
+                'y'            => 0,
+                'width'        => 4,
+                'height'       => 3,
+                'card_options' => ['widgettype' => 'donut'],
+            ],
+            [
+                'gridstack_id' => 'plugin_domainmanager_expiring_soon_' . Uuid::uuid4(),
+                'card_id'      => 'plugin_domainmanager_expiring_soon',
+                'x'            => 0,
+                'y'            => 3,
+                'width'        => 3,
+                'height'       => 2,
+                'card_options' => ['widgettype' => 'bigNumber'],
             ],
         ];
 

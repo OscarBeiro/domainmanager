@@ -4046,6 +4046,31 @@ correction, dated 2026-08-08, for the full writeup of this finding).
 4. Dual changelog entries (`CHANGELOG.md`, `CHANGELOG-dev.md`) under `[Unreleased]` /
    `### Features`.
 
+### 20.3b Phase 81 — two more cards (implemented 2026-08-09)
+
+Built directly on Phase 80's proven mechanism, no new research needed:
+
+- **Card 3 — "Registrar status"**: same shape as Card 2 (`pie`/`donut`/`multipleNumber`),
+  grouped on the existing `PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR_STATUS` (9408) — no new
+  search option.
+- **Card 4 — "Domains expiring soon"**: `bigNumber`, counts `Domain` rows whose native
+  `date_expiration` (search option id 6, `Domain::rawSearchOptions()`) falls within a fixed
+  30-day lookahead window. Deliberately **not** reusing core's own
+  `Domain::closeExpiriesDomainsCriteria()`/`send_domains_alert_close_expiries_delay` —  that
+  method is scoped to a single entity id, whereas every card here spans the active
+  entity+children selection via `getEntitiesRestrictCriteria()`.
+- Both providers follow the exact query idiom Phase 80 established (`getEntitiesRestrictCriteria('glpi_domains', '', '', true)`
+  + `is_deleted`/`is_template` exclusion), verified against the live testing container: fresh
+  install seeds all four card items, and each provider's underlying grouped-count query returns
+  correct data (registrar status "ok": 19; 1 domain expiring within 30 days, matching the test
+  data's nearest `date_expiration`).
+- Card seeding on `install()` only fires for a **freshly created** dashboard (same guard as
+  Phase 80) — an admin's already-existing Domain Manager dashboard does not retroactively gain
+  Card 3/4; this matches the documented idempotency guarantee (an admin-edited/deleted dashboard
+  is never touched by upgrade).
+
+Files: `src/DashboardCards.php`.
+
 ### 20.4 Backlog — phases 84+ (not yet designed, do not start without a follow-up design pass)
 
 - **Per-supplier/driver widgets** (e.g. "Domains registered via Dinahosting", "Proxied records
