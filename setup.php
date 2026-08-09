@@ -31,6 +31,7 @@
 
 use Glpi\Plugin\Hooks;
 use GlpiPlugin\Domainmanager\Config\Config as DomainmanagerConfig;
+use GlpiPlugin\Domainmanager\DashboardCards;
 use GlpiPlugin\Domainmanager\DomainForm;
 use GlpiPlugin\Domainmanager\DomainState;
 use GlpiPlugin\Domainmanager\HookHandler;
@@ -825,5 +826,8 @@ function plugin_init_domainmanager(): void
         // is initialized, but front/*.php hasn't yet called
         // QueryBuilder::manageParams()) to strip it before it's read.
         $PLUGIN_HOOKS[Hooks::POST_INIT]['domainmanager'] = [HookHandler::class, 'scrubStaleSearchSessionCriteria'];
+
+        // Phase 80 (ARCHITECTURE.md §20): dashboard cards.
+        $PLUGIN_HOOKS[Hooks::DASHBOARD_CARDS]['domainmanager'] = [DashboardCards::class, 'dashboardCards'];
     }
 }

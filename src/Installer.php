@@ -36,6 +36,7 @@ use DBConnection;
 use DomainRecordType;
 use DomainType;
 use GlpiPlugin\Domainmanager\Config\Config;
+use GlpiPlugin\Domainmanager\DashboardCards;
 use GlpiPlugin\Domainmanager\Driver\DinahostingDriver;
 use GlpiPlugin\Domainmanager\Dto\ZoneRecord;
 use Migration;
@@ -90,6 +91,7 @@ class Installer
         self::clearRdapEnrichmentComment();
         self::clearDomainSyncComment();
         self::upgradeDomainSyncContinuousDefaults();
+        DashboardCards::install($migration);
 
         $migration->executeMigration();
 
@@ -111,6 +113,8 @@ class Installer
             $migration->displayMessage("Dropping $table");
             $migration->dropTable($table);
         }
+
+        DashboardCards::uninstall($migration);
 
         CronTask::unregister('domainmanager');
 
