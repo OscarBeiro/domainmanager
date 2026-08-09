@@ -4168,3 +4168,109 @@ and both status cards now `COALESCE(...,'never')` their grouped column so a doma
 row buckets under "Never synchronized" instead of an unlabeled "Not set"/`NULL` group. All four
 cards now use `self::ICON` (`'ti ti-world-cog'`, the same icon `DomainState`/`SupplierConfig`/
 `Profile` already use for this plugin) instead of core's `Domain::getIcon()`.
+
+### 20.6 Phase 84 — "Domains per DNS provider" card, plus `searchequalsonfield` drill-down fixes
+
+Follow-up to §20.3c, same session run: added `domainsByDnsProvider()`/
+`plugin_domainmanager_domains_by_dns_provider`, grouped on the *matched* Supplier
+(`DomainState.dns_suppliers_id`) rather than `detected_provider`'s free-text sync-resolved name —
+a domain with no match folds into "Not matched to a supplier", same catch-all shape as
+`domainsByRegistrar()`'s "No driver linked". A new Domain-side search option,
+`PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_SUPPLIER` (9432, native `'dropdown'` datatype, two-hop
+`beforejoin` through `DomainState`), replaced an initial `detected_provider`-based version once
+its drill-down turned out broken for the same reason described next. Separately, "DNS sync
+status"/"Registrar sync status" (search options 9409/9408) had the identical
+`searchequalsonfield`-missing bug already fixed once for 9407 (`detected_provider`): `'specific'`
+datatype + a `table` that isn't the card's own itemtype's own table falls through
+`SQLProvider::getWhereCriteria()`'s default case, comparing `equals`/`notequals` against the
+joined table's `.id` instead of its real field — fixed with `'searchequalsonfield' => true` on
+both. Both cards' displayed names were also corrected to match their own search options' names
+("DNS sync status"/"Registrar sync status", previously "Sync status"/"Registrar status") — card
+ids/gridstack slots unchanged.
+
+### 20.7 Phase 85 — four record-level cards, plus two post-ship bugfix passes (2026-08-09/10)
+
+Phases 80/81/84 covered *domain*-level cards only; Phase 85 adds four *record*-level ones (same
+`dashboardCards()`/`toChartData()`/`install()` machinery, `itemtype => \DomainRecord::class`):
+
+- `plugin_domainmanager_records_count` — bigNumber, `ImportedRecord.is_managed = 1` joined back
+  to `DomainRecord`/`Domain` for the usual deleted/template/entity filters.
+- `plugin_domainmanager_records_by_type` — grouped on native `DomainRecordType` (SO 3 on
+  `DomainRecord`); drill-down needs both the type *and* the "Managed" flag (SO 9404), so it builds
+  a two-criteria URL manually rather than using `toChartData()`'s default single-field builder.
+- `plugin_domainmanager_records_by_dns_provider` — same `DomainState`/Supplier matching shape as
+  `domainsByDnsProvider()`, counted over records. No `DomainRecord`-side search option exposes
+  `DomainState.dns_suppliers_id` (9432 is registered only under the `Domain` itemtype block in
+  `setup.php`), so the drill-down can only carry the "Managed" criterion — a superset of each
+  segment's exact scope, same accepted tradeoff as `domainsByRegistrar()`'s "no driver" bucket.
+- `plugin_domainmanager_proxied_records` — managed A/AAAA/CNAME records whose domain's matched
+  Supplier is Cloudflare-driven (`SupplierConfig.api_driver`), grouped on `is_proxied`. Drill-down
+  carries only SO 9405 (proxy flag), not the type/Cloudflare scope — same superset tradeoff.
+
+Per user instruction, on-widget labels never repeat "Managed" (mirrors `domainsExpiringSoon()`'s
+existing convention). "Managed" here means strictly `ImportedRecord.is_managed = 1` (SO 9404) —
+a DNS *record*-level ownership flag on a different table entirely from the *domain*-level
+"Managed" flag (`DomainState.is_managed`, SO 9406) used elsewhere (see the Phase 85 follow-up 3
+entry below for where conflating the two went wrong).
+
+**Post-ship bugfix pass 1 — "Error rendering card!" on all 4 new cards.** Verified live on the
+`testing_glpi_1` test container (port 65108, real data). Each provider's `'FROM'` used a plain
+aliased string (`ImportedRecord::getTable() . ' AS record'`) — `DBmysqlIterator::buildQuery()`
+runs `DBmysql::quoteName()` over the *entire* `'FROM'` value when it's a scalar, wrapping the
+whole `"<table> AS record"` string in one pair of backticks as a single broken identifier, a
+silent SQL syntax error surfaced generically as "Error rendering card!" (a *different* root cause
+than §20.3c's `TypeError`, same generic symptom). Join aliases (`'... AS domainrecord'` etc.) are
+unaffected — they go through a separate join-builder code path that does support aliasing. Fixed
+by keeping `'FROM'` unaliased (the real table name) and referencing it by that name directly in
+`SELECT`/`WHERE`/join `ON` criteria, matching every other provider in this file.
+
+**Post-ship bugfix pass 2 — duplicate "unmatched"/"not proxied" buckets.** Same live container,
+same session: `recordsByDnsProvider()`/`proxiedRecordsBreakdown()` each returned *two* rows for
+what should have been one bucket (e.g. "Not proxied" split 49 + 1 instead of 50). Root cause:
+`GROUPBY => ['is_proxied']`/`['dns_suppliers_id']` referenced the `COALESCE(...)` `SELECT` alias
+by name, but a *real* column of that same name also exists in the query's joined tables
+(`ImportedRecord.is_proxied`, `DomainState.dns_suppliers_id`) — MySQL's `GROUP BY` name resolution
+prefers a real column over a same-named `SELECT` alias when both exist, so rows grouped on the
+raw (pre-`COALESCE`) value, splitting `NULL` and literal `0`/no-match apart. Fixed both by
+repeating the full `COALESCE(...)` expression in `GROUPBY` (as a `QueryExpression`) instead of
+referencing the alias — same "repeat the expression, don't rely on the alias" pattern
+`domainsByRegistrar()`'s `CASE` expression already uses (§20.3c, fix 2).
+**`domainsByDnsProvider()` (Phase 84) has the identical latent hazard** (same
+alias/real-column-name collision, same GROUPBY-by-alias-name shape) — not fixed here since it
+didn't manifest in the test data (no unmatched-supplier rows to observe the split) and wasn't in
+scope for this pass; fix it the same way next time that card is touched.
+
+Separately, the 4 new cards also appeared broken ("empty card!") when the user first added them
+to their live dashboard — this turned out to be a dashboard *configuration* issue, not a code
+bug: GLPI's "add card" UI had saved them with `card_options.widgettype = ""` (no chart type
+picked). `Grid::getCardHtml()` looks up the render function by `widgettype`; empty resolves to no
+function, `$html` stays `''`, and `getCardHtml()`'s own `if ($html === '') { return
+$notfound_html; }` branch returns the exact same "empty card!" text as its `!isset($cards[$id])`
+branch — the two failure modes are indistinguishable from the rendered HTML alone. Confirmed live
+by forcing a real `widgettype` onto the same saved rows and re-rendering successfully with no code
+changes. No fix needed in this repo; resolved by picking a chart type in the dashboard UI.
+
+**Phase 85 follow-up 3 — "Number of Managed Domains" card, and a real bug it caught.** Added
+`domainsCount()`/`plugin_domainmanager_domains_count` after user feedback that
+`recordsCount()`'s "Managed Records" number could be mistaken for a domain count, and that core's
+own generic `bn_count_Domain` card (no deleted/template/entity scoping at all) isn't the same
+number either. The first implementation only applied the usual `is_deleted`/`is_template`/entity
+scope — **not** an actual "managed" filter — conflating "domains GLPI knows about" with "domains
+this plugin manages": there already is a domain-level `is_managed` flag
+(`DomainState.is_managed`, SO `PLUGIN_DOMAINMANAGER_SO_DOMAIN_MANAGED`/9406, §14 below), the exact
+one `DomainForm::injectDomain()`'s `$is_managed` already surfaces on `domain.form.php`. Fixed by
+joining `DomainState` and filtering `is_managed = 1`; verified live (19 managed vs. 20 in-scope
+domains — one domain exists with no state row or `is_managed = 0`).
+
+### 20.8 Backlog — domain.form: hide the injected panel entirely for a never-synced domain
+
+Raised during the Phase 85 follow-up work above, deferred to its own phase (not yet numbered/
+designed in detail — see `docs/plans/` once a plan file is written): `DomainForm::injectDomain()`
+currently always renders `domain_panel.html.twig` (and, via `is_managed`'s false branch already in
+that template, a "Not managed" message) whenever the viewing user has Domain `READ`, regardless of
+whether the domain has ever been synced at all (`DomainState::getForDomain()` returns `null`).
+Per user direction: when there is no state row yet (never synced — distinct from "synced but
+`is_managed = 0`", which should presumably keep showing the existing "not managed" message), hide
+the entire injected section rather than showing a mostly-empty panel. Needs a decision on
+`onShowTab()`'s `renderManagedIndicator()` call on other tabs too (same `$state === null`
+condition would apply there for consistency) before implementation.

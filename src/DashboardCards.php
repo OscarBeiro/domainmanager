@@ -32,6 +32,8 @@
 namespace GlpiPlugin\Domainmanager;
 
 use Domain;
+use DomainRecord;
+use DomainRecordType;
 use Glpi\Dashboard\Dashboard;
 use Glpi\Dashboard\Item;
 use Glpi\DBAL\QueryExpression;
@@ -112,12 +114,57 @@ class DashboardCards
             'cache'      => false,
         ];
 
+        $cards['plugin_domainmanager_domains_count'] = [
+            'widgettype' => ['bigNumber'],
+            'itemtype'   => Domain::class,
+            'group'      => __s('Domain Manager'),
+            'label'      => __s('Number of Managed Domains', 'domainmanager'),
+            'provider'   => self::class . '::domainsCount',
+            'cache'      => false,
+        ];
+
         $cards['plugin_domainmanager_expiring_soon'] = [
             'widgettype' => ['bigNumber'],
             'itemtype'   => Domain::class,
             'group'      => __s('Domain Manager'),
             'label'      => __s('Number of Domains expiring soon (less than 30 days)', 'domainmanager'),
             'provider'   => self::class . '::domainsExpiringSoon',
+            'cache'      => false,
+        ];
+
+        $cards['plugin_domainmanager_records_count'] = [
+            'widgettype' => ['bigNumber'],
+            'itemtype'   => DomainRecord::class,
+            'group'      => __s('Domain Manager'),
+            'label'      => __s('Number of Managed Records', 'domainmanager'),
+            'provider'   => self::class . '::recordsCount',
+            'cache'      => false,
+        ];
+
+        $cards['plugin_domainmanager_records_by_type'] = [
+            'widgettype' => ['pie', 'donut', 'multipleNumber', 'bar', 'hbar'],
+            'itemtype'   => DomainRecord::class,
+            'group'      => __s('Domain Manager'),
+            'label'      => __s('Managed records by type', 'domainmanager'),
+            'provider'   => self::class . '::recordsByType',
+            'cache'      => false,
+        ];
+
+        $cards['plugin_domainmanager_records_by_dns_provider'] = [
+            'widgettype' => ['pie', 'donut', 'multipleNumber', 'bar', 'hbar'],
+            'itemtype'   => DomainRecord::class,
+            'group'      => __s('Domain Manager'),
+            'label'      => __s('Managed records by DNS provider', 'domainmanager'),
+            'provider'   => self::class . '::recordsByDnsProvider',
+            'cache'      => false,
+        ];
+
+        $cards['plugin_domainmanager_proxied_records'] = [
+            'widgettype' => ['donut'],
+            'itemtype'   => DomainRecord::class,
+            'group'      => __s('Domain Manager'),
+            'label'      => __s('Proxied records', 'domainmanager'),
+            'provider'   => self::class . '::proxiedRecordsBreakdown',
             'cache'      => false,
         ];
 
@@ -213,7 +260,8 @@ class DashboardCards
                         'field'      => 53,
                         'searchtype' => 'equals',
                         'value'      => $suppliers_id,
-                    ]],
+                    ]
+                    ],
                     'reset'    => 'reset',
                 ];
 
@@ -293,7 +341,8 @@ class DashboardCards
                         'field'      => PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_SUPPLIER,
                         'searchtype' => 'equals',
                         'value'      => $suppliers_id,
-                    ]],
+                    ]
+                    ],
                     'reset'    => 'reset',
                 ];
 
@@ -429,6 +478,65 @@ class DashboardCards
     }
 
     /**
+     * "Number of Managed Domains" bigNumber: count of `Domain` rows with
+     * `DomainState.is_managed = 1` — the actual domain-level "Managed" flag
+     * (search option `PLUGIN_DOMAINMANAGER_SO_DOMAIN_MANAGED`/9406,
+     * §9 Phase 14) already surfaced on `domain.form.php`'s injected panel
+     * (`DomainForm::injectDomain()`'s `$is_managed`) and search UI — not a
+     * bare scope count (a first pass here mistakenly counted every
+     * in-scope `Domain` row regardless of `is_managed`, conflating "domains
+     * GLPI knows about" with "domains this plugin actually manages").
+     * Distinct from both core's own generic "Number of Domain" card
+     * (`bn_count_Domain`, no such filter at all) and `recordsCount()`'s
+     * record-level "Managed Records" count (`ImportedRecord.is_managed`, a
+     * different table/flag entirely).
+     */
+    public static function domainsCount(array $params = []): array
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $where = array_merge(
+            [
+                DomainState::getTable() . '.is_managed' => 1,
+                'glpi_domains.is_deleted'                => 0,
+                'glpi_domains.is_template'                => 0,
+            ],
+            getEntitiesRestrictCriteria('glpi_domains', '', '', true),
+        );
+
+        $iterator = $DB->request([
+            'SELECT'    => ['COUNT DISTINCT' => 'glpi_domains.id AS cpt'],
+            'FROM'      => 'glpi_domains',
+            'INNER JOIN' => [
+                DomainState::getTable() => [
+                    'ON' => [DomainState::getTable() => 'domains_id', 'glpi_domains' => 'id'],
+                ],
+            ],
+            'WHERE'     => $where,
+        ]);
+        $count = (int) ($iterator->current()['cpt'] ?? 0);
+
+        $criteria = [
+            'criteria' => [[
+                'field'      => PLUGIN_DOMAINMANAGER_SO_DOMAIN_MANAGED,
+                'searchtype' => 'equals',
+                'value'      => 1,
+            ]
+            ],
+            'reset'    => 'reset',
+        ];
+
+        return [
+            'number' => $count,
+            'url'    => Domain::getSearchURL() . '?' . Toolbox::append_params($criteria),
+            'label'  => __('Managed domains', 'domainmanager'),
+            'alt'    => __('Number of Managed Domains', 'domainmanager'),
+            'icon'   => self::ICON,
+        ];
+    }
+
+    /**
      * "Domains expiring soon" card (Phase 81): bigNumber count of Domain
      * rows whose native `date_expiration` falls within the next
      * self::EXPIRING_SOON_DAYS days — a fixed window, not the per-entity
@@ -512,6 +620,329 @@ class DashboardCards
     }
 
     /**
+     * "Managed records" bigNumber (Phase 85): counts `ImportedRecord` rows
+     * with `is_managed = 1` joined back to their native `DomainRecord`/
+     * `Domain` for the deleted/template/entity filters every other card
+     * here applies.
+     */
+    public static function recordsCount(array $params = []): array
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $recordsTable = ImportedRecord::getTable();
+
+        $where = array_merge(
+            [
+                $recordsTable . '.is_managed' => 1,
+                'glpi_domains.is_deleted'     => 0,
+                'glpi_domains.is_template'    => 0,
+            ],
+            getEntitiesRestrictCriteria('glpi_domains', '', '', true),
+        );
+
+        $iterator = $DB->request([
+            'SELECT'    => ['COUNT DISTINCT' => $recordsTable . '.id AS cpt'],
+            // Bare (unaliased) FROM: DBmysqlIterator::buildQuery() runs
+            // DBmysql::quoteName() on the *entire* 'FROM' string when it's
+            // a plain scalar — `'<table> AS <alias>'` gets wrapped whole in
+            // backticks as one broken identifier (silent SQL syntax error,
+            // surfaced only as "Error rendering card!"). Every join alias
+            // below ('... AS domainrecord' etc.) goes through the separate
+            // join-builder code path instead, which does handle aliasing —
+            // only the top-level FROM table can't be aliased this way.
+            'FROM'      => $recordsTable,
+            'INNER JOIN' => [
+                DomainRecord::getTable() . ' AS domainrecord' => [
+                    'ON' => [$recordsTable => 'domainrecords_id', 'domainrecord' => 'id'],
+                ],
+                'glpi_domains' => [
+                    'ON' => ['domainrecord' => 'domains_id', 'glpi_domains' => 'id'],
+                ],
+            ],
+            'WHERE'     => $where,
+        ]);
+        $count = (int) ($iterator->current()['cpt'] ?? 0);
+
+        $criteria = [
+            'criteria' => [[
+                'field'      => PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_MANAGED,
+                'searchtype' => 'equals',
+                'value'      => 1,
+            ]
+            ],
+            'reset'    => 'reset',
+        ];
+
+        return [
+            'number' => $count,
+            'url'    => DomainRecord::getSearchURL() . '?' . Toolbox::append_params($criteria),
+            'label'  => __('Records', 'domainmanager'),
+            'alt'    => __('Number of Managed Records', 'domainmanager'),
+            'icon'   => self::ICON,
+        ];
+    }
+
+    /**
+     * "Managed records by type" (Phase 85): same ownership scope as
+     * recordsCount(), grouped by `DomainRecordType` (native SO id 3 on
+     * `DomainRecord`). Drill-down needs both the type and the "Managed"
+     * flag, so `toChartData()`'s default single-field `equals` builder
+     * can't be used — the same two-criteria pattern as
+     * `domainsExpiringSoon()`'s date bracket.
+     */
+    public static function recordsByType(array $params = []): array
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $recordsTable = ImportedRecord::getTable();
+
+        $iterator = $DB->request([
+            'SELECT'    => [
+                'domainrecordtype.id AS domainrecordtypes_id',
+                new QueryExpression('MAX(' . $DB->quoteName('domainrecordtype.name') . ') AS ' . $DB->quoteName('type_name')),
+                'COUNT DISTINCT' => $recordsTable . '.id AS cpt',
+            ],
+            // See recordsCount() for why FROM stays unaliased.
+            'FROM'      => $recordsTable,
+            'INNER JOIN' => [
+                DomainRecord::getTable() . ' AS domainrecord' => [
+                    'ON' => [$recordsTable => 'domainrecords_id', 'domainrecord' => 'id'],
+                ],
+                'glpi_domains' => [
+                    'ON' => ['domainrecord' => 'domains_id', 'glpi_domains' => 'id'],
+                ],
+                DomainRecordType::getTable() . ' AS domainrecordtype' => [
+                    'ON' => ['domainrecord' => 'domainrecordtypes_id', 'domainrecordtype' => 'id'],
+                ],
+            ],
+            'WHERE'     => array_merge(
+                [
+                    $recordsTable . '.is_managed' => 1,
+                    'glpi_domains.is_deleted'     => 0,
+                    'glpi_domains.is_template'    => 0,
+                ],
+                getEntitiesRestrictCriteria('glpi_domains', '', '', true),
+            ),
+            'GROUPBY'   => ['domainrecordtype.id'],
+            'ORDER'     => 'cpt DESC',
+        ]);
+
+        return self::toChartData(
+            $iterator,
+            'domainrecordtypes_id',
+            'type_name',
+            'cpt',
+            3,
+            null,
+            static function (array $row) {
+                $criteria = [
+                    'criteria' => [
+                        [
+                            'field'      => 3,
+                            'searchtype' => 'equals',
+                            'value'      => (int) ($row['domainrecordtypes_id'] ?? 0),
+                        ],
+                        [
+                            'link'       => 'AND',
+                            'field'      => PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_MANAGED,
+                            'searchtype' => 'equals',
+                            'value'      => 1,
+                        ],
+                    ],
+                    'reset'    => 'reset',
+                ];
+
+                return DomainRecord::getSearchURL() . '?' . Toolbox::append_params($criteria);
+            },
+            __('Records by type', 'domainmanager'),
+            __('Managed records by type', 'domainmanager'),
+        );
+    }
+
+    /**
+     * "Managed records by DNS provider" (Phase 85): same
+     * domain->`DomainState`->Supplier matching shape as
+     * `domainsByDnsProvider()`, counted over records instead of domains.
+     * Unlike that card, there is no search option exposing
+     * `DomainState.dns_suppliers_id` under the `DomainRecord` itemtype
+     * (`PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_SUPPLIER` is only registered for
+     * `Domain`), so the drill-down can only carry the "Managed" criterion —
+     * a superset of each segment's exact scope, same accepted tradeoff as
+     * `domainsByRegistrar()`'s "no driver" bucket / `proxiedRecordsBreakdown()`
+     * below.
+     */
+    public static function recordsByDnsProvider(array $params = []): array
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $recordsTable = ImportedRecord::getTable();
+        // Repeated below (SELECT + GROUPBY) rather than referenced by its
+        // SELECT alias — `DomainState` has a real `dns_suppliers_id` column
+        // of its own, so a bare `GROUPBY => ['dns_suppliers_id']` resolves
+        // to that raw, non-coalesced column instead of the SELECT-list
+        // alias (a real column always wins over a same-named alias in
+        // MySQL's GROUP BY resolution), splitting NULL/0 into separate
+        // "unmatched" buckets. See proxiedRecordsBreakdown()'s identical
+        // fix for the same hazard.
+        $dnsSuppliersIdExpr = 'COALESCE(' . $DB->quoteName(DomainState::getTable() . '.dns_suppliers_id') . ', 0)';
+
+        $iterator = $DB->request([
+            'SELECT'    => [
+                new QueryExpression($dnsSuppliersIdExpr . ' AS ' . $DB->quoteName('dns_suppliers_id')),
+                new QueryExpression('MAX(' . $DB->quoteName('supplier.name') . ') AS ' . $DB->quoteName('supplier_name')),
+                'COUNT DISTINCT' => $recordsTable . '.id AS cpt',
+            ],
+            // See recordsCount() for why FROM stays unaliased.
+            'FROM'      => $recordsTable,
+            'INNER JOIN' => [
+                DomainRecord::getTable() . ' AS domainrecord' => [
+                    'ON' => [$recordsTable => 'domainrecords_id', 'domainrecord' => 'id'],
+                ],
+                'glpi_domains' => [
+                    'ON' => ['domainrecord' => 'domains_id', 'glpi_domains' => 'id'],
+                ],
+            ],
+            'LEFT JOIN' => [
+                DomainState::getTable() => [
+                    'ON' => [DomainState::getTable() => 'domains_id', 'glpi_domains' => 'id'],
+                ],
+                'glpi_suppliers AS supplier' => [
+                    'ON' => ['supplier' => 'id', DomainState::getTable() => 'dns_suppliers_id'],
+                ],
+            ],
+            'WHERE'     => array_merge(
+                [
+                    $recordsTable . '.is_managed' => 1,
+                    'glpi_domains.is_deleted'     => 0,
+                    'glpi_domains.is_template'    => 0,
+                ],
+                getEntitiesRestrictCriteria('glpi_domains', '', '', true),
+            ),
+            'GROUPBY'   => [new QueryExpression($dnsSuppliersIdExpr)],
+            'ORDER'     => 'cpt DESC',
+        ]);
+
+        return self::toChartData(
+            $iterator,
+            'dns_suppliers_id',
+            'supplier_name',
+            'cpt',
+            PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_MANAGED,
+            ['0' => __('Not matched to a supplier', 'domainmanager')],
+            static function (array $row) {
+                $criteria = [
+                    'criteria' => [[
+                        'field'      => PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_MANAGED,
+                        'searchtype' => 'equals',
+                        'value'      => 1,
+                    ]
+                    ],
+                    'reset'    => 'reset',
+                ];
+
+                return DomainRecord::getSearchURL() . '?' . Toolbox::append_params($criteria);
+            },
+            __('Records by DNS provider', 'domainmanager'),
+            __('Managed records by DNS provider', 'domainmanager'),
+        );
+    }
+
+    /**
+     * "Proxied records" (Phase 85): managed A/AAAA/CNAME records whose
+     * domain's DNS provider resolves to a Cloudflare-driven Supplier —
+     * mirrors `DnsRecordWriteback::PROXIABLE_TYPES` and the Cloudflare-only
+     * proxy support already established. Drill-down only carries SO 9405
+     * (proxy flag) — same superset tradeoff as `domainsByRegistrar()`'s "no
+     * driver" bucket, since the type/Cloudflare scope isn't otherwise
+     * expressible via a single search-option criterion.
+     */
+    public static function proxiedRecordsBreakdown(array $params = []): array
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $recordsTable = ImportedRecord::getTable();
+        // Repeated below (SELECT + GROUPBY), never referenced by its SELECT
+        // alias: `$recordsTable` (glpi_plugin_domainmanager_records) has a
+        // real `is_proxied` column of its own, so a bare `GROUPBY =>
+        // ['is_proxied']` resolves to that raw, non-coalesced column
+        // instead of the SELECT-list alias (a real column always wins over
+        // a same-named alias in MySQL's GROUP BY resolution) — NULL and 0
+        // rows silently split into two "Not proxied" buckets instead of
+        // one. Same "repeat the expression, don't rely on the alias"
+        // pattern as domainsByRegistrar()'s CASE expression.
+        $isProxiedExpr = 'COALESCE(' . $DB->quoteName($recordsTable . '.is_proxied') . ', 0)';
+
+        $iterator = $DB->request([
+            'SELECT'    => [
+                new QueryExpression($isProxiedExpr . ' AS ' . $DB->quoteName('is_proxied')),
+                'COUNT DISTINCT' => $recordsTable . '.id AS cpt',
+            ],
+            // See recordsCount() for why FROM stays unaliased.
+            'FROM'      => $recordsTable,
+            'INNER JOIN' => [
+                DomainRecord::getTable() . ' AS domainrecord' => [
+                    'ON' => [$recordsTable => 'domainrecords_id', 'domainrecord' => 'id'],
+                ],
+                'glpi_domains' => [
+                    'ON' => ['domainrecord' => 'domains_id', 'glpi_domains' => 'id'],
+                ],
+                DomainRecordType::getTable() . ' AS domainrecordtype' => [
+                    'ON' => ['domainrecord' => 'domainrecordtypes_id', 'domainrecordtype' => 'id'],
+                ],
+                DomainState::getTable() => [
+                    'ON' => [DomainState::getTable() => 'domains_id', 'glpi_domains' => 'id'],
+                ],
+                'glpi_suppliers AS supplier' => [
+                    'ON' => ['supplier' => 'id', DomainState::getTable() => 'dns_suppliers_id'],
+                ],
+                SupplierConfig::getTable() . ' AS supplier_config' => [
+                    'ON' => ['supplier_config' => 'suppliers_id', 'supplier' => 'id'],
+                ],
+            ],
+            'WHERE'     => array_merge(
+                [
+                    $recordsTable . '.is_managed' => 1,
+                    'domainrecordtype.name'       => ['A', 'AAAA', 'CNAME'],
+                    'supplier_config.api_driver'  => DriverRegistry::DRIVER_CLOUDFLARE,
+                    'glpi_domains.is_deleted'      => 0,
+                    'glpi_domains.is_template'     => 0,
+                ],
+                getEntitiesRestrictCriteria('glpi_domains', '', '', true),
+            ),
+            'GROUPBY'   => [new QueryExpression($isProxiedExpr)],
+            'ORDER'     => 'cpt DESC',
+        ]);
+
+        return self::toChartData(
+            $iterator,
+            'is_proxied',
+            'is_proxied',
+            'cpt',
+            PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_PROXY,
+            ['1' => __('Proxied'), '0' => __('Not proxied')],
+            static function (array $row) {
+                $criteria = [
+                    'criteria' => [[
+                        'field'      => PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_PROXY,
+                        'searchtype' => 'equals',
+                        'value'      => (int) ($row['is_proxied'] ?? 0),
+                    ]
+                    ],
+                    'reset'    => 'reset',
+                ];
+
+                return DomainRecord::getSearchURL() . '?' . Toolbox::append_params($criteria);
+            },
+            __('Proxied records', 'domainmanager'),
+            __('Proxied records', 'domainmanager'),
+        );
+    }
+
+    /**
      * Shared chart-shape builder for single-series pie/donut/bar/hbar/
      * multipleNumber cards — matches the flat `{number, label, url}`-per-
      * entry shape `Glpi\Dashboard\Widget::pie()`/`simpleBar()`/
@@ -588,7 +1019,8 @@ class DashboardCards
                         'field'      => $searchoption_id,
                         'searchtype' => 'equals',
                         'value'      => $value ?? 0,
-                    ]],
+                    ]
+                    ],
                     'reset'    => 'reset',
                 ];
                 $url = Domain::getSearchURL() . '?' . Toolbox::append_params($criteria);
@@ -684,6 +1116,51 @@ class DashboardCards
                 'width'        => 3,
                 'height'       => 2,
                 'card_options' => ['widgettype' => 'bigNumber'],
+            ],
+            [
+                'gridstack_id' => 'plugin_domainmanager_domains_count_' . Uuid::uuid4(),
+                'card_id'      => 'plugin_domainmanager_domains_count',
+                'x'            => 7,
+                'y'            => 3,
+                'width'        => 3,
+                'height'       => 2,
+                'card_options' => ['widgettype' => 'bigNumber'],
+            ],
+            [
+                'gridstack_id' => 'plugin_domainmanager_records_count_' . Uuid::uuid4(),
+                'card_id'      => 'plugin_domainmanager_records_count',
+                'x'            => 10,
+                'y'            => 3,
+                'width'        => 3,
+                'height'       => 2,
+                'card_options' => ['widgettype' => 'bigNumber'],
+            ],
+            [
+                'gridstack_id' => 'plugin_domainmanager_records_by_type_' . Uuid::uuid4(),
+                'card_id'      => 'plugin_domainmanager_records_by_type',
+                'x'            => 0,
+                'y'            => 6,
+                'width'        => 4,
+                'height'       => 3,
+                'card_options' => ['widgettype' => 'donut'],
+            ],
+            [
+                'gridstack_id' => 'plugin_domainmanager_records_by_dns_provider_' . Uuid::uuid4(),
+                'card_id'      => 'plugin_domainmanager_records_by_dns_provider',
+                'x'            => 4,
+                'y'            => 6,
+                'width'        => 4,
+                'height'       => 3,
+                'card_options' => ['widgettype' => 'donut'],
+            ],
+            [
+                'gridstack_id' => 'plugin_domainmanager_proxied_records_' . Uuid::uuid4(),
+                'card_id'      => 'plugin_domainmanager_proxied_records',
+                'x'            => 8,
+                'y'            => 6,
+                'width'        => 4,
+                'height'       => 3,
+                'card_options' => ['widgettype' => 'donut'],
             ],
         ];
 
