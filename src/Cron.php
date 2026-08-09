@@ -456,7 +456,16 @@ class Cron
             // forceUpdate()'s own docblock.
             DomainState::forceUpdate($state->getID(), $input);
         } else {
-            (new DomainState())->add(['domains_id' => $domains_id] + $input);
+            // Unlike the update branch above, a brand-new state row here
+            // has no prior HookHandler::domainSaved() run to have cached
+            // `tld` for it (this can be the very first state row a domain
+            // ever gets, created straight from RDAP enrichment) — compute
+            // it now rather than leaving it empty until an unrelated Domain
+            // edit happens to trigger the hook.
+            $domain = new Domain();
+            $tld    = $domain->getFromDB($domains_id) ? TldExtractor::extract((string) $domain->fields['name']) : '';
+
+            (new DomainState())->add(['domains_id' => $domains_id, 'tld' => $tld] + $input);
         }
     }
 

@@ -90,6 +90,24 @@ class DashboardCards
             'cache'      => false,
         ];
 
+        $cards['plugin_domainmanager_domains_by_tld'] = [
+            'widgettype' => ['pie', 'donut', 'multipleNumber', 'bar', 'hbar'],
+            'itemtype'   => Domain::class,
+            'group'      => __s('Domain Manager'),
+            'label'      => __s('Managed domains by TLD', 'domainmanager'),
+            'provider'   => self::class . '::domainsByTld',
+            'cache'      => false,
+        ];
+
+        $cards['plugin_domainmanager_domains_by_registrar_and_tld'] = [
+            'widgettype' => ['bars', 'hBars', 'stackedbars', 'stackedHBars', 'lines'],
+            'itemtype'   => Domain::class,
+            'group'      => __s('Domain Manager'),
+            'label'      => __s('Managed domains per registrar by TLD', 'domainmanager'),
+            'provider'   => self::class . '::domainsByRegistrarAndTld',
+            'cache'      => false,
+        ];
+
         $cards['plugin_domainmanager_sync_status'] = [
             'widgettype' => ['pie', 'donut', 'multipleNumber', 'bar', 'hbar'],
             'itemtype'   => Domain::class,
@@ -360,6 +378,211 @@ class DashboardCards
             __('Domains per DNS provider', 'domainmanager'),
             __('Managed domains per DNS provider', 'domainmanager'),
         );
+    }
+
+    /**
+     * "Domains by TLD" card (Phase 83 "per-TLD dashboard breakdown"): groups
+     * Domain by the cached `DomainState.tld` column (see `TldExtractor`,
+     * `Installer::addTldColumn()`) — a `LIKE '%.com'` scan on every
+     * dashboard render doesn't scale, hence the dedicated indexed column.
+     * `tld` is a plain direct column (not a CASE/COALESCE expression like
+     * `domainsByRegistrar()`'s registrar bucket), but a domain with no
+     * state row yet (LEFT JOIN) still needs its NULL folded into the empty-
+     * string "not yet computed" bucket, so the same "repeat the full
+     * expression in GROUPBY, don't rely on the alias" pattern applies here
+     * too — `DomainState.tld` is a real joined column with the same name as
+     * the SELECT alias, and MySQL prefers the real (un-coalesced, possibly
+     * NULL) column over the alias when resolving GROUP BY.
+     *
+     * Rows with no real TLD — no state row yet (NULL), never synced (empty
+     * string), or `TldExtractor::extract()` deliberately returned '' for a
+     * reserved/private-use suffix (`.internal`, `.local`, …) or a malformed,
+     * dot-less domain name — are excluded outright rather than folded into
+     * a "Not set" bucket: this is a breakdown of real internet TLDs, and a
+     * GLPI test/inventory entry like `something.internal` has no place next
+     * to `.com`/`.gal` in it. `tld <> ''` also excludes NULL rows: SQL's
+     * three-valued logic means `NULL <> ''` evaluates to NULL, which WHERE
+     * treats as false.
+     */
+    public static function domainsByTld(array $params = []): array
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $iterator = $DB->request([
+            'SELECT'    => [
+                DomainState::getTable() . '.tld AS tld',
+                'COUNT DISTINCT' => 'glpi_domains.id AS cpt',
+            ],
+            'FROM'      => 'glpi_domains',
+            'INNER JOIN' => [
+                DomainState::getTable() => [
+                    'ON' => [DomainState::getTable() => 'domains_id', 'glpi_domains' => 'id'],
+                ],
+            ],
+            'WHERE'     => array_merge(
+                [
+                    'glpi_domains.is_deleted'    => 0,
+                    'glpi_domains.is_template'   => 0,
+                    DomainState::getTable() . '.tld' => ['<>', ''],
+                ],
+                getEntitiesRestrictCriteria('glpi_domains', '', '', true),
+            ),
+            'GROUPBY'   => [DomainState::getTable() . '.tld'],
+            'ORDER'     => 'cpt DESC',
+        ]);
+
+        return self::toChartData(
+            $iterator,
+            'tld',
+            'tld',
+            'cpt',
+            PLUGIN_DOMAINMANAGER_SO_DOMAIN_TLD,
+            null,
+            null,
+            __('Domains by TLD', 'domainmanager'),
+            __('Managed domains by TLD', 'domainmanager'),
+        );
+    }
+
+    /**
+     * "Domains per registrar by TLD" card (Phase 83 follow-up, user-
+     * requested "3-dimensional" view): a genuinely multi-dimensional card,
+     * same shape/rationale as `recordsByDnsProviderAndType()` — "per
+     * registrar" is the primary axis (one label per registrar Supplier,
+     * same "no driver linked" bucketing as `domainsByRegistrar()`), broken
+     * down by TLD (one series per TLD), mirroring
+     * `recordsByDnsProviderAndType()`'s own "per DNS provider" (labels) "by
+     * type" (series) axis assignment. Only
+     * `bars`/`hBars`/`stackedbars`/`stackedHBars`/`lines` read this shape;
+     * `pie`/`donut`/`bigNumber` would silently misrender it.
+     *
+     * Labels (registrars) sorted ascending by total domain count, same
+     * "keep the tail" reasoning as `recordsByDnsProviderAndType()` — the
+     * dashboard widget's client-side "limit" control trims from the front
+     * of the labels array, so the biggest registrar buckets must be last
+     * here to survive a limit smaller than the number of registrars
+     * present.
+     *
+     * Same "exclude, don't bucket" treatment of a domain with no real TLD
+     * as `domainsByTld()` — an INNER JOIN to the states table plus
+     * `tld <> ''` (see that method's own doc comment for the NULL/empty
+     * reasoning) rather than a LEFT JOIN + COALESCE + "Not set" series.
+     */
+    public static function domainsByRegistrarAndTld(array $params = []): array
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        // Same CASE expression as domainsByRegistrar() — only a Supplier
+        // with an active API driver linked counts as a real "registrar".
+        $registrarSuppliersExpr = 'CASE WHEN supplier_config.id IS NOT NULL THEN infocom.suppliers_id ELSE 0 END';
+
+        $iterator = $DB->request([
+            'SELECT'    => [
+                new QueryExpression($registrarSuppliersExpr . ' AS ' . $DB->quoteName('registrar_suppliers_id')),
+                new QueryExpression('MAX(' . $DB->quoteName('supplier.name') . ') AS ' . $DB->quoteName('supplier_name')),
+                DomainState::getTable() . '.tld AS tld',
+                'COUNT DISTINCT' => 'glpi_domains.id AS cpt',
+            ],
+            'FROM'      => 'glpi_domains',
+            'INNER JOIN' => [
+                DomainState::getTable() => [
+                    'ON' => [DomainState::getTable() => 'domains_id', 'glpi_domains' => 'id'],
+                ],
+            ],
+            'LEFT JOIN' => [
+                'glpi_infocoms AS infocom' => [
+                    'ON' => [
+                        'infocom'      => 'items_id',
+                        'glpi_domains' => 'id',
+                        ['AND' => ['infocom.itemtype' => Domain::class]],
+                    ],
+                ],
+                'glpi_suppliers AS supplier' => [
+                    'ON' => ['supplier' => 'id', 'infocom' => 'suppliers_id'],
+                ],
+                SupplierConfig::getTable() . ' AS supplier_config' => [
+                    'ON' => [
+                        'supplier_config' => 'suppliers_id',
+                        'infocom'         => 'suppliers_id',
+                        ['AND' => ['supplier_config.api_driver' => ['<>', DriverRegistry::DRIVER_NONE]]],
+                    ],
+                ],
+            ],
+            'WHERE'     => array_merge(
+                [
+                    'glpi_domains.is_deleted'        => 0,
+                    'glpi_domains.is_template'       => 0,
+                    DomainState::getTable() . '.tld' => ['<>', ''],
+                ],
+                getEntitiesRestrictCriteria('glpi_domains', '', '', true),
+            ),
+            'GROUPBY'   => [new QueryExpression($registrarSuppliersExpr), DomainState::getTable() . '.tld'],
+        ]);
+
+        $registrarTotals = [];
+        $registrarNames  = [];
+        $tldNames        = [];
+        $matrix          = [];
+
+        foreach ($iterator as $row) {
+            $tld          = (string) ($row['tld'] ?? '');
+            $suppliers_id = (int) ($row['registrar_suppliers_id'] ?? 0);
+            $cpt          = (int) ($row['cpt'] ?? 0);
+
+            $registrarTotals[$suppliers_id] = ($registrarTotals[$suppliers_id] ?? 0) + $cpt;
+            $registrarNames[$suppliers_id]  = $row['supplier_name'] ?? null;
+            $tldNames[$tld]                 = $tld !== '' ? $tld : __('Not set');
+            $matrix[$suppliers_id][$tld]    = $cpt;
+        }
+
+        if (count($registrarTotals) === 0) {
+            return [
+                'data'  => ['nodata' => true],
+                'label' => __('Domains per registrar by TLD', 'domainmanager'),
+                'alt'   => __('Managed domains per registrar by TLD', 'domainmanager'),
+                'icon'  => self::ICON,
+            ];
+        }
+
+        // Ascending, deliberately — see this method's doc comment.
+        asort($registrarTotals);
+
+        $registrarLabelMap = ['0' => __('No driver linked', 'domainmanager')];
+
+        $labels     = [];
+        $seriesData = [];
+        foreach ($registrarTotals as $suppliers_id => $total) {
+            if (isset($registrarLabelMap[(string) $suppliers_id])) {
+                $labels[] = $registrarLabelMap[(string) $suppliers_id];
+            } else {
+                $name     = $registrarNames[$suppliers_id] ?? null;
+                $labels[] = ($name === null || $name === '') ? __('Not set') : $name;
+            }
+
+            foreach ($tldNames as $tld => $tldLabel) {
+                $seriesData[$tld][] = $matrix[$suppliers_id][$tld] ?? 0;
+            }
+        }
+
+        $series = [];
+        foreach ($tldNames as $tld => $tldLabel) {
+            $series[] = [
+                'name' => $tldLabel,
+                'data' => $seriesData[$tld],
+            ];
+        }
+
+        return [
+            'data'  => [
+                'labels' => $labels,
+                'series' => $series,
+            ],
+            'label' => __('Domains per registrar by TLD', 'domainmanager'),
+            'alt'   => __('Managed domains per registrar by TLD', 'domainmanager'),
+            'icon'  => self::ICON,
+        ];
     }
 
     /**

@@ -41,7 +41,7 @@ use GlpiPlugin\Domainmanager\Profile as DomainmanagerProfile;
 use GlpiPlugin\Domainmanager\Service\DnsRecordWriteback;
 use GlpiPlugin\Domainmanager\SupplierTab;
 
-define('PLUGIN_DOMAINMANAGER_VERSION', '1.7.0-beta5');
+define('PLUGIN_DOMAINMANAGER_VERSION', '1.7.0-beta6');
 define('PLUGIN_DOMAINMANAGER_MIN_GLPI', '11.0.0');
 define('PLUGIN_DOMAINMANAGER_MAX_GLPI', '11.0.99');
 define('PLUGIN_DOMAINMANAGER_REPOSITORY_URL', 'https://github.com/TICGAL-GLPI-Plugins/domainmanager');
@@ -149,6 +149,13 @@ define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_GLPI_CREATED', 9431);
 // previously-documented id stays a permanent gap, same reasoning as
 // 9425/9426/9429 above.
 define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_SUPPLIER', 9432);
+// Real, filterable search option on Domain (Phase 83 "per-TLD dashboard
+// breakdown"): the cached `tld` column on the states table (see
+// Installer::addTldColumn(), TldExtractor). Plain direct column, not a
+// derived CASE/COALESCE expression, so `searchequalsonfield` isn't needed
+// here (contrast PLUGIN_DOMAINMANAGER_SO_DOMAIN_NS_PROVIDER's
+// `detected_provider`, ARCHITECTURE.md §20.6).
+define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_TLD', 9433);
 
 /**
  * Plugin_Version_Domainmanager
@@ -322,6 +329,34 @@ function plugin_domainmanager_getAddSearchOptionsNew($itemtype): array
                         'jointype' => 'child',
                     ],
                 ],
+            ],
+        ];
+        // Cached `tld` column (Phase 83 "per-TLD dashboard breakdown").
+        // 'datatype' => 'specific' (not free-text 'text'): a typed TLD is
+        // easy to get wrong (leading dot, wrong case, a value nothing
+        // actually uses) — DomainState::getSpecificValueToSelect()/
+        // getSpecificValueToDisplay() render/populate this as a dropdown of
+        // the TLDs actually present in the data instead, same dispatch
+        // pattern as NS_PROVIDER/registrar_status/dns_status above.
+        // 'searchequalsonfield' => true for the same reason as
+        // PLUGIN_DOMAINMANAGER_SO_DOMAIN_NS_PROVIDER above: this option's
+        // 'table' isn't Domain's own, and 'specific' isn't one of the
+        // datatypes SQLProvider::getWhereCriteria() special-cases, so
+        // without this an "equals" search compares against
+        // `glpi_plugin_domainmanager_states.id` instead of `.tld`.
+        $options[] = [
+            'id'                  => PLUGIN_DOMAINMANAGER_SO_DOMAIN_TLD,
+            'itemtype'            => DomainState::class,
+            'table'               => DomainState::getTable(),
+            'field'               => 'tld',
+            'linkfield'           => 'domains_id',
+            'name'                => __('TLD', 'domainmanager'),
+            'datatype'            => 'specific',
+            'searchtype'          => ['equals', 'notequals'],
+            'searchequalsonfield' => true,
+            'massiveaction'       => false,
+            'joinparams'          => [
+                'jointype' => 'child',
             ],
         ];
         $options[] = [

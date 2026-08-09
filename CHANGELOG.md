@@ -14,6 +14,8 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 - Added a Domain Manager dashboard with cards showing domains per registrar, domains per DNS provider, DNS sync status, registrar sync status, and domains expiring soon at a glance.
 - The Domain Manager dashboard now also shows managed DNS records at a glance: how many, broken down by record type and by DNS provider, and how many are proxied.
 - Added a "Number of Managed Domains" card to the Domain Manager dashboard, distinct from GLPI's generic "Number of Domain" card (which counts every domain, including deleted/template ones outside your current entity).
+- Added a "Domains by TLD" dashboard card and a filterable "TLD" dropdown field, so you can see (and search) how your domains break down by `.com`/`.gal`/`.net`/etc. Non-internet domains (e.g. an internal `.internal`/`.local` test entry, or a malformed name with no TLD at all) are left out of the breakdown.
+- Added a "Domains per registrar by TLD" dashboard card, showing how each registrar's domains break down by TLD, available in every bar/line chart style.
 - Warning banners across the plugin now look and behave consistently, and are properly announced to screen readers.
 - Fixed duplicate Historical-tab entries when adding or editing a DNS record on a write-back-managed domain — you'll now see one line per change instead of two.
 - Importing many domains from a supplier at once no longer risks a timeout — newly discovered domains are created immediately and synced shortly after, on the regular daily sync schedule, instead of all at once during the import itself.

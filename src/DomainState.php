@@ -166,6 +166,10 @@ class DomainState extends CommonDBTM
                 return $value === ''
                     ? \htmlescape(__('Not on file', 'domainmanager'))
                     : \htmlescape(__('On file', 'domainmanager'));
+
+            case 'tld':
+                $value = (string) ($values[$field] ?? '');
+                return $value === '' ? \htmlescape(__('Not set')) : \htmlescape($value);
         }
 
         return parent::getSpecificValueToDisplay($field, $values, $options);
@@ -201,6 +205,31 @@ class DomainState extends CommonDBTM
                 // catch-all last choice rather than alphabetized among
                 // real provider names.
                 $choices[NsProviderRegistry::PROVIDER_UNKNOWN] = __('Unknown', 'domainmanager');
+
+                $options['value'] = $values[$field] ?? '';
+                return Dropdown::showFromArray($name, $choices, $options);
+
+            case 'tld':
+                // Not a fixed enum (unlike registrar_status/dns_status)
+                // and not worth hand-maintaining a full public-suffix list
+                // just for this select — the choices offered are whatever
+                // TldExtractor has actually resolved and stored so far,
+                // same "reflect the real data" reasoning as
+                // detected_provider's own provider list, just sourced from
+                // this table directly instead of a registry.
+                global $DB;
+                $choices = [];
+                foreach (
+                    $DB->request([
+                        'SELECT'   => 'tld',
+                        'DISTINCT' => true,
+                        'FROM'     => self::getTable(),
+                        'WHERE'    => ['tld' => ['<>', '']],
+                        'ORDER'    => 'tld',
+                    ]) as $row
+                ) {
+                    $choices[$row['tld']] = $row['tld'];
+                }
 
                 $options['value'] = $values[$field] ?? '';
                 return Dropdown::showFromArray($name, $choices, $options);

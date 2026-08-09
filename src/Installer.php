@@ -73,6 +73,7 @@ class Installer
         self::addDomainManagedColumn($migration);
         self::addDomainGlpiCreatedColumn($migration);
         self::addNameAsciiColumn($migration);
+        self::addTldColumn($migration);
         self::addRdapColumns($migration);
         self::addDnsWriteStatusColumns($migration);
         self::seedRecordProxyDisplayPreference();
@@ -698,6 +699,65 @@ class Installer
                 $DB->insert($table, [
                     'domains_id'    => $domains_id,
                     'name_ascii'    => $name_ascii,
+                    'date_creation' => $now,
+                    'date_mod'      => $now,
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Add the cached `tld` column to the states table (Phase 83 "per-TLD
+     * dashboard breakdown") and back-fill it. Same shape as
+     * `addNameAsciiColumn()` above: there's no dedicated/indexed TLD column
+     * on Domain today, and grouping by TLD via `LIKE '%.com'` on every
+     * dashboard render doesn't scale, so this caches `TldExtractor::extract()`
+     * on the state row instead, kept in sync afterward by
+     * `HookHandler::domainSaved()`.
+     *
+     * Backfilled from every non-deleted Domain, creating a state row for
+     * ones that don't have one yet — same "create-if-missing" reasoning as
+     * `addNameAsciiColumn()`.
+     *
+     * @param  Migration $migration
+     * @return void
+     */
+    private static function addTldColumn(Migration $migration): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $table          = 'glpi_plugin_domainmanager_states';
+        $column_existed = $DB->fieldExists($table, 'tld', false);
+
+        $migration->addField($table, 'tld', 'varchar(255) NOT NULL DEFAULT \'\'');
+        $migration->addKey($table, 'tld');
+        // Flush now so the backfill below runs against a column that
+        // actually exists yet, same reasoning as addNameAsciiColumn().
+        $migration->executeMigration();
+
+        if ($column_existed) {
+            return;
+        }
+
+        $now      = date('Y-m-d H:i:s');
+        $iterator = $DB->request([
+            'SELECT' => ['id', 'name'],
+            'FROM'   => 'glpi_domains',
+            'WHERE'  => ['is_deleted' => 0],
+        ]);
+
+        foreach ($iterator as $row) {
+            $domains_id = (int) $row['id'];
+            $tld        = TldExtractor::extract((string) $row['name']);
+
+            $state = DomainState::getForDomain($domains_id);
+            if ($state !== null) {
+                $DB->update($table, ['tld' => $tld], ['id' => $state->getID()]);
+            } else {
+                $DB->insert($table, [
+                    'domains_id'    => $domains_id,
+                    'tld'           => $tld,
                     'date_creation' => $now,
                     'date_mod'      => $now,
                 ]);

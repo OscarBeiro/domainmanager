@@ -186,18 +186,25 @@ class HookHandler
             $name_ascii = '';
         }
 
+        $tld = $name !== '' ? TldExtractor::extract($name) : '';
+
         $state = DomainState::getForDomain($domains_id);
         if ($state !== null) {
+            $update = ['id' => $state->getID()];
             if ($state->fields['name_ascii'] !== $name_ascii) {
-                $state->update([
-                    'id'         => $state->getID(),
-                    'name_ascii' => $name_ascii,
-                ]);
+                $update['name_ascii'] = $name_ascii;
             }
-        } elseif ($name_ascii !== '') {
+            if ($state->fields['tld'] !== $tld) {
+                $update['tld'] = $tld;
+            }
+            if (count($update) > 1) {
+                $state->update($update);
+            }
+        } elseif ($name_ascii !== '' || $tld !== '') {
             (new DomainState())->add([
                 'domains_id' => $domains_id,
                 'name_ascii' => $name_ascii,
+                'tld'        => $tld,
             ]);
         }
     }
