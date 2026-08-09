@@ -1,3 +1,4 @@
 /vendor
 composer.lock
 tools/phpstan/local-ci-parity.neon
+docs/plans/

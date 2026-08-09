@@ -92,7 +92,7 @@ class DashboardCards
             'widgettype' => ['bigNumber'],
             'itemtype'   => Domain::class,
             'group'      => __s('Domain Manager'),
-            'label'      => __s('Domains expiring soon', 'domainmanager'),
+            'label'      => __s('Number of Domains expiring soon (less than 30 days)', 'domainmanager'),
             'provider'   => self::class . '::domainsExpiringSoon',
             'cache'      => false,
         ];
@@ -249,19 +249,31 @@ class DashboardCards
         ]);
         $count = (int) ($iterator->current()['cpt'] ?? 0);
 
+        // GLPI's date search UI only offers "specify a date" (no relative
+        // "+30 days"/"+1 week" shortcut), and relative expressions like
+        // '+30 days' are not parsed by the date searchtype comparisons
+        // ('morethan'/'lessthan') the way they are for the criteria builder
+        // shortcuts — so the drill-down link must carry concrete, computed
+        // dates matching what the card itself just queried.
+        // 'morethan'/'lessthan' are strict (>, <), so bracket the inclusive
+        // [today, today+N days] window the count query used with one day of
+        // slack on each side.
+        $from = date('Y-m-d', strtotime('-1 day'));
+        $until = date('Y-m-d', strtotime('+' . (self::EXPIRING_SOON_DAYS + 1) . ' days'));
+
         $criteria = [
             'criteria' => [
                 [
                     'link'       => 'AND',
                     'field'      => self::SO_DOMAIN_EXPIRATION_DATE,
                     'searchtype' => 'morethan',
-                    'value'      => '-1 day',
+                    'value'      => $from,
                 ],
                 [
                     'link'       => 'AND',
                     'field'      => self::SO_DOMAIN_EXPIRATION_DATE,
                     'searchtype' => 'lessthan',
-                    'value'      => sprintf('+%d days', self::EXPIRING_SOON_DAYS),
+                    'value'      => $until,
                 ],
             ],
             'reset'    => 'reset',
@@ -270,7 +282,11 @@ class DashboardCards
         return [
             'number' => $count,
             'url'    => Domain::getSearchURL() . '?' . Toolbox::append_params($criteria),
-            'label'  => sprintf(__s('Domains expiring soon (%d days)', 'domainmanager'), self::EXPIRING_SOON_DAYS),
+            // Widget::bigNumber() already runs htmlescape() on 'label'/'alt'
+            // itself — pre-escaping with __s() here double-encodes "<" into
+            // a literal "&lt;" on screen. Use the unescaped translator.
+            'label'  => __('Domains expiring <30 days', 'domainmanager'),
+            'alt'    => __('Domains expiring <30 days', 'domainmanager'),
             'icon'   => Domain::getIcon(),
         ];
     }
