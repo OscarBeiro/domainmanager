@@ -35,6 +35,7 @@ use Domain;
 use Glpi\Dashboard\Dashboard;
 use Glpi\Dashboard\Item;
 use Glpi\DBAL\QueryExpression;
+use GlpiPlugin\Domainmanager\Service\DomainStatusResolver;
 use Migration;
 use Ramsey\Uuid\Uuid;
 use Toolbox;
@@ -48,6 +49,12 @@ use Toolbox;
 class DashboardCards
 {
     public const DASHBOARD_KEY = 'plugin_domainmanager_dashboard';
+
+    /**
+     * Shared across every Domain Manager card — same icon
+     * `DomainState`/`SupplierConfig`/`Profile` already use for the plugin.
+     */
+    private const ICON = 'ti ti-world-cog';
 
     /** Native `Domain::rawSearchOptions()` id for `date_expiration`. */
     private const SO_DOMAIN_EXPIRATION_DATE = 6;
@@ -65,7 +72,7 @@ class DashboardCards
             'widgettype' => ['pie', 'donut', 'multipleNumber', 'bar', 'hbar'],
             'itemtype'   => Domain::class,
             'group'      => __s('Domain Manager'),
-            'label'      => __s('Domains per registrar', 'domainmanager'),
+            'label'      => __s('Managed domains per registrar', 'domainmanager'),
             'provider'   => self::class . '::domainsByRegistrar',
             'cache'      => false,
         ];
@@ -102,18 +109,37 @@ class DashboardCards
 
     /**
      * "Domains per registrar" card: groups Domain by native Infocom
-     * suppliers_id (search option id 53) — registrar assignment already
-     * reuses that native field, no plugin-owned search option needed.
+     * suppliers_id (search option id 53), but only counts a supplier as a
+     * real "registrar" once it has an active API driver linked via
+     * SupplierConfig — an Infocom supplier used for unrelated
+     * billing/vendor purposes, or no supplier at all, falls into a single
+     * "No driver linked" bucket instead of being mixed in under its own
+     * name.
      */
     public static function domainsByRegistrar(array $params = []): array
     {
         /** @var \DBmysql $DB */
         global $DB;
 
+        // Bare "suppliers_id" would collide with the real, unqualified
+        // suppliers_id columns joined in from both glpi_infocoms and the
+        // supplierconfigs table — MySQL rejects that as an ambiguous
+        // GROUP BY column even though it also matches a SELECT alias of
+        // the same name. Repeating the full CASE expression in GROUPBY
+        // (rather than referencing the alias) sidesteps the ambiguity, and
+        // the output alias is named distinctly from any joined column.
+        $registrarSuppliersExpr = 'CASE WHEN supplier_config.id IS NOT NULL THEN infocom.suppliers_id ELSE 0 END';
+
         $iterator = $DB->request([
             'SELECT'    => [
-                'infocom.suppliers_id AS suppliers_id',
-                'supplier.name AS supplier_name',
+                new QueryExpression($registrarSuppliersExpr . ' AS ' . $DB->quoteName('registrar_suppliers_id')),
+                // MAX() rather than a bare column: with ONLY_FULL_GROUP_BY,
+                // a column not itself in GROUPBY must be aggregated — every
+                // row within the real-supplier buckets shares one name
+                // anyway, and the "no driver" bucket's name is deliberately
+                // discarded in favor of a fixed label (see toChartData()'s
+                // label fallback below).
+                new QueryExpression('MAX(' . $DB->quoteName('supplier.name') . ') AS ' . $DB->quoteName('supplier_name')),
                 'COUNT DISTINCT' => 'glpi_domains.id AS cpt',
             ],
             'FROM'      => 'glpi_domains',
@@ -128,6 +154,13 @@ class DashboardCards
                 'glpi_suppliers AS supplier' => [
                     'ON' => ['supplier' => 'id', 'infocom' => 'suppliers_id'],
                 ],
+                SupplierConfig::getTable() . ' AS supplier_config' => [
+                    'ON' => [
+                        'supplier_config' => 'suppliers_id',
+                        'infocom'         => 'suppliers_id',
+                        ['AND' => ['supplier_config.api_driver' => ['<>', DriverRegistry::DRIVER_NONE]]],
+                    ],
+                ],
             ],
             'WHERE'     => array_merge(
                 [
@@ -136,11 +169,42 @@ class DashboardCards
                 ],
                 getEntitiesRestrictCriteria('glpi_domains', '', '', true),
             ),
-            'GROUPBY'   => ['infocom.suppliers_id'],
+            'GROUPBY'   => [new QueryExpression($registrarSuppliersExpr)],
             'ORDER'     => 'cpt DESC',
         ]);
 
-        return self::toChartData($iterator, 'suppliers_id', 'supplier_name', 'cpt', 53);
+        return self::toChartData(
+            $iterator,
+            'registrar_suppliers_id',
+            'supplier_name',
+            'cpt',
+            53,
+            // __(), not __s() — see the escaping note inside toChartData().
+            ['0' => __('No driver linked', 'domainmanager')],
+            static function (array $row) {
+                $suppliers_id = (int) ($row['registrar_suppliers_id'] ?? 0);
+                if ($suppliers_id <= 0) {
+                    // No single supplier id represents this bucket — link to
+                    // every domain whose registrar isn't one of the
+                    // driver-linked suppliers instead of a meaningless
+                    // "supplier 0" search.
+                    return null;
+                }
+
+                $criteria = [
+                    'criteria' => [[
+                        'field'      => 53,
+                        'searchtype' => 'equals',
+                        'value'      => $suppliers_id,
+                    ]],
+                    'reset'    => 'reset',
+                ];
+
+                return Domain::getSearchURL() . '?' . Toolbox::append_params($criteria);
+            },
+            __('Domains per registrar', 'domainmanager'),
+            __('Managed domains per registrar', 'domainmanager'),
+        );
     }
 
     /**
@@ -155,7 +219,10 @@ class DashboardCards
 
         $iterator = $DB->request([
             'SELECT'    => [
-                DomainState::getTable() . '.dns_status AS dns_status',
+                new QueryExpression(
+                    'COALESCE(' . $DB->quoteName(DomainState::getTable() . '.dns_status')
+                    . ', \'' . DomainState::STATUS_NEVER . '\') AS ' . $DB->quoteName('dns_status'),
+                ),
                 'COUNT DISTINCT' => 'glpi_domains.id AS cpt',
             ],
             'FROM'      => 'glpi_domains',
@@ -171,18 +238,32 @@ class DashboardCards
                 ],
                 getEntitiesRestrictCriteria('glpi_domains', '', '', true),
             ),
-            'GROUPBY'   => [DomainState::getTable() . '.dns_status'],
+            'GROUPBY'   => ['dns_status'],
             'ORDER'     => 'cpt DESC',
         ]);
 
-        return self::toChartData($iterator, 'dns_status', 'dns_status', 'cpt', PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_STATUS);
+        return self::toChartData(
+            $iterator,
+            'dns_status',
+            'dns_status',
+            'cpt',
+            PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_STATUS,
+            DomainStatusResolver::getStatusLabels(),
+            null,
+            __('Sync status', 'domainmanager'),
+            __('Sync status', 'domainmanager'),
+        );
     }
 
     /**
      * "Registrar status" card (Phase 81): groups Domain by the existing
      * PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR_STATUS search option
-     * (9408) — already registered and searchable, mirrors the "Sync
-     * status" card's shape exactly.
+     * (9408) — mirrors the "Sync status" card's shape, plus the same
+     * live-Infocom reconciliation `DomainState::getDomainsForSupplier()`
+     * already does: a state row whose `registrar_suppliers_id` mirror no
+     * longer matches the domain's *current* Infocom supplier describes a
+     * stale, now-superseded registrar relationship, so it's folded into
+     * `STATUS_NEVER` here rather than shown as-is.
      */
     public static function registrarStatusBreakdown(array $params = []): array
     {
@@ -191,11 +272,24 @@ class DashboardCards
 
         $iterator = $DB->request([
             'SELECT'    => [
-                DomainState::getTable() . '.registrar_status AS registrar_status',
+                new QueryExpression(
+                    'CASE WHEN ' . $DB->quoteName(DomainState::getTable() . '.registrar_suppliers_id')
+                    . ' = ' . $DB->quoteName('infocom.suppliers_id')
+                    . ' THEN COALESCE(' . $DB->quoteName(DomainState::getTable() . '.registrar_status')
+                    . ', \'' . DomainState::STATUS_NEVER . '\')'
+                    . ' ELSE \'' . DomainState::STATUS_NEVER . '\' END AS ' . $DB->quoteName('registrar_status'),
+                ),
                 'COUNT DISTINCT' => 'glpi_domains.id AS cpt',
             ],
             'FROM'      => 'glpi_domains',
             'LEFT JOIN' => [
+                'glpi_infocoms AS infocom' => [
+                    'ON' => [
+                        'infocom'      => 'items_id',
+                        'glpi_domains' => 'id',
+                        ['AND' => ['infocom.itemtype' => Domain::class]],
+                    ],
+                ],
                 DomainState::getTable() => [
                     'ON' => [DomainState::getTable() => 'domains_id', 'glpi_domains' => 'id'],
                 ],
@@ -207,11 +301,21 @@ class DashboardCards
                 ],
                 getEntitiesRestrictCriteria('glpi_domains', '', '', true),
             ),
-            'GROUPBY'   => [DomainState::getTable() . '.registrar_status'],
+            'GROUPBY'   => ['registrar_status'],
             'ORDER'     => 'cpt DESC',
         ]);
 
-        return self::toChartData($iterator, 'registrar_status', 'registrar_status', 'cpt', PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR_STATUS);
+        return self::toChartData(
+            $iterator,
+            'registrar_status',
+            'registrar_status',
+            'cpt',
+            PLUGIN_DOMAINMANAGER_SO_DOMAIN_REGISTRAR_STATUS,
+            DomainStatusResolver::getStatusLabels(),
+            null,
+            __('Registrar status', 'domainmanager'),
+            __('Registrar status', 'domainmanager'),
+        );
     }
 
     /**
@@ -285,53 +389,117 @@ class DashboardCards
             // Widget::bigNumber() already runs htmlescape() on 'label'/'alt'
             // itself — pre-escaping with __s() here double-encodes "<" into
             // a literal "&lt;" on screen. Use the unescaped translator.
+            // 'label' stays short (on-widget title); 'alt' (hover tooltip)
+            // repeats the card's own full picker/dashboard title, per the
+            // 3-name-slot convention (see references/dashboard-widgets.md).
             'label'  => __('Domains expiring <30 days', 'domainmanager'),
-            'alt'    => __('Domains expiring <30 days', 'domainmanager'),
-            'icon'   => Domain::getIcon(),
+            'alt'    => __('Number of Domains expiring soon (less than 30 days)', 'domainmanager'),
+            // Shared across every Domain Manager card — same icon
+            // DomainState/SupplierConfig/Profile already use for the
+            // plugin, not core's own Domain::getIcon().
+            'icon'   => self::ICON,
         ];
     }
 
     /**
-     * Shared chart-shape builder: one series, drill-down `url` per point
-     * built from the given search-option id + raw grouped value.
+     * Shared chart-shape builder for single-series pie/donut/bar/hbar/
+     * multipleNumber cards — matches the flat `{number, label, url}`-per-
+     * entry shape `Glpi\Dashboard\Widget::pie()`/`simpleBar()`/
+     * `multipleNumber()` actually read (see e.g. core's own
+     * `Provider::itemsByFk()`, `Glpi\Dashboard\Provider.php` line ~916:
+     * `$data[] = ['number' => ..., 'label' => ..., 'url' => ...]`), *not*
+     * the `{labels:[], series:[[...]]}` nested shape those single-series
+     * widgets never actually read — every one of `Widget`'s chart builders
+     * does `array_merge($default_entry, $entry)` per top-level `$p['data']`
+     * entry and reads `$entry['number']`/`$entry['label']`/`$entry['url']`
+     * directly.
+     *
+     * @param array<string, string>|null $labelMap   raw grouped value =>
+     *     human label (e.g. `DomainStatusResolver::getStatusLabels()`);
+     *     falls back to the raw value itself when a value has no entry.
+     * @param (callable(array<string, mixed>): (string|null))|null $urlBuilder
+     *     overrides the default single-value `equals` drill-down when a
+     *     bucket's URL can't be expressed that way (e.g. a "no driver
+     *     linked" catch-all bucket) — return null/empty for no drill-down.
+     * @param ?string $widgetLabel short, always-visible on-widget title
+     *     (`Glpi\Dashboard\Widget`'s "main-label"/list-header span) — kept
+     *     deliberately shorter than the card's own picker/dashboard title
+     *     (`dashboardCards()`'s `label`), per the 3-name-slot convention
+     *     (see `references/dashboard-widgets.md`).
+     * @param ?string $widgetAlt hover-tooltip text (rendered as the
+     *     widget's own `title=""` attribute) — only read by
+     *     `multipleNumber`/`bigNumber`, silently ignored by
+     *     pie/donut/bar/hbar. Convention: same text as the card's own
+     *     picker/dashboard title.
      */
     private static function toChartData(
         iterable $iterator,
         string $value_field,
         string $label_field,
         string $count_field,
-        int $searchoption_id
+        int $searchoption_id,
+        ?array $labelMap = null,
+        ?callable $urlBuilder = null,
+        ?string $widgetLabel = null,
+        ?string $widgetAlt = null
     ): array {
-        $labels = [];
         $data = [];
 
         foreach ($iterator as $row) {
             $value = $row[$value_field] ?? null;
             $label = $row[$label_field] ?? null;
-            $label = ($label === null || $label === '') ? __s('Not set') : (string) $label;
 
-            $criteria = [
-                'criteria' => [[
-                    'field'      => $searchoption_id,
-                    'searchtype' => 'equals',
-                    'value'      => $value ?? 0,
-                ]],
-                'reset'    => 'reset',
+            if ($labelMap !== null && isset($labelMap[(string) $value])) {
+                // Keyed by the raw grouped value, not the display label —
+                // matters when value_field and label_field differ (e.g. the
+                // "no driver linked" bucket's value is a fixed 0 but its
+                // label column otherwise carries a real supplier name).
+                $label = $labelMap[(string) $value];
+            } elseif ($label === null || $label === '') {
+                // Widget::multipleNumber()/simpleBar() htmlescape() this
+                // themselves (same double-encoding trap as bigNumber's
+                // label/alt) — use the plain translator, never __s(), for
+                // any string that ends up in a per-entry 'label' here.
+                $label = __('Not set');
+            } else {
+                $label = (string) $label;
+            }
+
+            if ($urlBuilder !== null) {
+                $url = $urlBuilder($row);
+            } else {
+                $criteria = [
+                    'criteria' => [[
+                        'field'      => $searchoption_id,
+                        'searchtype' => 'equals',
+                        'value'      => $value ?? 0,
+                    ]],
+                    'reset'    => 'reset',
+                ];
+                $url = Domain::getSearchURL() . '?' . Toolbox::append_params($criteria);
+            }
+
+            $data[] = [
+                'number' => (int) ($row[$count_field] ?? 0),
+                'label'  => $label,
+                'url'    => $url ?? '',
             ];
-            $url = Domain::getSearchURL() . '?' . Toolbox::append_params($criteria);
+        }
 
-            $labels[] = $label;
-            $data[] = ['value' => (int) ($row[$count_field] ?? 0), 'url' => $url];
+        if (count($data) === 0) {
+            // Same "nodata" signal core's own providers use
+            // (Glpi\Dashboard\Provider.php) when a query returns no rows.
+            $data = ['nodata' => true];
         }
 
         return [
-            'data' => [
-                'labels' => $labels,
-                'series' => [[
-                    'name' => '',
-                    'data' => $data,
-                ]],
-            ],
+            'data'  => $data,
+            'label' => $widgetLabel ?? '',
+            'alt'   => $widgetAlt ?? '',
+            // Shared across every Domain Manager dashboard card — same icon
+            // DomainState/SupplierConfig/Profile already use for the
+            // plugin, not core's own Domain::getIcon().
+            'icon'  => self::ICON,
         ];
     }
 

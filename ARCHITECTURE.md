@@ -3996,11 +3996,21 @@ CloudInventory):
   distinction. `Search::getDatas()` already respects the active entity/child-entities session
   state on its own — no extra entity-scoping code is needed in a provider beyond calling it
   normally.
-- **No separate short-label mechanism** — one `label` field serves both the card picker and the
-  on-dashboard render (`Grid.php:823-859`, `Dashboard.php:1248-1254`). `icon` is a separate,
-  already-distinct param. **Convention for phases 80+:** keep the on-dashboard label short by
-  design (e.g. "Sync status", not "Domain Manager — Sync status breakdown"); rely on `group`
-  (`"Domain Manager"`) for picker-side disambiguation instead of stuffing it into `label`.
+- **Correction (2026-08-09 bugfix pass, §20.3c): there IS a separate short/long label
+  mechanism — this section's original claim above was wrong.** `dashboardCards()`'s own `label`
+  (picker entry + dashboard-editor default title) is *not* the only label a card has. Every
+  provider's own return array carries a second, independent `label`/`alt` pair
+  (`Widget::pie()`/`getBarsGraph()`/`multipleNumber()`/`bigNumber()` all read a top-level `label`
+  as the widget's own always-visible on-card title, separate from anything `dashboardCards()`
+  set), rendered live by the *widget*, not the picker. `alt` is a hover-tooltip (`title=""`
+  attribute) read **only** by `multipleNumber`/`bigNumber` — pie/donut/bar/hbar ignore it
+  entirely. Confirmed convention (see `dashboard-widgets.md` in the `glpi-plugin-builder` skill
+  for the authoritative writeup): `group` = one value for the whole plugin; `dashboardCards()`'s
+  `label` = the long, fully descriptive card title (picker/editor only); provider's own `label`
+  = short on-widget title; provider's own `alt` = same text as the card title. A provider that
+  returns bare `['data' => $data]` renders with a *blank* on-widget title even though
+  `dashboardCards()`'s `label` looks like it should have covered it — it doesn't, it's a
+  different consumer entirely. `icon` is a third, separate param, same as originally noted.
 - Dashboard creation: `Glpi\Dashboard\Dashboard::add()`/`saveNew()`; cards placed via
   `Glpi\Dashboard\Item::addForDashboard(int $dashboards_id, array $items)`. Tables:
   `glpi_dashboards`, `glpi_dashboards_items` (gridstack_id, card_id, x, y, width, height,
@@ -4071,22 +4081,32 @@ Built directly on Phase 80's proven mechanism, no new research needed:
 
 Files: `src/DashboardCards.php`.
 
-### 20.4 Backlog — phases 84+ (not yet designed, do not start without a follow-up design pass)
+### 20.4 Backlog — Phases 82–83 (not yet designed, do not start without a follow-up design pass)
 
-- **Per-supplier/driver widgets** (e.g. "Domains registered via Dinahosting", "Proxied records
-  via Cloudflare"). Must be **driver-registry-driven, not hardcoded per name** —
+The original plan (`~/.claude/plans/go-glowing-scone.md`, 2026-08-08) framed this as a 4-phase
+arc, 80–83, with 81–83 generically "building more cards" once Phase 80 proved the mechanism —
+without pinning a specific card to each number. Phase 81 ended up shipping *two* cards
+(registrar status + expiring soon) in one pass, so 82/83 as separate delivery phases were never
+used; these two backlog items are what they were always going to be, renumbered here to close
+that gap rather than starting the next new work at an arbitrary "84":
+
+- **Phase 82 — Per-supplier/driver widgets** (e.g. "Domains registered via Dinahosting", "Proxied
+  records via Cloudflare"). Must be **driver-registry-driven, not hardcoded per name** —
   `DriverRegistry` already enumerates configured suppliers, so cards should be generated from
   that list at runtime rather than one hardcoded card per known driver, or the card picker
   becomes unusable once real installs have dozens of suppliers a given user mostly doesn't care
   about. Needs a UX decision on how to avoid listing N near-identical per-supplier cards (e.g.
   one configurable "by supplier" grouped card, mirroring CloudInventory's
   `getCloudInstanceByForeignKey()` pattern, rather than N flat bigNumber cards).
-- **Per-TLD breakdown** (sector/donut chart: `.com`, `.gal`, `.net`, …). Same dynamic-cardinality
-  concern as suppliers, plus a real performance gap: there is no dedicated, indexed TLD column
-  today, so grouping/filtering by TLD would mean a `LIKE '%.com'`-style match against the domain
-  name, which doesn't scale. Needs a new searchable field (e.g. a stored/derived TLD column,
-  populated the same way `name_ascii` is cached today) before this widget can be built without an
-  expensive full-table string-match query on every dashboard render.
+- **Phase 83 — Per-TLD breakdown** (sector/donut chart: `.com`, `.gal`, `.net`, …). Same
+  dynamic-cardinality concern as suppliers, plus a real performance gap: there is no dedicated,
+  indexed TLD column today, so grouping/filtering by TLD would mean a `LIKE '%.com'`-style match
+  against the domain name, which doesn't scale. Needs a new searchable field (e.g. a
+  stored/derived TLD column, populated the same way `name_ascii` is cached today) before this
+  widget can be built without an expensive full-table string-match query on every dashboard
+  render.
+
+Next genuinely new dashboard work after these two starts at Phase 84.
 
 ### 20.5 Verification
 
@@ -4097,3 +4117,54 @@ Files: `src/DashboardCards.php`.
   correctly-filtered `Domain` search page scoped to the active entity.
 - Re-run install/upgrade and confirm the dashboard is not recreated once it already exists, nor
   recreated after an admin manually deletes/edits it.
+
+### 20.3c — Post-ship bugfix pass (2026-08-09, `src/DashboardCards.php`)
+
+Live testing on the `testing_glpi_1` container (source bind-mounted from this repo, port 65108)
+found all three grouped cards (registrar/sync/registrar-status) broken — only "Domains expiring
+soon" rendered. Root causes, most severe first:
+
+1. **Wrong chart-data shape — the actual "Error rendering card!" cause.** `toChartData()`
+   returned the *multi-series* nested shape (`{labels: [], series: [{name, data: [{value,
+   url}]}]}`) for cards whose widget types are all *single-series* (pie/donut/bar/hbar/
+   multipleNumber). Every one of `Widget`'s single-series chart functions does
+   `array_merge($default_entry, $entry)` per top-level `data` entry and reads
+   `$entry['number']` directly; `$default_entry['number']` defaults to `''` (not `0`/`null`), so
+   `$total += $entry['number']` on an entry shaped as `{value, url}` (no `number` key at all)
+   threw `TypeError: Unsupported operand types: int + string` deep inside `Widget.php`, caught by
+   `Grid::getCardHtml()`'s generic `catch (Throwable $e)` and surfaced only as the generic
+   "Error rendering card!" — the query itself was never the problem in this failure mode. Fixed
+   by rewriting `toChartData()` to the flat `{number, label, url}`-per-entry shape, matching core's
+   own `Provider::itemsByFk()` reference pattern exactly. See `dashboard-widgets.md`'s new Trap
+   entry in the `glpi-plugin-builder` skill for the full symptom writeup — this is easy to
+   mis-diagnose as a SQL bug since the logged query is completely valid on its own.
+2. **`GROUP BY` alias ambiguity.** `domainsByRegistrar()`'s original `GROUP BY suppliers_id`
+   (referencing a `SELECT`-list alias) collided with real, unqualified `suppliers_id` columns on
+   two different joined tables (`glpi_infocoms`, the plugin's own supplierconfigs table) — MySQL
+   rejects that as "Column '...' in group statement is ambiguous" even though the alias itself
+   is unambiguous in isolation. Fixed by repeating the full `CASE WHEN ... END` expression (as a
+   `QueryExpression`) in `GROUPBY` instead of the alias, and renaming the alias itself to
+   `registrar_suppliers_id` so it can't collide with any joined column again.
+3. **Missing `url` key threw `Undefined array key`.** `Widget`'s chart builders read
+   `$entry['url']` unconditionally (only `strlen()`-guarded, never `isset()`-guarded) — a data
+   point that omitted the key entirely (the "no driver linked" catch-all bucket, which has no
+   single supplier id to drill down to) threw. Fixed by always setting `url` (empty string when
+   there's genuinely nothing to link to).
+4. **Label double-escaping.** `toChartData()`'s fallback labels used `__s()` (pre-escaped), but
+   `Widget::multipleNumber()`/`simpleBar()` call `htmlescape()` on the label themselves — same
+   double-encoding trap already documented for `bigNumber`'s `label`/`alt`. Switched to `__()`.
+
+**Product-level change made in the same pass, per user direction:** "Domains per registrar" only
+counts a Supplier as a real registrar once it has an active driver linked via `SupplierConfig`
+(`api_driver <> DriverRegistry::DRIVER_NONE`) — any Infocom supplier used for unrelated
+billing/vendor purposes, or no supplier at all, now buckets into a single "No driver linked"
+catch-all instead of being mixed in under its own name. Card retitled "Managed domains per
+registrar" (long/picker form) to make this explicit; on-widget short label stays "Domains per
+registrar" per the label-slot convention in §20.2's correction above. "Registrar status" also
+gained the same live-Infocom reconciliation `DomainState::getDomainsForSupplier()` already used
+(a state row whose `registrar_suppliers_id` mirror no longer matches the domain's *current*
+Infocom supplier folds into `STATUS_NEVER` rather than showing a stale prior supplier's status),
+and both status cards now `COALESCE(...,'never')` their grouped column so a domain with no state
+row buckets under "Never synchronized" instead of an unlabeled "Not set"/`NULL` group. All four
+cards now use `self::ICON` (`'ti ti-world-cog'`, the same icon `DomainState`/`SupplierConfig`/
+`Profile` already use for this plugin) instead of core's `Domain::getIcon()`.
