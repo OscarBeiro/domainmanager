@@ -260,7 +260,7 @@ class DashboardCards
                         'field'      => 53,
                         'searchtype' => 'equals',
                         'value'      => $suppliers_id,
-                    ]
+                    ],
                     ],
                     'reset'    => 'reset',
                 ];
@@ -341,7 +341,7 @@ class DashboardCards
                         'field'      => PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_SUPPLIER,
                         'searchtype' => 'equals',
                         'value'      => $suppliers_id,
-                    ]
+                    ],
                     ],
                     'reset'    => 'reset',
                 ];
@@ -531,7 +531,7 @@ class DashboardCards
                 'field'      => PLUGIN_DOMAINMANAGER_SO_DOMAIN_MANAGED,
                 'searchtype' => 'equals',
                 'value'      => 1,
-            ]
+            ],
             ],
             'reset'    => 'reset',
         ];
@@ -678,7 +678,7 @@ class DashboardCards
                 'field'      => PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_MANAGED,
                 'searchtype' => 'equals',
                 'value'      => 1,
-            ]
+            ],
             ],
             'reset'    => 'reset',
         ];
@@ -847,7 +847,7 @@ class DashboardCards
                         'field'      => PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_MANAGED,
                         'searchtype' => 'equals',
                         'value'      => 1,
-                    ]
+                    ],
                     ],
                     'reset'    => 'reset',
                 ];
@@ -939,7 +939,7 @@ class DashboardCards
                         'field'      => PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_PROXY,
                         'searchtype' => 'equals',
                         'value'      => (int) ($row['is_proxied'] ?? 0),
-                    ]
+                    ],
                     ],
                     'reset'    => 'reset',
                 ];
@@ -1028,7 +1028,7 @@ class DashboardCards
                         'field'      => $searchoption_id,
                         'searchtype' => 'equals',
                         'value'      => $value ?? 0,
-                    ]
+                    ],
                     ],
                     'reset'    => 'reset',
                 ];
