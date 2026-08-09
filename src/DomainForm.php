@@ -91,10 +91,29 @@ class DomainForm
 
         $state = $is_new ? null : DomainState::getForDomain($domains_id);
 
-        // A domain never picked up by sync gets no Domain Manager panel at all
-        // (not even the "not managed" message, which is reserved for a domain
-        // that has a state row with is_managed = 0) — §9 Phase 88.
-        if (!$is_new && $state === null) {
+        // A domain never picked up by sync, or one that's linked to no
+        // supplier at all, or one linked only to supplier(s) that can never
+        // actually resolve to an active driver (no api_driver configured,
+        // no credentials, or the supplier itself is inactive — see
+        // DomainState::resolvesToActiveDriver()) gets no Domain Manager
+        // panel at all — not even the "not managed" message. Found live:
+        // linking a domain's Infocom Supplier to one with no Domain Manager
+        // driver configured (e.g. a plain billing supplier) left
+        // registrar_suppliers_id > 0 with is_managed = 0, which the
+        // has-a-supplier-link check alone treated as "actionable" and
+        // still rendered the message — but there is nothing to act on until
+        // that supplier actually gets a driver configured, so it's really
+        // the same "not manageable yet" case as no link at all. The message
+        // is reserved for a supplier that *does* resolve to an active
+        // driver but still ended up with is_managed = 0 (e.g. sync ran and
+        // hit a real error) — that's the genuinely actionable state — §9
+        // Phase 88, amended.
+        $resolves_to_driver = $state !== null
+            && (
+                DomainState::resolvesToActiveDriver((int) $state->fields['registrar_suppliers_id'])
+                || DomainState::resolvesToActiveDriver((int) $state->fields['dns_suppliers_id'])
+            );
+        if (!$is_new && ($state === null || (!$resolves_to_driver && !(bool) $state->fields['is_managed']))) {
             return;
         }
 

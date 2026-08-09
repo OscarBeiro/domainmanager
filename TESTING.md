@@ -3804,7 +3804,7 @@ don't rely on the "click date" UI in this GLPI version.
     domains into two "never" rows (3 + 1); after the `GROUPBY` fix the same query returns a single
     row of 4, and the live-rendered card shows one "Never synchronized" label.
 
-### Phase 88: hide the Domain Manager panel entirely for a never-synced domain (ARCHITECTURE.md §20.8)
+### Phase 88: hide the Domain Manager panel entirely for a domain with nothing to manage (ARCHITECTURE.md §20.8)
 
 - **Open a domain that has never been picked up by sync (no `glpi_plugin_domainmanager_states`
   row for it at all) and check the main tab.** Expected: no Domain Manager section renders at
@@ -3812,16 +3812,36 @@ don't rely on the "click date" UI in this GLPI version.
   - [x] Pass — verified live 2026-08-09 against `testing_glpi_1` (GLPI 11.0.8): created a
     domain with no state row, fetched its main tab via `ajax/common.tabs.php?_glpi_tab=Domain$main`
     directly (authenticated session), 0 occurrences of `domainmanager-panel` in the response.
-- **Open a domain with a state row but `is_managed = 0` (`ticgal.internal`, id 20).** Expected:
-  existing "Not managed by Domain Manager" message still renders, unchanged.
-  - [x] Pass — verified live 2026-08-09: same tab fetch showed the `domainmanager-panel`
-    container and the "Not managed by Domain Manager" message text present.
+- **Open a manually-created domain with a state row but no registrar/DNS supplier linked at
+  all (`ticgal.internal`, id 20 — `registrar_suppliers_id = 0`, `dns_suppliers_id = 0`,
+  `is_managed = 0`).** Expected: no Domain Manager section at all, same as the no-state-row
+  case — amended after first finding it still showed the "not managed" message.
+  - [x] Pass — verified live 2026-08-09 in the browser: no Domain Manager section on the
+    domain's form.
+- **Open a domain linked to a supplier with no Domain Manager driver configured at all
+  (id 26 "Fake domain from Upcloud" — Infocom Supplier = Upcloud, `api_driver = NULL`,
+  `is_managed = 0`).** Expected: no Domain Manager section either — that supplier can never
+  resolve to managed (`DomainState::resolvesToActiveDriver()` requires an active supplier with
+  a real `api_driver` and non-empty credentials), so it's the same "nothing to manage yet" case
+  as no link at all — amended after first finding it still showed the "not managed" message.
+  - [x] Pass — verified live 2026-08-09 in the browser: no Domain Manager section on the
+    domain's form.
+- **Open a domain linked to a supplier that *does* resolve to an active driver (e.g. Dinahosting/
+  Cloudflare/IONOS) but still ended up `is_managed = 0`** (a real, actionable failure — e.g. sync
+  ran and hit an error). Expected: existing "Not managed by Domain Manager" message still
+  renders, unchanged.
+  - [ ] Pass — not yet re-verified live after the second amendment; reasoned from code
+    (`resolves_to_driver` becomes `true` for any of these suppliers, so the early return no
+    longer fires and the template's own `is_managed` branch renders the message as before).
 - **Open a domain with `is_managed = 1` (id 2).** Expected: full panel renders normally, no
   "not managed" message.
   - [x] Pass — verified live 2026-08-09: `domainmanager-panel` present, "Not managed by Domain
     Manager" text absent.
-- **Check `onShowTab()`'s indicator on other tabs (Records, Historical, …) for a never-synced
-  domain.** Expected: no "managed" indicator shown there either — confirmed no code change was
-  needed since `renderManagedIndicator()` already no-ops when `is_managed` is false.
-  - [x] Pass — reasoned from code (both `injectDomain()` and `onShowTab()` compute `is_managed`
-    as `false` when `$state === null`), not separately re-verified live per-tab.
+- **Check `onShowTab()`'s indicator on other tabs (Records, Historical, …) for a domain in any
+  of the hidden-panel states above.** Expected: no "managed" indicator shown there either —
+  confirmed no code change was needed since `renderManagedIndicator()` already no-ops when
+  `is_managed` is false.
+  - [x] Pass — reasoned from code (`onShowTab()` computes `is_managed` straight from
+    `$state->fields['is_managed']`, independent of `injectDomain()`'s new `resolves_to_driver`
+    gate, and `renderManagedIndicator()` already no-ops when it's `false`), not separately
+    re-verified live per-tab.
