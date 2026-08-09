@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Entries are grouped into **Features** and **Bugs**, one line each.
 
 ## [Unreleased]
+
+## [1.7.0] - 2026-08-09
 ### Features
 - Added a Domain Manager dashboard with cards showing domains per registrar, domains per DNS provider, DNS sync status, registrar sync status, and domains expiring soon at a glance.
 - The Domain Manager dashboard now also shows managed DNS records at a glance: how many, broken down by record type and by DNS provider, and how many are proxied.
