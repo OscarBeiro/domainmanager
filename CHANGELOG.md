@@ -22,6 +22,7 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 - Added a "Managed records per DNS provider by type" dashboard card — a bar/line chart showing your busiest DNS providers (biggest first) broken down by record type.
 
 ### Bugs
+- A domain discovered via a registrar import is now marked active on creation, so it's no longer skipped forever by the daily sync.
 - A domain that has never been synced now shows no Domain Manager section at all on its form, instead of a "not managed" message.
 - Fixed the "Registrar sync status" dashboard card showing "Never synchronized" twice instead of once.
 - Fixed a sync that could get permanently stuck on a domain because of a duplicate TXT record that genuinely exists at the DNS provider — that one record is now skipped instead of blocking the rest of the sync.
