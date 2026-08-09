@@ -217,6 +217,7 @@ class DomainState extends CommonDBTM
                 // same "reflect the real data" reasoning as
                 // detected_provider's own provider list, just sourced from
                 // this table directly instead of a registry.
+                /** @var \DBmysql $DB */
                 global $DB;
                 $choices = [];
                 foreach (
@@ -280,6 +281,7 @@ class DomainState extends CommonDBTM
      */
     public static function forceUpdate(int $id, array $input): void
     {
+        /** @var \DBmysql $DB */
         global $DB;
 
         if ($input === []) {
