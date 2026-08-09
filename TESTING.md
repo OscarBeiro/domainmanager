@@ -3803,3 +3803,25 @@ don't rely on the "click date" UI in this GLPI version.
   - [x] Pass — verified live 2026-08-09: direct SQL reproduction showed the query splitting 4
     domains into two "never" rows (3 + 1); after the `GROUPBY` fix the same query returns a single
     row of 4, and the live-rendered card shows one "Never synchronized" label.
+
+### Phase 88: hide the Domain Manager panel entirely for a never-synced domain (ARCHITECTURE.md §20.8)
+
+- **Open a domain that has never been picked up by sync (no `glpi_plugin_domainmanager_states`
+  row for it at all) and check the main tab.** Expected: no Domain Manager section renders at
+  all — not even the "Not managed by Domain Manager" message.
+  - [x] Pass — verified live 2026-08-09 against `testing_glpi_1` (GLPI 11.0.8): created a
+    domain with no state row, fetched its main tab via `ajax/common.tabs.php?_glpi_tab=Domain$main`
+    directly (authenticated session), 0 occurrences of `domainmanager-panel` in the response.
+- **Open a domain with a state row but `is_managed = 0` (`ticgal.internal`, id 20).** Expected:
+  existing "Not managed by Domain Manager" message still renders, unchanged.
+  - [x] Pass — verified live 2026-08-09: same tab fetch showed the `domainmanager-panel`
+    container and the "Not managed by Domain Manager" message text present.
+- **Open a domain with `is_managed = 1` (id 2).** Expected: full panel renders normally, no
+  "not managed" message.
+  - [x] Pass — verified live 2026-08-09: `domainmanager-panel` present, "Not managed by Domain
+    Manager" text absent.
+- **Check `onShowTab()`'s indicator on other tabs (Records, Historical, …) for a never-synced
+  domain.** Expected: no "managed" indicator shown there either — confirmed no code change was
+  needed since `renderManagedIndicator()` already no-ops when `is_managed` is false.
+  - [x] Pass — reasoned from code (both `injectDomain()` and `onShowTab()` compute `is_managed`
+    as `false` when `$state === null`), not separately re-verified live per-tab.

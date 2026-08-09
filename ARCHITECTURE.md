@@ -4348,4 +4348,7 @@ section at all, not even the "not managed" message (that message stays reserved 
 computes `$is_managed` and calls `renderManagedIndicator($is_managed)` on every other Domain tab,
 but that helper already no-ops when `$is_managed` is false, so a never-synced domain already showed
 no indicator there before this phase too. No template change — `domain_panel.html.twig`'s existing
-`is_managed` branch remains the "synced but not managed" path.
+`is_managed` branch remains the "synced but not managed" path. Verified live 2026-08-09 against
+`testing_glpi_1`: a domain with no `DomainState` row shows no panel at all, `ticgal.internal`
+(id 20, state row with `is_managed = 0`) still shows the "not managed" message, and a managed
+domain (id 2) is unaffected — see TESTING.md's Phase 88 entry.
