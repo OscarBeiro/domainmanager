@@ -4339,15 +4339,13 @@ Seeded into the default `install()` dashboard grid as a new row (`y => 9`, `stac
 existing cards; same "never repopulates an existing admin-edited dashboard" caveat as every card
 before it.
 
-### 20.8 Backlog — domain.form: hide the injected panel entirely for a never-synced domain
+### 20.8 Phase 88 — domain.form: hide the injected panel entirely for a never-synced domain
 
-Raised during the Phase 85 follow-up work above, deferred to its own phase (not yet numbered/
-designed in detail — see `docs/plans/` once a plan file is written): `DomainForm::injectDomain()`
-currently always renders `domain_panel.html.twig` (and, via `is_managed`'s false branch already in
-that template, a "Not managed" message) whenever the viewing user has Domain `READ`, regardless of
-whether the domain has ever been synced at all (`DomainState::getForDomain()` returns `null`).
-Per user direction: when there is no state row yet (never synced — distinct from "synced but
-`is_managed = 0`", which should presumably keep showing the existing "not managed" message), hide
-the entire injected section rather than showing a mostly-empty panel. Needs a decision on
-`onShowTab()`'s `renderManagedIndicator()` call on other tabs too (same `$state === null`
-condition would apply there for consistency) before implementation.
+`DomainForm::injectDomain()` now returns immediately, before rendering `domain_panel.html.twig`,
+whenever `!$is_new && $state === null` — a domain never picked up by sync shows no Domain Manager
+section at all, not even the "not managed" message (that message stays reserved for a domain that
+*has* a `DomainState` row with `is_managed = 0`). `onShowTab()` needed no change: it independently
+computes `$is_managed` and calls `renderManagedIndicator($is_managed)` on every other Domain tab,
+but that helper already no-ops when `$is_managed` is false, so a never-synced domain already showed
+no indicator there before this phase too. No template change — `domain_panel.html.twig`'s existing
+`is_managed` branch remains the "synced but not managed" path.

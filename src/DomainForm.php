@@ -91,6 +91,13 @@ class DomainForm
 
         $state = $is_new ? null : DomainState::getForDomain($domains_id);
 
+        // A domain never picked up by sync gets no Domain Manager panel at all
+        // (not even the "not managed" message, which is reserved for a domain
+        // that has a state row with is_managed = 0) — §9 Phase 88.
+        if (!$is_new && $state === null) {
+            return;
+        }
+
         // Locked fields disabling (cosmetic; server-side is authoritative)
         $locked_fields = [];
         if (
