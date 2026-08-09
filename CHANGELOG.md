@@ -28,6 +28,7 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 - A domain that has never been synced, or that isn't linked to a supplier with working registrar/DNS credentials, now shows no Domain Manager section at all on its form, instead of a "not managed" message.
 - Fixed the "Registrar sync status" dashboard card showing "Never synchronized" twice instead of once.
 - Fixed a sync that could get permanently stuck on a domain because of a duplicate TXT record that genuinely exists at the DNS provider — that one record is now skipped instead of blocking the rest of the sync.
+- Fixed the "Domains per DNS provider" and "DNS sync status" dashboard cards failing to load on installs with more than a couple of domains.
 - A DNS record deleted at the provider no longer shows its old Cloudflare proxy status and IPs when viewed in the Records tab's trash bin.
 - The DNS Provider name on a domain's form now stays a clickable link after clicking "Update Now", instead of turning into plain text until the page is reloaded.
 - Deleting or purging a domain no longer pushes real deletions to your DNS provider, and purging a domain no longer shows a confusing "Purge right" error or leaves a leftover DNS record behind.

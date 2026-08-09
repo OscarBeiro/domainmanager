@@ -317,12 +317,20 @@ class DashboardCards
         /** @var \DBmysql $DB */
         global $DB;
 
+        // Repeated below (SELECT + GROUPBY), never referenced by its SELECT
+        // alias: DomainState has a real dns_suppliers_id column of its own,
+        // which always wins GROUP BY resolution over a same-named SELECT
+        // alias — the query ran fine on an install with only one row per
+        // dns_suppliers_id value, but a real multi-domain install hits
+        // MySQL's "column 'dns_suppliers_id' in GROUP BY is ambiguous"
+        // (confirmed live against testing_glpi_1). Same "repeat the full
+        // expression, don't rely on the alias" fix as domainsByRegistrar()'s
+        // CASE expression and recordsByDnsProviderAndType()'s COALESCE.
+        $dnsSuppliersIdExpr = 'COALESCE(' . $DB->quoteName(DomainState::getTable() . '.dns_suppliers_id') . ', 0)';
+
         $iterator = $DB->request([
             'SELECT'    => [
-                new QueryExpression(
-                    'COALESCE(' . $DB->quoteName(DomainState::getTable() . '.dns_suppliers_id')
-                    . ', 0) AS ' . $DB->quoteName('dns_suppliers_id'),
-                ),
+                new QueryExpression($dnsSuppliersIdExpr . ' AS ' . $DB->quoteName('dns_suppliers_id')),
                 new QueryExpression('MAX(' . $DB->quoteName('supplier.name') . ') AS ' . $DB->quoteName('supplier_name')),
                 'COUNT DISTINCT' => 'glpi_domains.id AS cpt',
             ],
@@ -342,7 +350,7 @@ class DashboardCards
                 ],
                 getEntitiesRestrictCriteria('glpi_domains', '', '', true),
             ),
-            'GROUPBY'   => ['dns_suppliers_id'],
+            'GROUPBY'   => [new QueryExpression($dnsSuppliersIdExpr)],
             'ORDER'     => 'cpt DESC',
         ]);
 
@@ -599,12 +607,19 @@ class DashboardCards
         /** @var \DBmysql $DB */
         global $DB;
 
+        // Repeated below (SELECT + GROUPBY), never referenced by its SELECT
+        // alias: DomainState has a real dns_status column of its own, which
+        // always wins GROUP BY resolution over a same-named SELECT alias —
+        // confirmed live against testing_glpi_1 ("column 'dns_status' in
+        // GROUP BY is ambiguous" on a real multi-domain install). Same
+        // "repeat the full expression, don't rely on the alias" fix as
+        // registrarStatusBreakdown()'s own CASE expression.
+        $dnsStatusExpr = 'COALESCE(' . $DB->quoteName(DomainState::getTable() . '.dns_status')
+            . ', \'' . DomainState::STATUS_NEVER . '\')';
+
         $iterator = $DB->request([
             'SELECT'    => [
-                new QueryExpression(
-                    'COALESCE(' . $DB->quoteName(DomainState::getTable() . '.dns_status')
-                    . ', \'' . DomainState::STATUS_NEVER . '\') AS ' . $DB->quoteName('dns_status'),
-                ),
+                new QueryExpression($dnsStatusExpr . ' AS ' . $DB->quoteName('dns_status')),
                 'COUNT DISTINCT' => 'glpi_domains.id AS cpt',
             ],
             'FROM'      => 'glpi_domains',
@@ -620,7 +635,7 @@ class DashboardCards
                 ],
                 getEntitiesRestrictCriteria('glpi_domains', '', '', true),
             ),
-            'GROUPBY'   => ['dns_status'],
+            'GROUPBY'   => [new QueryExpression($dnsStatusExpr)],
             'ORDER'     => 'cpt DESC',
         ]);
 
