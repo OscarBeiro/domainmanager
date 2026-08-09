@@ -92,9 +92,71 @@ class RdapClient
         }
 
         try {
-            return self::parse($decoded);
+            $result = self::parse($decoded);
         } catch (Throwable $e) {
             throw new DriverException(__('RDAP lookup failed: unable to parse response', 'domainmanager'), false, $e);
+        }
+
+        // §9: a "thin" registry response (e.g. Verisign for .com — no
+        // `transfer` event in its own `events` array, confirmed live
+        // 2026-08-09 against scavogados.com/rdap.org) never reports a
+        // domain's transfer date; only the registrar's own ("thick") RDAP
+        // server does, reachable solely via this response's own `related`
+        // link (rdap.ionos.com/domain/… for that same domain *did* report
+        // one: 2018-11-07). Followed as a best-effort fallback, only when
+        // the primary lookup didn't already find one — any failure here
+        // (timeout, 404, malformed body) is swallowed and the primary
+        // result returned unchanged, since this is enrichment on top of an
+        // already-successful lookup, not a new failure mode of it.
+        if ($result->found && $result->transferDate === null) {
+            $transferDate = $this->fetchTransferDateFromRelated($decoded);
+            if ($transferDate !== null) {
+                $result = $result->withTransferDate($transferDate);
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param  array<string, mixed> $data decoded primary RDAP response
+     * @return DateTimeImmutable|null
+     */
+    private function fetchTransferDateFromRelated(array $data): ?DateTimeImmutable
+    {
+        $relatedUrl = null;
+        foreach (is_array($data['links'] ?? null) ? $data['links'] : [] as $link) {
+            if (
+                is_array($link)
+                && ($link['rel'] ?? null) === 'related'
+                && is_string($link['href'] ?? null)
+                && str_contains((string) ($link['type'] ?? ''), 'rdap+json')
+            ) {
+                $relatedUrl = $link['href'];
+                break;
+            }
+        }
+
+        if ($relatedUrl === null) {
+            return null;
+        }
+
+        try {
+            $response = $this->getClient()->request('GET', $relatedUrl);
+            if ($response->getStatusCode() < 200 || $response->getStatusCode() >= 300) {
+                return null;
+            }
+            $decoded = json_decode((string) $response->getBody(), true);
+            if (!is_array($decoded)) {
+                return null;
+            }
+
+            return self::eventDate(
+                is_array($decoded['events'] ?? null) ? $decoded['events'] : [],
+                'transfer',
+            );
+        } catch (Throwable) {
+            return null;
         }
     }
 

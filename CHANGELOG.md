@@ -30,6 +30,8 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 - The DNS Provider name on a domain's form now stays a clickable link after clicking "Update Now", instead of turning into plain text until the page is reloaded.
 - Fixed the "Domains per DNS provider" dashboard card's drill-down showing the wrong (or no) domains; it now correctly filters by the actual matched DNS provider supplier, the same one shown on the domain's own form.
 - Fixed the "DNS sync status" and "Registrar sync status" dashboard cards' drill-downs showing the wrong (or no) domains when clicking into a status; also renamed both cards to match their actual field names (previously "Sync status"/"Registrar status").
+- Fixed DNSSEC status, domain lock, WHOIS privacy, and pending delete/transfer flags never showing a "No" value on a domain's form — they showed nothing at all instead, even when the registrar or RDAP had confirmed the flag was off.
+- Fixed the "Last transfer" date never being found for domains registered through certain registrars, where it was previously only looked up from a source that doesn't track transfer history.
 
 ## [1.6.0] - 2026-08-08
 ### Features

@@ -226,6 +226,44 @@ class DomainState extends CommonDBTM
     }
 
     /**
+     * Force-write a set of columns on an existing row, bypassing
+     * `CommonDBTM::update()`'s own change-detection.
+     *
+     * That detection compares the stored value against the incoming one
+     * with loose PHP `!=`, under which `null != 0` is `false` — so the
+     * very first time a nullable tinyint column (registrar_dnssec_enabled,
+     * registrar_domain_lock, registrar_privacy_enabled, pending_delete,
+     * pending_transfer — every RDAP/registrar-reported tri-state boolean
+     * this plugin stores) needs to go from "never reported" (NULL) to a
+     * legitimate `false`/`0`, `update()` silently decides nothing changed
+     * and drops the column from its own SQL UPDATE. The value is then
+     * stuck at NULL forever, no matter how many times RDAP or a registrar
+     * driver reports it — confirmed live (2026-08-09) against domain
+     * #14/scavogados.com: RDAP reported delegationSigned=false correctly,
+     * update() computed registrar_dnssec_enabled=0, but the row stayed
+     * NULL. `$DB->update()` (the query builder, not raw SQL — see this
+     * plugin's own "no raw SQL" convention) writes exactly what it's
+     * given, so it's used here instead for these specific columns.
+     *
+     * @param  int   $id    state row id
+     * @param  array $input columns to write, id/domains_id excluded
+     * @return void
+     */
+    public static function forceUpdate(int $id, array $input): void
+    {
+        global $DB;
+
+        if ($input === []) {
+            return;
+        }
+
+        unset($input['id'], $input['domains_id']);
+        $input['date_mod'] = $_SESSION['glpi_currenttime'] ?? date('Y-m-d H:i:s');
+
+        $DB->update(self::getTable(), $input, ['id' => $id]);
+    }
+
+    /**
      * Every non-deleted, non-template Domain where this supplier is the
      * registrar and/or the resolved DNS provider — read-only "Domains" list
      * shown on the Supplier's Domain Manager tab. Restricted to entities

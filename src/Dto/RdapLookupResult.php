@@ -73,4 +73,36 @@ final class RdapLookupResult
     {
         return new self(found: false);
     }
+
+    /**
+     * §9: a thin registry RDAP response (e.g. Verisign for `.com`) never
+     * reports a `transfer` event at all — only the registrar's own
+     * ("thick") RDAP server does, reachable only via that response's own
+     * `related` link. {@see RdapClient::lookup()} follows it as a
+     * best-effort fallback and merges the date in via this wither, leaving
+     * every other field exactly as the primary (registry) lookup reported
+     * it.
+     *
+     * @param  DateTimeImmutable $date
+     * @return self
+     */
+    public function withTransferDate(DateTimeImmutable $date): self
+    {
+        return new self(
+            found: $this->found,
+            registrationDate: $this->registrationDate,
+            expirationDate: $this->expirationDate,
+            lastChangedDate: $this->lastChangedDate,
+            transferDate: $date,
+            transferLock: $this->transferLock,
+            domainLock: $this->domainLock,
+            pendingDelete: $this->pendingDelete,
+            pendingTransfer: $this->pendingTransfer,
+            dnssecSigned: $this->dnssecSigned,
+            registrarName: $this->registrarName,
+            registrarIanaId: $this->registrarIanaId,
+            nameservers: $this->nameservers,
+            notices: $this->notices,
+        );
+    }
 }

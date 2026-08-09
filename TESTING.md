@@ -3845,3 +3845,46 @@ don't rely on the "click date" UI in this GLPI version.
     `$state->fields['is_managed']`, independent of `injectDomain()`'s new `resolves_to_driver`
     gate, and `renderManagedIndicator()` already no-ops when it's `false`), not separately
     re-verified live per-tab.
+
+## Nullable registrar/RDAP tri-state boolean fields persist `false`, not just `true`
+
+- **Trigger an RDAP-only DNSSEC lookup for a domain with `registrar_dnssec_enabled` still NULL,
+  where RDAP reports `secureDNS.delegationSigned: false`** (domain #14, scavogados.com).
+  Expected: `registrar_dnssec_enabled` becomes `0` in the DB, not left at NULL.
+  - [x] Pass — verified live 2026-08-09 against `testing_glpi_1`: called
+    `GlpiPlugin\Domainmanager\Service\SyncEngine::sync()` directly (Kernel-booted CLI script),
+    confirmed the computed value was `int(0)` both before and after `DomainState::forceUpdate()`,
+    and confirmed via direct DB query the stored value is now `0` (previously reverted to NULL
+    after the very next registrar sync, before this fix).
+- **Re-run a full registrar sync afterward and confirm the `0` isn't wiped back to NULL.**
+  Expected: `registrar_dnssec_enabled` stays `0` across subsequent sync cron ticks.
+  - [x] Pass — verified live: re-ran `SyncEngine::sync()` a second time for the same domain,
+    value remained `0`.
+- **Aggregate check across all domains for `registrar_privacy_enabled`, `registrar_domain_lock`,
+  `registrar_dnssec_enabled`, `pending_delete`, `pending_transfer`.** Expected (pre-fix, root
+  cause confirmation): every one of these columns had never once stored `0` for any of the 24
+  domains in `testing_glpi_1` — only ever NULL or `1`. Not independently re-verified post-fix
+  across all 24 (would require live data where a driver/RDAP actually reports `false` for each
+  field; DNSSEC case above is the one confirmed live end-to-end).
+  - [x] Pass (root cause) — confirmed via aggregate SQL query pre-fix.
+
+## RDAP transfer date falls back to the registrar's own ("thick") RDAP server
+
+- **Look up a domain whose registry RDAP server is "thin" (no `transfer` event at all) but
+  whose registrar's own RDAP server reports one** (scavogados.com — Verisign `.com` registry
+  via `rdap.org` has no transfer event; the registry response's own `related` link,
+  `rdap.ionos.com/domain/SCAVOGADOS.COM`, reports `transfer: 2018-11-07T05:16:32Z`). Expected:
+  `RdapClient::lookup()` returns that date as `transferDate`, not null.
+  - [x] Pass — verified live 2026-08-09 against `testing_glpi_1`: called
+    `RdapClient::lookup('scavogados.com')` directly (Kernel-booted script), got
+    `transferDate = 2018-11-07 05:16:32`.
+- **Run the RDAP gap-fill cron logic for that domain and confirm the date persists to the DB.**
+  Expected: `glpi_plugin_domainmanager_states.transfer_date` becomes `2018-11-07 05:16:32`.
+  - [x] Pass — verified live: invoked `Cron::processRdapEnrichment()` directly for domain #14,
+    logged "filled transfer_date, ...", confirmed via DB query.
+- **Confirm a related-link fetch failure doesn't break the primary lookup.** Expected: any
+  error fetching/parsing the registrar's RDAP response is swallowed; the primary (registry)
+  result is still returned with `transferDate = null`, not an exception.
+  - [ ] Pass — reasoned from code (`fetchTransferDateFromRelated()` wraps its own request in a
+    `try`/`catch (Throwable)` returning `null`), not separately exercised live against a
+    deliberately-broken related URL.
