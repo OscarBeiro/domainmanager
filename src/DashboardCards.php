@@ -677,7 +677,7 @@ class DashboardCards
         return [
             'number' => $count,
             'url'    => DomainRecord::getSearchURL() . '?' . Toolbox::append_params($criteria),
-            'label'  => __('Records', 'domainmanager'),
+            'label'  => __('Managed records', 'domainmanager'),
             'alt'    => __('Number of Managed Records', 'domainmanager'),
             'icon'   => self::ICON,
         ];
