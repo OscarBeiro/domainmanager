@@ -11,6 +11,7 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 
 ## [Unreleased] - 1.7.1-beta1
 ### Features
+- Added an automated test suite covering the plugin's internal logic. No behavior change.
 - Removed the Transfer/EPP auth code feature. It never showed the actual code, only whether one was on file, but the plugin no longer fetches or stores it at all — this is a security-sensitive domain-transfer secret that's now safest kept out of the database entirely.
 ### Bugs
 - A domain whose registrar has no API driver linked at all could still be wrongly marked "Managed" (and counted in the dashboard cards) purely because its DNS simply failed to resolve — fixed so "Managed" now always reflects a real, driver-backed registrar or DNS provider.

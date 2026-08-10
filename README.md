@@ -58,3 +58,6 @@ Contributions to this registry (new providers/patterns) are welcome via PR.
 
 ## Use
 Add a Supplier, configure its driver on the **Domain Manager** tab, run Check Connection, then let the `DomainSync` automatic action populate domain lifecycle and DNS record data. On a synced domain whose DNS provider supports write-back (Cloudflare/IONOS) and the current user holds the relevant per-type right, the domain's Records tab exposes create/edit/delete controls that write live to the provider. See `ARCHITECTURE.md` for full design detail, `CHANGELOG.md` for the release history, and `CHANGELOG-dev.md` for the full phase-by-phase development history.
+
+## Testing
+`composer test` (or `vendor/bin/phpunit`) runs a small automated suite covering the plugin's pure logic — IDN/Punycode conversion, TLD extraction, driver selection, status-label mapping, DTO enums, and DNS-lookup input validation. It deliberately does **not** cover the registrar/DNS driver API calls, sync engine, or any itemtype CRUD — those need a real GLPI database and, for the drivers, real provider accounts, so they're covered instead by the manual regression checklist in `TESTING.md`.
