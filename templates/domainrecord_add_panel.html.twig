@@ -101,7 +101,7 @@
                             <label class="form-label">
                                 TTL
                                 {% if ttl_auto_note %}
-                                    <i class="ti ti-info-circle" title="{{ __('Setting TTL to 1 means "Automatic".', 'domainmanager') }}"></i>
+                                    <i class="ti ti-info-circle" title="{{ __('Setting TTL to 1 means "Automatic".', 'domainmanager') }}" data-bs-toggle="tooltip"></i>
                                 {% endif %}
                             </label>
                             <input type="number" name="ttl" class="form-control" value="3600" min="60" max="99999" maxlength="5">

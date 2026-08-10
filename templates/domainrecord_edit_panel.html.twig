@@ -57,8 +57,7 @@
             </div>
             {% if ttl_auto_note %}
                 <div class="text-muted small mt-1">
-                    <i class="ti ti-info-circle"></i>
-                    {{ __('Setting TTL to 1 means "Automatic".', 'domainmanager') }}
+                    <i class="ti ti-info-circle" title="{{ __('Setting TTL to 1 means "Automatic".', 'domainmanager') }}" data-bs-toggle="tooltip"></i>
                 </div>
             {% endif %}
         </div>
