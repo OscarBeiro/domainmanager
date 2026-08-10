@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Entries are grouped into **Features** and **Bugs**, one line each.
 
 ## [Unreleased]
+### Bugs
+- The "Domains per registrar", "Domains per DNS provider", "Domains by TLD", "Domains per registrar by TLD", "Registrar status", "DNS status", and "Domains expiring soon" dashboard cards now only count managed domains, matching every other card on the Domain Manager dashboard.
 
 ## [1.7.0] - 2026-08-09
 ### Features

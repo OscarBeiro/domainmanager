@@ -17,6 +17,8 @@ Entries are grouped into **Features** (new capability, UI/UX change, refactor, d
 change) and **Bugs** (something that was actually broken, fixed) — one line each.
 
 ## [Unreleased]
+### Bugs
+- **Domain-level dashboard breakdown cards now filter to `DomainState.is_managed = 1`.** (`src/DashboardCards.php`). `domainsByRegistrar()`, `domainsByDnsProvider()`, `domainsByTld()`, `domainsByRegistrarAndTld()`, `syncStatusBreakdown()` ("DNS status"), `registrarStatusBreakdown()` ("Registrar status"), and `domainsExpiringSoon()` counted every in-scope `Domain` regardless of the "managed" flag, unlike `domainsCount()`'s "Number of Managed Domains" and every record-level card (`ImportedRecord.is_managed`). Four of them (`domainsByRegistrar`, `domainsByDnsProvider`, `domainsByTld`, `domainsByRegistrarAndTld`) already claimed "Managed domains per X" in their `alt` tooltip text despite never applying the filter — a real correctness bug, not just a gap. Fixed by switching each card's `DomainState` join from `LEFT JOIN` to `INNER JOIN` (`domainsByRegistrar()`/`domainsExpiringSoon()` had no such join at all — added one, mirroring `domainsCount()`'s) and adding `DomainState.is_managed => 1` to each `WHERE`. `syncStatusBreakdown()`/`registrarStatusBreakdown()` now correctly drop the "never synced, no state row" bucket for unmanaged domains rather than folding it into `STATUS_NEVER`. `domainsExpiringSoon()`'s drill-down search URL also gained the matching `PLUGIN_DOMAINMANAGER_SO_DOMAIN_MANAGED = 1` criteria so the search-page click-through matches what the card counted.
 
 ## [1.7.0] - 2026-08-09
 ### Features

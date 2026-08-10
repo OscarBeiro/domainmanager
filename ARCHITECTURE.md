@@ -4424,3 +4424,33 @@ the hidden-panel states above already showed no indicator there, both before thi
 after both amendments. No template change — `domain_panel.html.twig`'s existing `is_managed`
 branch remains the "linked to a working driver, but genuinely not managed" path. See
 TESTING.md's Phase 88 entry for the live verification matrix.
+
+### 20.12 Post-ship bugfix: domain-level breakdown cards weren't scoped to managed domains
+
+User audit of the full dashboard card set (registrar/DNS-provider/TLD breakdowns, registrar/DNS
+sync status, expiring-soon) found that every record-level card (`recordsCount()`,
+`recordsByType()`, `recordsByDnsProvider()`, `recordsByDnsProviderAndType()`, `proxiedRecords()`)
+and `domainsCount()`'s "Number of Managed Domains" bigNumber already scope to
+`ImportedRecord.is_managed = 1`/`DomainState.is_managed = 1` respectively, but seven domain-level
+breakdown cards did not: `domainsByRegistrar()`, `domainsByDnsProvider()`, `domainsByTld()`,
+`domainsByRegistrarAndTld()`, `syncStatusBreakdown()` ("DNS status"), `registrarStatusBreakdown()`
+("Registrar status"), and `domainsExpiringSoon()` counted every in-scope `Domain` regardless of
+managed state. Four of them (`domainsByRegistrar`, `domainsByDnsProvider`, `domainsByTld`,
+`domainsByRegistrarAndTld`) already advertised "Managed domains per X" in their `alt` tooltip text
+despite never applying the filter — a real correctness bug, not just an inconsistency.
+
+Fixed by adding `DomainState.is_managed => 1` to each card's `WHERE`, same pattern
+`domainsCount()` (§20's "Number of Managed Domains") already used. Where the join to
+`DomainState` was a `LEFT JOIN` (`domainsByDnsProvider()`, `syncStatusBreakdown()`,
+`registrarStatusBreakdown()`), it was switched to `INNER JOIN` — filtering on `is_managed = 1`
+already forces this semantically, but an explicit `INNER JOIN` keeps the query honest and matches
+`domainsByTld()`'s existing style. `domainsByRegistrar()` and `domainsExpiringSoon()` had no
+`DomainState` join at all and gained one. One behavioral consequence worth noting:
+`syncStatusBreakdown()`/`registrarStatusBreakdown()` now exclude an unmanaged domain that was
+never synced (no `DomainState` row) outright, rather than folding it into the `STATUS_NEVER`
+bucket — correct, since the card is now managed-domains-only. `domainsExpiringSoon()`'s
+drill-down search URL also gained a matching `PLUGIN_DOMAINMANAGER_SO_DOMAIN_MANAGED = 1`
+criterion so the search-page click-through matches what the card counted.
+
+No `GROUP BY` expressions changed, so this carries none of §20.4/§20.6's "ambiguous column in
+GROUP BY" risk (those keep grouping by the raw joined column, not the SELECT alias).
