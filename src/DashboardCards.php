@@ -597,7 +597,43 @@ class DashboardCards
                 // via toChartData()'s SQL-grouped iterator, so this matrix
                 // build is the one place that must replicate that "absent,
                 // not zero" behaviour by hand).
-                $seriesData[$tld][] = $matrix[$suppliers_id][$tld] ?? null;
+                $cpt = $matrix[$suppliers_id][$tld] ?? null;
+                if ($cpt === null) {
+                    $seriesData[$tld][] = null;
+                    continue;
+                }
+
+                // No single supplier id represents the "no driver linked"
+                // bucket (same reasoning as domainsByRegistrar()'s own
+                // urlBuilder), so that segment gets a plain value with no
+                // per-point drill-down instead of a meaningless "supplier 0"
+                // search.
+                if ($suppliers_id <= 0) {
+                    $seriesData[$tld][] = $cpt;
+                    continue;
+                }
+
+                $criteria = [
+                    'criteria' => [
+                        [
+                            'field'      => 53,
+                            'searchtype' => 'equals',
+                            'value'      => $suppliers_id,
+                        ],
+                        [
+                            'link'       => 'AND',
+                            'field'      => PLUGIN_DOMAINMANAGER_SO_DOMAIN_TLD,
+                            'searchtype' => 'equals',
+                            'value'      => $tld,
+                        ],
+                    ],
+                    'reset'    => 'reset',
+                ];
+
+                $seriesData[$tld][] = [
+                    'value' => $cpt,
+                    'url'   => Domain::getSearchURL() . '?' . Toolbox::append_params($criteria),
+                ];
             }
         }
 
@@ -1187,9 +1223,16 @@ class DashboardCards
      * volume" behaviour the user actually wants, without duplicating core's
      * slicing logic here.
      *
-     * There is no per-point drill-down `url` in this shape — same as core's
-     * own SLA-by-technician card, `Widget`'s multi-series bar/line renderers
-     * never read a `url` key per data point, only `name`/`data`.
+     * Each present data point carries a per-segment drill-down: `Widget`'s
+     * echarts click handler reads `params.data.url`, so a data value can be
+     * either a bare number (no click) or `{value, url}` (clickable) — see
+     * domainsByRegistrarAndTld()'s matching treatment. Unlike that card,
+     * there is no search option exposing `DomainState.dns_suppliers_id`
+     * under the `DomainRecord` itemtype (`PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_SUPPLIER`
+     * is only registered for `Domain`), so every segment's url can only
+     * carry the type + "Managed" criteria — a superset spanning all
+     * providers for that type, same accepted tradeoff as
+     * `recordsByDnsProvider()`'s own drill-down.
      */
     public static function recordsByDnsProviderAndType(array $params = []): array
     {
@@ -1292,7 +1335,33 @@ class DashboardCards
                 // null, not 0 — see domainsByRegistrarAndTld()'s matching
                 // comment: an absent provider/type combo shouldn't fabricate
                 // a real (tooltip/legend-visible) data point.
-                $seriesData[$typeId][] = $matrix[$grp][$typeId] ?? null;
+                $cpt = $matrix[$grp][$typeId] ?? null;
+                if ($cpt === null) {
+                    $seriesData[$typeId][] = null;
+                    continue;
+                }
+
+                $criteria = [
+                    'criteria' => [
+                        [
+                            'field'      => 3,
+                            'searchtype' => 'equals',
+                            'value'      => $typeId,
+                        ],
+                        [
+                            'link'       => 'AND',
+                            'field'      => PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_MANAGED,
+                            'searchtype' => 'equals',
+                            'value'      => 1,
+                        ],
+                    ],
+                    'reset'    => 'reset',
+                ];
+
+                $seriesData[$typeId][] = [
+                    'value' => $cpt,
+                    'url'   => DomainRecord::getSearchURL() . '?' . Toolbox::append_params($criteria),
+                ];
             }
         }
 
