@@ -4454,3 +4454,37 @@ criterion so the search-page click-through matches what the card counted.
 
 No `GROUP BY` expressions changed, so this carries none of §20.4/§20.6's "ambiguous column in
 GROUP BY" risk (those keep grouping by the raw joined column, not the SELECT alias).
+
+### 20.13 Post-ship bugfix: `registrarStatusBreakdown()`'s reconciliation CASE mishandled "no Infocom row at all"
+
+Found while investigating why `domainsByRegistrar()`'s "No driver linked" bucket bar wasn't
+click-through filterable to the right domains (that investigation didn't change `is_managed`
+semantics at all — confirmed `resolvesToActiveDriver()` in `DomainState.php` already requires an
+active Supplier + a real `api_driver` + non-empty decrypted credentials, so a Supplier linked with
+no driver correctly never sets `is_managed = 1`; no fix needed there).
+
+`registrarStatusBreakdown()`'s CASE (§20, `registrarStatusBreakdown()`) reconciles a domain's
+*stored* `registrar_suppliers_id` against its *current* Infocom `suppliers_id` to detect a stale,
+superseded registrar link, folding a mismatch into `STATUS_NEVER`. For a domain with no Infocom
+row at all, the `LEFT JOIN` leaves `infocom.suppliers_id` `NULL`, so the comparison becomes
+`0 = NULL` — SQL's three-valued logic evaluates that to `NULL`, not true — so the CASE always fell
+through to its `STATUS_NEVER` ELSE branch for that domain, regardless of what `registrar_status`
+was actually stored. Confirmed via `SyncEngine.php`'s registrar-leg sync logic: a domain with no
+registrar Supplier linked gets `registrar_status = SyncEngine::STATUS_UNCONFIGURED` written by the
+sync engine, not `STATUS_NEVER` — so this bug meant the card displayed "Never synchronized" for
+domains the sync engine had already correctly diagnosed as "Not configured".
+
+Fixed by `COALESCE`-ing both sides of the comparison to `0` (`COALESCE(registrar_suppliers_id, 0)
+= COALESCE(infocom.suppliers_id, 0)`), same "repeat/guard the joined-column comparison instead of
+trusting NULL-safe equality" reasoning as every other `COALESCE` fix in this file. No other card
+shares this specific registrar/Infocom reconciliation comparison, so no other fix needed.
+
+Deliberately **not** fixed in this pass: making `domainsByRegistrar()`'s "No driver linked" bucket
+bar itself clickable. Its click callback (§20, `toChartData()`'s per-row URL builder) still returns
+`null` for that bucket — an attempted fix linking to `field 53 searchtype=empty` was reverted after
+live testing showed it filtered the wrong domains (that search option only covers "no registrar
+linked at all", not the bucket's other case: "a registrar Supplier is linked but has no active
+driver configured"). A precise fix needs a dedicated search option mirroring the bucket's own CASE
+logic, or accepting `registrar_status = SyncEngine::STATUS_UNCONFIGURED` as a close-but-not-exact
+approximation (it also catches "driver configured but credentials empty", which the bucket's CASE
+does not) — left open pending a decision on that tradeoff.

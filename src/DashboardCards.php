@@ -714,8 +714,17 @@ class DashboardCards
         // stored status) but whose CASE result is identically STATUS_NEVER
         // silently split into separate "Never synchronized" buckets. Same
         // hazard/fix as recordsByDnsProvider()'s dns_suppliers_id.
-        $registrarStatusExpr = 'CASE WHEN ' . $DB->quoteName(DomainState::getTable() . '.registrar_suppliers_id')
-            . ' = ' . $DB->quoteName('infocom.suppliers_id')
+        //
+        // Both sides of the comparison are COALESCE'd to 0: a domain with no
+        // Infocom row at all (LEFT JOIN, `infocom.suppliers_id` is NULL) has
+        // `registrar_suppliers_id = 0` in that case too, but `0 = NULL`
+        // evaluates to NULL under SQL's three-valued logic — not true — so
+        // without the COALESCE the CASE always fell through to its ELSE
+        // branch for that domain, masking its real stored `registrar_status`
+        // (typically `unconfigured`, set by SyncEngine when no registrar
+        // Supplier is linked) behind a hardcoded `STATUS_NEVER` instead.
+        $registrarStatusExpr = 'CASE WHEN COALESCE(' . $DB->quoteName(DomainState::getTable() . '.registrar_suppliers_id') . ', 0)'
+            . ' = COALESCE(' . $DB->quoteName('infocom.suppliers_id') . ', 0)'
             . ' THEN COALESCE(' . $DB->quoteName(DomainState::getTable() . '.registrar_status')
             . ', \'' . DomainState::STATUS_NEVER . '\')'
             . ' ELSE \'' . DomainState::STATUS_NEVER . '\' END';
