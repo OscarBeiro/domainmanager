@@ -3906,3 +3906,31 @@ don't rely on the "click date" UI in this GLPI version.
   purge) as a user lacking the per-type PURGE right. Expected: existing ERROR still appears and
   the record is not purged.
   - [x] Pass — verified live against `testing_glpi_1`.
+
+## Phase 91: Drop the Transfer/EPP auth code feature entirely
+
+- **Upgrade drops the stored column:** run `glpi:plugin:install domainmanager` on an install
+  that already had `registrar_auth_info` populated. Expected: `DESCRIBE
+  glpi_plugin_domainmanager_states` no longer lists `registrar_auth_info` at all — not just
+  nulled, actually dropped.
+  - [x] Pass — verified live against `testing_glpi_1`: had real stored codes for several
+    domains (e.g. `qn7!q$sv` for domain #14) before the migration; `DESCRIBE` shows the column
+    gone after `glpi:plugin:install`.
+- **No leftover references:** `grep -rn "registrar_auth_info|authInfo|GetAuthcode"` across
+  `*.php`/`*.twig` returns only the migration's own `dropField()` call and explanatory comments.
+  - [x] Pass.
+- **Domain panel no longer shows the field:** open a synced domain's form. Expected: the
+  registrar-metadata table has no "Transfer / EPP auth code" column at all; the remaining
+  columns (WHOIS privacy, Transfer lock, Domain lock, Auto-renew, DNSSEC, Pending delete,
+  Pending transfer) still render correctly with matching `<th>`/`<td>` counts.
+  - [x] Pass — reviewed the diffed `domain_panel.html.twig` structure directly (7 `<th>` / 7
+    `<td>` after removal); not separately exercised in a browser this session (couldn't
+    authenticate against `testing_glpi_1`'s web UI with known credentials).
+- **Search option removed, no orphaned saved searches:** any saved search referencing the old
+  id 9419 (`PLUGIN_DOMAINMANAGER_SO_DOMAIN_AUTH_CODE`) is pruned by
+  `pruneStaleSearchOptionCriteria()` on install, same as the two other previously-dropped IDs.
+  - [x] Pass — reasoned from code (9419 added to the existing `Domain => [9402, 9403, 9419]`
+    stale-ID list); no pre-existing saved search using it was present to exercise live.
+- **Static analysis clean:** `phpcs`/`php -l` on every touched file.
+  - [x] Pass — verified live: `tools/codesniffer.sh` reports no violations; `php -l` clean on
+    all 8 touched PHP files.

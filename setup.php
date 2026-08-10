@@ -114,7 +114,8 @@ define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_NAME_ASCII', 9416);
 // so its slot is not reused here.
 define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_WHOIS_PRIVACY', 9417);
 define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_TRANSFER_LOCK', 9418);
-define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_AUTH_CODE', 9419);
+// 9419 (PLUGIN_DOMAINMANAGER_SO_DOMAIN_AUTH_CODE) dropped along with the
+// registrar_auth_info column — not reused.
 define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_DOMAIN_LOCK', 9420);
 define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_AUTO_RENEW', 9421);
 define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNSSEC', 9422);
@@ -568,28 +569,11 @@ function plugin_domainmanager_getAddSearchOptionsNew($itemtype): array
             ],
         ];
 
-        // Transfer/EPP auth code: the raw value is a live credential (same
-        // "never leaves the browser" treatment as any other secret in this
-        // plugin, per the template's own "On file"/"Not on file" badge,
-        // domain_panel.html.twig) — 'searchtype' is restricted to
-        // ['empty'] only, so this is filterable ("which domains have a code
-        // on file?") without ever exposing the value itself in a search
-        // results column or criteria input.
-        // `getSpecificValueToDisplay()` masks it unconditionally below.
-        $options[] = [
-            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN_AUTH_CODE,
-            'itemtype'      => DomainState::class,
-            'table'         => DomainState::getTable(),
-            'field'         => 'registrar_auth_info',
-            'linkfield'     => 'domains_id',
-            'name'          => __('Auth code', 'domainmanager'),
-            'datatype'      => 'specific',
-            'searchtype'    => ['empty'],
-            'massiveaction' => false,
-            'joinparams'    => [
-                'jointype' => 'child',
-            ],
-        ];
+        // Transfer/EPP auth code search option (id 9419) dropped along with
+        // the registrar_auth_info column itself: it's a transfer-enabling
+        // secret, and storing/searching it at rest — even masked — was
+        // judged not worth the risk. Slot not reused, same as
+        // registrar_domain_type's above.
     }
 
     if ($itemtype === DomainRecord::class) {

@@ -386,7 +386,11 @@ class Installer
     {
         $table = 'glpi_plugin_domainmanager_states';
 
-        $migration->addField($table, 'registrar_auth_info', 'varchar(255) NULL DEFAULT NULL');
+        // registrar_auth_info (the EPP transfer/auth code) was dropped: it
+        // is a transfer-enabling secret and storing it at rest — even
+        // masked in the UI — was judged not worth the risk. dropField() is
+        // a no-op on installs that never had the column.
+        $migration->dropField($table, 'registrar_auth_info');
         $migration->addField($table, 'registrar_privacy_enabled', 'tinyint NULL DEFAULT NULL');
         $migration->addField($table, 'registrar_domain_lock', 'tinyint NULL DEFAULT NULL');
         $migration->addField($table, 'registrar_transfer_lock', 'tinyint NULL DEFAULT NULL');
@@ -891,7 +895,7 @@ class Installer
 
         $stale_ids_by_itemtype = [
             'Supplier' => [9401],
-            'Domain'   => [9402, 9403],
+            'Domain'   => [9402, 9403, 9419],
         ];
 
         foreach ($stale_ids_by_itemtype as $itemtype => $stale_ids) {

@@ -86,7 +86,7 @@ class SyncEngine
      *               registrar_message: string, dns_message: string,
      *               detected_provider: string, dns_suppliers_id: int,
      *               last_sync_date: string,
-     *               registrar_auth_info: ?string, registrar_privacy_enabled: ?int,
+     *               registrar_privacy_enabled: ?int,
      *               registrar_domain_lock: ?int, registrar_transfer_lock: ?int,
      *               registrar_auto_renew: ?int, registrar_domain_type: ?string,
      *               registrar_dnssec_enabled: ?int}
@@ -138,7 +138,6 @@ class SyncEngine
             // fetches a fresh lifecycle — a leg that never ran (no
             // supplier, inactive supplier, error) has nothing to report,
             // same as every other registrar_* result field here.
-            'registrar_auth_info'       => null,
             'registrar_privacy_enabled' => null,
             'registrar_domain_lock'     => null,
             'registrar_transfer_lock'   => null,
@@ -313,7 +312,6 @@ class SyncEngine
         // own explicit reset logic.
         foreach (
             [
-                'registrar_auth_info',
                 'registrar_privacy_enabled',
                 'registrar_domain_lock',
                 'registrar_transfer_lock',
@@ -447,7 +445,6 @@ class SyncEngine
             // input was found live to be silently dropped (persisted as
             // NULL) instead of 1/0, while int/string/null values in the
             // same update() call persisted correctly.
-            $result['registrar_auth_info']       = $lifecycle->authInfo;
             $result['registrar_privacy_enabled'] = self::toNullableInt($lifecycle->privacyEnabled);
             $result['registrar_domain_lock']     = self::toNullableInt($lifecycle->domainLock);
             $result['registrar_transfer_lock']   = self::toNullableInt($lifecycle->transferLock);

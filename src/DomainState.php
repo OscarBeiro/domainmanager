@@ -157,16 +157,6 @@ class DomainState extends CommonDBTM
                     ? \htmlescape(__('Never synchronized', 'domainmanager'))
                     : \htmlescape($value);
 
-                // Never render the actual credential in a search results
-                // column, same "On file"/"Not on file" masking as the domain
-                // panel's own badge (domain_panel.html.twig) — only whether a
-                // code is on file is ever shown here.
-            case 'registrar_auth_info':
-                $value = (string) ($values[$field] ?? '');
-                return $value === ''
-                    ? \htmlescape(__('Not on file', 'domainmanager'))
-                    : \htmlescape(__('On file', 'domainmanager'));
-
             case 'tld':
                 $value = (string) ($values[$field] ?? '');
                 return $value === '' ? \htmlescape(__('Not set')) : \htmlescape($value);

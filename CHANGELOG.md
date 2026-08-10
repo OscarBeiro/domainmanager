@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Entries are grouped into **Features** and **Bugs**, one line each.
 
 ## [Unreleased] - 1.7.1-beta1
+### Features
+- Removed the Transfer/EPP auth code feature. It never showed the actual code, only whether one was on file, but the plugin no longer fetches or stores it at all — this is a security-sensitive domain-transfer secret that's now safest kept out of the database entirely.
 ### Bugs
 - A domain whose registrar has no API driver linked at all could still be wrongly marked "Managed" (and counted in the dashboard cards) purely because its DNS simply failed to resolve — fixed so "Managed" now always reflects a real, driver-backed registrar or DNS provider.
 - The "Domains per registrar", "Domains per DNS provider", "Domains by TLD", "Domains per registrar by TLD", "Registrar status", "DNS status", and "Domains expiring soon" dashboard cards now only count managed domains, matching every other card on the Domain Manager dashboard.

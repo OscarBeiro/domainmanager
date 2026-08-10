@@ -213,15 +213,12 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Dns
     /**
      * {@inheritDoc}
      *
-     * §9 Phase 7: `authInfo`/`privacyEnabled`/`domainLock`/`transferLock`/
-     * `autoRenew`/`domainType`/`dnsSecEnabled` are all confirmed top-level
-     * fields of the `domainLarge` schema returned by this exact call
+     * §9 Phase 7: `privacyEnabled`/`domainLock`/`transferLock`/`autoRenew`/
+     * `domainType`/`dnsSecEnabled` are all confirmed top-level fields of the
+     * `domainLarge` schema returned by this exact call
      * (`GET /v1/domainitems/{domainId}`, live spec re-read 2026-07-21) —
      * the same response this method already fetches for
-     * `expirationDate`/`status`, no extra request needed. `authInfo` is
-     * itself optionally absent per IONOS's own doc (hidden when Domain
-     * Guard is active; not set by default for .eu/.de) — `?? null`
-     * handles that the same way a missing key would.
+     * `expirationDate`/`status`, no extra request needed.
      */
     public function fetchLifecycle(string $domain): DomainLifecycle
     {
@@ -243,7 +240,6 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Dns
             null,
             $expiration,
             self::mapLifecycleStatus($data['status'] ?? []),
-            isset($data['authInfo']) ? (string) $data['authInfo'] : null,
             isset($data['privacyEnabled']) ? (bool) $data['privacyEnabled'] : null,
             isset($data['domainLock']) ? (bool) $data['domainLock'] : null,
             isset($data['transferLock']) ? (bool) $data['transferLock'] : null,
