@@ -29,6 +29,15 @@
  * -------------------------------------------------------------------------
  */
 
+// GLPI's plugin autoloader only registers this plugin's own PSR-4 namespace
+// (GlpiPlugin\Domainmanager\ -> src/); it never loads a plugin's Composer
+// vendor/autoload.php, so third-party deps (e.g. Pdp\Rules from
+// jeremykendall/php-domain-parser) are invisible at runtime unless required
+// here explicitly.
+if (file_exists(__DIR__ . '/vendor/autoload.php')) {
+    require_once __DIR__ . '/vendor/autoload.php';
+}
+
 use Glpi\Plugin\Hooks;
 use GlpiPlugin\Domainmanager\Config\Config as DomainmanagerConfig;
 use GlpiPlugin\Domainmanager\DashboardCards;
