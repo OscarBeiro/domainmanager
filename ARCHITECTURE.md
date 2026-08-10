@@ -4488,3 +4488,31 @@ driver configured"). A precise fix needs a dedicated search option mirroring the
 logic, or accepting `registrar_status = SyncEngine::STATUS_UNCONFIGURED` as a close-but-not-exact
 approximation (it also catches "driver configured but credentials empty", which the bucket's CASE
 does not) — left open pending a decision on that tradeoff.
+
+### 20.14 Post-ship bugfix: a Supplier with no active driver still listed domains on its own tab
+
+User-reported: a Supplier configured with `api_driver = DRIVER_NONE` ("None (no API integration)"
+in its own Domain Manager tab) still showed a domain in that same tab's "Domains" list — e.g. a
+Domain linked to it via native Infocom as the registrar. This is a genuinely different bug from
+§20.12/§20.13's dashboard-card fixes: `is_managed` itself was never wrong here (confirmed
+`resolvesToActiveDriver()` already gates it correctly, same confirmation as §20.13), but
+`DomainState::getDomainsForSupplier()` (§9 Phase 5.5's union-of-Infocom-and-`dns_suppliers_id`
+query, backing both `SupplierTab::showForSupplier()`'s list render and
+`SupplierTab::getTabNameForItem()`'s count badge — confirmed the only two callers) had no driver
+check of its own at all: any Domain linking to the Supplier via either half of that union showed
+up, regardless of whether the Supplier could ever actually manage it.
+
+This runs directly against the method's own pre-existing design intent, documented in its
+docblock: "never gate a domain's presence in this list on a state row existing just because the
+registrar link is real" — deliberately written so a real, driver-backed Supplier whose first sync
+simply hasn't run yet still shows its linked domains immediately, with no state row required. That
+reasoning doesn't extend to a Supplier that could never sync in the first place — there's no
+"hasn't run yet" for a Supplier with no driver configured at all, so showing its domains implies a
+management relationship that structurally cannot exist.
+
+Fixed with an early-return guard — `if (!self::resolvesToActiveDriver($suppliers_id)) return [];`,
+placed immediately after the method's existing `$suppliers_id <= 0` guard, before the query runs
+at all. Confirmed safe for both callers (both purely UI-display, no code path expects a non-empty
+result regardless of driver status). Left the union-query's own "never gate on sync status" logic
+untouched — this guard fires on driver configuration, not sync state, so a real driver-backed
+Supplier's not-yet-synced domains keep showing exactly as before.

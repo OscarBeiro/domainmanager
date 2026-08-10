@@ -13,6 +13,7 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 ### Bugs
 - The "Domains per registrar", "Domains per DNS provider", "Domains by TLD", "Domains per registrar by TLD", "Registrar status", "DNS status", and "Domains expiring soon" dashboard cards now only count managed domains, matching every other card on the Domain Manager dashboard.
 - The "Registrar status" dashboard card no longer misreports a domain with no registrar linked at all as "Never synchronized" when it was actually already known to be unconfigured.
+- A Supplier's "Domain Manager" tab no longer lists domains under it when that Supplier has no API driver configured — a Supplier with no driver can't actually manage anything, so showing domains there was misleading.
 
 ## [1.7.0] - 2026-08-09
 ### Features

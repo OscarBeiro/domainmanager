@@ -330,6 +330,16 @@ class DomainState extends CommonDBTM
      * all when `dns_suppliers_id` already equals `$suppliers_id`, written
      * directly by the most recent real sync.
      *
+     * Returns an empty list outright, before running the query at all, for a
+     * Supplier that doesn't `resolvesToActiveDriver()` — a Supplier with no
+     * active driver configured can never actually manage anything, so
+     * listing its raw Infocom/`dns_suppliers_id` links here would imply a
+     * management relationship that cannot exist. This is orthogonal to (not
+     * a walk-back of) the "never gate on a state row existing" reasoning
+     * above: that's about a real driver-backed Supplier whose first sync
+     * simply hasn't run yet, which still needs to show; this is about a
+     * Supplier that could never sync in the first place.
+     *
      * @param  int $suppliers_id
      * @return array<int, array{domains_id:int, name:string, entities_id:int,
      *               registrar_suppliers_id:int, dns_suppliers_id:int,
@@ -342,6 +352,21 @@ class DomainState extends CommonDBTM
         global $DB;
 
         if ($suppliers_id <= 0) {
+            return [];
+        }
+
+        // A Supplier with no active driver at all (inactive, no
+        // SupplierConfig row, `api_driver = DRIVER_NONE`, or no credentials
+        // on file) can never actually manage anything, no matter how many
+        // Domains happen to link to it via Infocom or a stale
+        // `dns_suppliers_id` — showing those Domains on this Supplier's
+        // "Domain Manager" tab implied a management relationship that
+        // structurally cannot exist. This is a different question from the
+        // "not yet synced" case this method's own doc comment is careful to
+        // still show (a real driver-backed Supplier whose first sync just
+        // hasn't run yet): `resolvesToActiveDriver()` doesn't care whether a
+        // sync ran, only whether one *could* ever succeed.
+        if (!self::resolvesToActiveDriver($suppliers_id)) {
             return [];
         }
 
