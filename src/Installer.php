@@ -92,6 +92,7 @@ class Installer
         self::clearRdapEnrichmentComment();
         self::clearDomainSyncComment();
         self::upgradeDomainSyncContinuousDefaults();
+        self::backfillDnsErrorWithoutSupplierManagedFlag();
         DashboardCards::install($migration);
 
         $migration->executeMigration();
@@ -1360,6 +1361,42 @@ class Installer
      *
      * @return void
      */
+    /**
+     * One-time correction for a `SyncEngine::sync()`/`HookHandler::
+     * infocomSaved()` bug: both computed `is_managed` as "registrar leg
+     * resolved OR dns leg resolved" using only `dns_status IN (ok, error)`,
+     * but `dns_status` reaches `error` from a plain NS-lookup failure or an
+     * unmanageable-record-types profile restriction *before* any DNS
+     * supplier/driver is ever resolved (`dns_suppliers_id` stays 0 in that
+     * case). A domain whose registrar supplier has no driver at all and
+     * whose DNS simply failed to resolve was therefore flagged
+     * `is_managed = 1` with neither leg backed by a real driver. Idempotent
+     * (`WHERE` only ever matches rows still carrying the bug); every row
+     * gets recomputed for real the next time it syncs regardless.
+     *
+     * @return void
+     */
+    private static function backfillDnsErrorWithoutSupplierManagedFlag(): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $table = 'glpi_plugin_domainmanager_states';
+        if (!$DB->fieldExists($table, 'is_managed', false) || !$DB->fieldExists($table, 'dns_suppliers_id', false)) {
+            return;
+        }
+
+        $DB->update(
+            $table,
+            ['is_managed' => 0],
+            [
+                'is_managed'        => 1,
+                'dns_suppliers_id'  => 0,
+                'registrar_status'  => ['NOT IN', [DomainState::STATUS_OK, DomainState::STATUS_ERROR]],
+            ],
+        );
+    }
+
     private static function upgradeDomainSyncContinuousDefaults(): void
     {
         /** @var \DBmysql $DB */

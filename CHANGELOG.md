@@ -11,6 +11,7 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 
 ## [Unreleased]
 ### Bugs
+- A domain whose registrar has no API driver linked at all could still be wrongly marked "Managed" (and counted in the dashboard cards) purely because its DNS simply failed to resolve — fixed so "Managed" now always reflects a real, driver-backed registrar or DNS provider.
 - The "Domains per registrar", "Domains per DNS provider", "Domains by TLD", "Domains per registrar by TLD", "Registrar status", "DNS status", and "Domains expiring soon" dashboard cards now only count managed domains, matching every other card on the Domain Manager dashboard.
 - The "Registrar status" dashboard card no longer misreports a domain with no registrar linked at all as "Never synchronized" when it was actually already known to be unconfigured.
 - A Supplier's "Domain Manager" tab no longer lists domains under it when that Supplier has no API driver configured — a Supplier with no driver can't actually manage anything, so showing domains there was misleading.

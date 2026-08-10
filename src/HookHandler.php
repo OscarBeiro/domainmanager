@@ -112,12 +112,17 @@ class HookHandler
                 // re-evaluated live (DomainState::resolvesToActiveDriver()),
                 // OR'd with the DNS side's already-stored contribution
                 // (dns_status is untouched by an Infocom change, so its
-                // resolved-or-not state can't have changed here).
-                $dns_resolved  = in_array(
-                    $state->fields['dns_status'],
-                    [DomainState::STATUS_OK, DomainState::STATUS_ERROR],
-                    true,
-                );
+                // resolved-or-not state can't have changed here). Also
+                // requires dns_suppliers_id > 0: STATUS_ERROR is reachable
+                // from a plain NS-lookup failure with no supplier/driver
+                // ever resolved (see SyncEngine::sync()), which must not
+                // count as a managed leg.
+                $dns_resolved  = (int) $state->fields['dns_suppliers_id'] > 0
+                    && in_array(
+                        $state->fields['dns_status'],
+                        [DomainState::STATUS_OK, DomainState::STATUS_ERROR],
+                        true,
+                    );
                 $update = [
                     'id'                     => $state->getID(),
                     'registrar_suppliers_id' => $suppliers_id,

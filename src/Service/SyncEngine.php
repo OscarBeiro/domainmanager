@@ -239,9 +239,16 @@ class SyncEngine
         // passed (see syncRegistrarLeg()/syncDnsLeg() above and
         // DomainState::resolvesToActiveDriver()'s docblock), so this is
         // independent of whether the live API call itself then succeeded.
+        //
+        // The DNS leg is the exception: STATUS_ERROR is *also* reachable
+        // above (NS lookup failure, unmanageable record types) before any
+        // supplier/driver was ever resolved — $dns_config is still null in
+        // that case. Without gating on $dns_config !== null, a domain whose
+        // registrar has no driver and whose DNS simply failed to resolve
+        // (no supplier involved at all) was incorrectly flagged is_managed.
         $resolved_statuses = [DomainState::STATUS_OK, DomainState::STATUS_ERROR];
         $is_managed = in_array($result['registrar_status'], $resolved_statuses, true)
-            || in_array($result['dns_status'], $resolved_statuses, true);
+            || ($dns_config !== null && in_array($result['dns_status'], $resolved_statuses, true));
 
         // §9: `domaintypes_id` is set once by `DomainImportController` (only
         // when the admin configured a "domain type to apply to imported
