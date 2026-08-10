@@ -1,0 +1,16 @@
+{
+  "name": "domainmanager-manual",
+  "private": true,
+  "description": "Screenshot/manual generation pipeline for the domainmanager GLPI plugin. Not part of the plugin package.",
+  "scripts": {
+    "manual": "npm run manual:fixture:restore && npm run manual:capture && npm run manual:render",
+    "manual:capture": "./run.sh",
+    "manual:render": "node render-manual.mjs",
+    "manual:fixture:dump": "./fixtures/dump.sh",
+    "manual:fixture:restore": "./fixtures/restore.sh",
+    "manual:pdf": "./build-pdf.sh"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1"
+  }
+}
