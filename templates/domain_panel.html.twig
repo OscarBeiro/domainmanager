@@ -456,7 +456,7 @@
     if (regDnsIcon) {
         function runSync(force) {
             const csrf = document.querySelector('meta[property="glpi:csrf_token"]');
-            regDnsIcon.classList.add('ti-spin');
+            regDnsIcon.classList.add('icon-rotate');
 
             return fetch({{ path('/plugins/domainmanager/sync/' ~ domains_id)|json_encode|raw }}, {
                 method: 'POST',
@@ -541,7 +541,7 @@
             }).catch(function (error) {
                 window.alert({{ __('Synchronization request failed:', 'domainmanager')|json_encode|raw }} + ' ' + error.message);
             }).finally(function () {
-                regDnsIcon.classList.remove('ti-spin');
+                regDnsIcon.classList.remove('icon-rotate');
                 disablePermanently(regDnsIcon);
             });
         }
@@ -557,7 +557,7 @@
         rdapIcon.addEventListener('click', function () {
             const csrf = document.querySelector('meta[property="glpi:csrf_token"]');
             lockIcon(rdapIcon);
-            rdapIcon.classList.add('ti-spin');
+            rdapIcon.classList.add('icon-rotate');
 
             fetch({{ path('/plugins/domainmanager/rdapsync/' ~ domains_id)|json_encode|raw }}, {
                 method: 'POST',
@@ -581,7 +581,7 @@
             }).catch(function (error) {
                 window.alert({{ __('RDAP lookup request failed:', 'domainmanager')|json_encode|raw }} + ' ' + error.message);
             }).finally(function () {
-                rdapIcon.classList.remove('ti-spin');
+                rdapIcon.classList.remove('icon-rotate');
                 disablePermanently(rdapIcon);
             });
         }, { once: true });
