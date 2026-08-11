@@ -1428,11 +1428,13 @@ class Installer
     /**
      * Register the continuous-mode sync automatic action (idempotent,
      * tunable in Setup > Automatic actions). ARCHITECTURE.md §16.10: these
-     * defaults (10 min / 3 domains per run / unrestricted hour range) only
-     * take effect on a fresh install — `CronTask::register()` no-ops once a
-     * task row already exists (§16.6 point 8), so an already-installed
-     * instance is upgraded separately by
-     * {@see Installer::upgradeDomainSyncContinuousDefaults()}.
+     * defaults (30 min / 2 domains per run / CLI mode / unrestricted hour
+     * range) only take effect on a fresh install — `CronTask::register()`
+     * no-ops once a task row already exists (§16.6 point 8), so an
+     * already-installed instance keeps whatever frequency/param/mode it
+     * already has; only {@see Installer::upgradeDomainSyncContinuousDefaults()}
+     * touches existing rows, and only those still on the old 1-day/20-domain
+     * shipped default.
      *
      * @return void
      */
@@ -1441,12 +1443,19 @@ class Installer
         CronTask::register(
             Cron::class,
             'DomainSync',
-            10 * MINUTE_TIMESTAMP,
+            30 * MINUTE_TIMESTAMP,
             [
                 'state'         => CronTask::STATE_WAITING,
+                // Fresh installs default to CLI (system cron / `bin/console
+                // glpi:cron`) rather than GLPI's internal scheduler; this is
+                // only a starting point — Setup > Automatic actions still
+                // lets an admin switch it. Existing installs are left
+                // untouched (CronTask::register() no-ops once a task row
+                // already exists, §16.6 point 8).
+                'mode'          => CronTask::MODE_EXTERNAL,
                 'hourmin'       => 0,
                 'hourmax'       => 24,
-                'param'         => 3,
+                'param'         => 2,
                 'logs_lifetime' => 30,
                 // No 'comment' here — that field is the admin's own free-text
                 // note (Setup > Automatic actions), not this plugin's to
@@ -1456,15 +1465,16 @@ class Installer
         );
 
         // §9 Phase 22: its own automatic action, independently configurable
-        // from the daily sync task above — default every 10 minutes, one
-        // domain per tick (the cron cadence itself is the rate-limit
-        // defense against rdap.org, §9 Phase 21 "Rate-limit rationale").
+        // from the sync task above — default every 15 minutes (the cron
+        // cadence itself is the rate-limit defense against rdap.org, §9
+        // Phase 21 "Rate-limit rationale").
         CronTask::register(
             Cron::class,
             'RdapEnrichment',
-            10 * MINUTE_TIMESTAMP,
+            15 * MINUTE_TIMESTAMP,
             [
                 'state'         => CronTask::STATE_WAITING,
+                'mode'          => CronTask::MODE_EXTERNAL,
                 'logs_lifetime' => 30,
                 // No 'comment' here — that field is the admin's own free-text
                 // note (Setup > Automatic actions), not this plugin's to
