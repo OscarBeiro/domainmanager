@@ -60,7 +60,7 @@ TTY_ARGS=()
   -w /work/tools/manual-generator \
   -e BASE_URL="${BASE_URL}" \
   -e MANUAL_LOCALE="${MANUAL_LOCALE}" \
-  -e MANUAL_OUT="${MANUAL_LOCALE}" \
+  -e MANUAL_OUT="../../docs/manual/${MANUAL_LOCALE}" \
   -e TZ="${TZ}" \
   -e CI="${CI:-}" \
   "${IMAGE}" \

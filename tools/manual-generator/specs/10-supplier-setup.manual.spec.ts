@@ -36,6 +36,9 @@ test('Configuring a Supplier as a domain source', async ({ manual, page }) => {
       await page.goto(routes.supplierList);
       await page.getByRole('link', { name: DEMO.supplier.name }).click();
       await page.getByRole('tab', { name: 'Domain Manager' }).click();
+      // The tab's content is fetched over ajax; screenshotting before that settles can grab
+      // a detached mid-swap DOM node (visible one instant, blank the next).
+      await page.waitForLoadState('networkidle');
       const driverCard = page.locator('.card.m-2', { has: page.locator('#domainmanager-driver') });
       await expect(driverCard).toBeVisible();
       await manual.shot('supplier-tab', {
@@ -105,6 +108,9 @@ test('Configuring a Supplier as a domain source', async ({ manual, page }) => {
       await page.getByRole('button', { name: 'Import' }).click();
       const modal = page.locator('.modal.show .modal-dialog').first();
       await expect(modal).toBeVisible();
+      // The modal body fills in over ajax after the dialog itself appears; wait for that to
+      // settle so the shot doesn't catch an empty shell.
+      await page.waitForLoadState('networkidle');
       await manual.shot('import-modal', {
         target: modal,
         caption: 'The domain import dialog',

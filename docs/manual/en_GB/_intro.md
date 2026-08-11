@@ -6,11 +6,13 @@ auto-detection of many other DNS providers from a domain's NS records. On Cloudf
 IONOS, DNS records can also be created, edited and deleted from GLPI, writing live to the
 provider.
 
-This manual covers the two things you'll do most often:
+This manual covers what you'll do most often:
 
-1. **Configure a Supplier** with an API driver and credentials, test the connection, and
+1. **Grant Domain Manager rights** to a profile, so its users can unlock synced fields and
+   push DNS record changes to a provider.
+2. **Configure a Supplier** with an API driver and credentials, test the connection, and
    import the domains it manages.
-2. **Monitor a domain** through its Domain Manager status panel and manage its DNS
+3. **Monitor a domain** through its Domain Manager status panel and manage its DNS
    records.
 
 ## Why this plugin?
