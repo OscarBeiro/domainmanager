@@ -59,15 +59,46 @@ async function loadManifests() {
   return all.sort((a, b) => a.order - b.order || a.slug.localeCompare(b.slug));
 }
 
-function renderChapter(m) {
-  const out = [`## ${m.title}`, ''];
+/** Chapter asset folders are prefixed with the zero-padded chapter number so they sort like the manual, even past 9 chapters. */
+function assetDirName(chapterNum, slug) {
+  return `${String(chapterNum).padStart(2, '0')}-${slug}`;
+}
+
+/**
+ * Rename each manifest's assets/<slug> folder to assets/<N>-<slug>, N being its 1-based
+ * chapter position. Idempotent: a folder already carrying its current prefix is left alone,
+ * and a stale prefix (from a manual reorder) is renamed to the new one.
+ */
+async function renumberAssetDirs(manifests) {
+  const assetsRoot = path.join(OUT, 'assets');
+  for (const [i, m] of manifests.entries()) {
+    const wanted = assetDirName(i + 1, m.slug);
+    const wantedAbs = path.join(assetsRoot, wanted);
+    const alreadyRenamed = await fs.stat(wantedAbs).then(() => true, () => false);
+    if (alreadyRenamed) continue;
+    let entries;
+    try {
+      entries = await fs.readdir(assetsRoot);
+    } catch {
+      continue;
+    }
+    const stale = entries.find((e) => e === m.slug || e.endsWith(`-${m.slug}`));
+    if (stale && stale !== wanted) {
+      await fs.rename(path.join(assetsRoot, stale), wantedAbs);
+    }
+  }
+}
+
+function renderChapter(m, chapterNum) {
+  const dir = assetDirName(chapterNum, m.slug);
+  const out = [`## ${chapterNum}. ${m.title}`, ''];
   if (m.intro) out.push(m.intro, '');
   for (const step of m.steps) {
-    out.push(`### ${step.seq}. ${step.title}`, '');
+    out.push(`### ${chapterNum}.${step.seq} ${step.title}`, '');
     if (step.body) out.push(step.body, '');
     for (const shot of step.shots) {
       const alt = (shot.caption ?? `${m.title} — ${step.title}`).replace(/[[\]]/g, '');
-      out.push(`![${alt}](assets/${m.slug}/${shot.file})`, '');
+      out.push(`![${alt}](assets/${dir}/${shot.file})`, '');
       if (shot.caption) out.push(`*${shot.caption}*`, '');
     }
     for (const note of step.notes) out.push(`> **${S.note}:** ${note}`, '');
@@ -78,10 +109,11 @@ function renderChapter(m) {
 const main = async () => {
   const { name, version, glpi } = await pluginInfo();
   const manifests = await loadManifests();
+  await renumberAssetDirs(manifests);
   const date = new Date().toISOString().slice(0, 10);
 
   const toc = manifests
-    .map((m, i) => `${i + 1}. [${m.title}](#${slugify(m.title)})`)
+    .map((m, i) => `${i + 1}. [${m.title}](#${slugify(`${i + 1}. ${m.title}`)})`)
     .join('\n');
 
   const doc = [
@@ -96,7 +128,7 @@ const main = async () => {
     '',
     toc,
     '',
-    ...manifests.map(renderChapter),
+    ...manifests.map((m, i) => renderChapter(m, i + 1)),
     await readIfPresent(path.join(OUT, '_outro.md')),
     '',
   ]

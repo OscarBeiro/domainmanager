@@ -69,137 +69,137 @@ This manual documents version 1.7.1-beta1 against GLPI 11.0.8.
 
 ## Contents
 
-1. [Granting Domain Manager rights to a profile](#granting-domain-manager-rights-to-a-profile)
-2. [Configuring a Supplier as a domain source](#configuring-a-supplier-as-a-domain-source)
-3. [Monitoring a domain and its DNS records](#monitoring-a-domain-and-its-dns-records)
-4. [Bulk-importing domains from a Supplier](#bulk-importing-domains-from-a-supplier)
-5. [Editing an existing record & the managed/locked-field state](#editing-an-existing-record-the-managed-locked-field-state)
-6. [Proxy vs. origin IP indicators](#proxy-vs-origin-ip-indicators)
-7. [Dashboard cards & drill-down](#dashboard-cards-drill-down)
+1. [Granting Domain Manager rights to a profile](#1-granting-domain-manager-rights-to-a-profile)
+2. [Configuring a Supplier as a domain source](#2-configuring-a-supplier-as-a-domain-source)
+3. [Monitoring a domain and its DNS records](#3-monitoring-a-domain-and-its-dns-records)
+4. [Bulk-importing domains from a Supplier](#4-bulk-importing-domains-from-a-supplier)
+5. [Editing an existing record & the managed/locked-field state](#5-editing-an-existing-record-the-managed-locked-field-state)
+6. [Proxy vs. origin IP indicators](#6-proxy-vs-origin-ip-indicators)
+7. [Dashboard cards & drill-down](#7-dashboard-cards-drill-down)
 
-## Granting Domain Manager rights to a profile
+## 1. Granting Domain Manager rights to a profile
 
 Domain Manager adds its own rights to GLPI’s profile system. A profile has no access to the plugin’s protected actions until an administrator grants them here — this is the first thing to check if a user reports missing DNS record buttons or an un-editable synced field.
 
-### 1. Open the profile to edit
+### 1.1 Open the profile to edit
 
 Go to **Administration → Profiles** and open the profile to grant rights to — here, **Technician**.
 
-### 2. Open the Domain Manager tab
+### 1.2 Open the Domain Manager tab
 
 Select the **Domain Manager** tab. It lists every right the plugin defines: unlocking fields and records that came from a synchronization, and per-record-type write-back rights (Create/Update/Delete/Purge) for each DNS record type the plugin can push to a provider.
 
-![The Domain Manager rights matrix, before any right is granted](assets/rights-and-profiles/01-rights-matrix-before.png)
+![The Domain Manager rights matrix, before any right is granted](assets/01-rights-and-profiles/01-rights-matrix-before.png)
 
 *The Domain Manager rights matrix, before any right is granted*
 
-### 3. Grant unlock and A-record write-back rights
+### 1.3 Grant unlock and A-record write-back rights
 
 Tick **Edit fields and records imported by synchronization** to let this profile override plugin-managed locks on the native form, and tick **Create**/**Update** on **Domain Record: A** to let it push new and changed A records to the provider. Leave the other record types and the destructive Delete/Purge bits unchecked — grant only what a role actually needs.
 
-![Unlock and A-record Create/Update ticked, not yet saved](assets/rights-and-profiles/02-rights-matrix-checked.png)
+![Unlock and A-record Create/Update ticked, not yet saved](assets/01-rights-and-profiles/02-rights-matrix-checked.png)
 
 *Unlock and A-record Create/Update ticked, not yet saved*
 
-### 4. Save the profile
+### 1.4 Save the profile
 
 Click **Save**. The rights take effect immediately for every user with this profile.
 
 > **Note:** Delete and Purge are separate bits from Create/Update on each record-type right: a profile can be trusted to push new and changed records without also being able to remove them from the provider.
 
-## Configuring a Supplier as a domain source
+## 2. Configuring a Supplier as a domain source
 
 Domain Manager syncs domains and DNS records through a Supplier’s API credentials. Before it can manage anything, one Supplier needs an API driver selected and its credentials entered.
 
-### 1. Open the Domain Manager tab on a Supplier
+### 2.1 Open the Domain Manager tab on a Supplier
 
 Open the Supplier record and select its **Domain Manager** tab. This is where the API driver and credentials for that provider are configured.
 
-![The Domain Manager tab on a Supplier, with a driver already selected](assets/supplier-setup/01-supplier-tab.png)
+![The Domain Manager tab on a Supplier, with a driver already selected](assets/02-supplier-setup/01-supplier-tab.png)
 
 *The Domain Manager tab on a Supplier, with a driver already selected*
 
-### 2. Pick an API driver and enter credentials
+### 2.2 Pick an API driver and enter credentials
 
 Choose the **API driver** that matches this Supplier — Domain Manager currently supports Cloudflare, IONOS and Dinahosting. The fields below change to match the chosen driver; each shows exactly the credentials that provider requires.
 
-![Credential fields for the Cloudflare driver](assets/supplier-setup/02-driver-fields.png)
+![Credential fields for the Cloudflare driver](assets/02-supplier-setup/02-driver-fields.png)
 
 *Credential fields for the Cloudflare driver*
 
-### 3. Save the configuration
+### 2.3 Save the configuration
 
 Click **Save**. The *Test* and *Import* actions only appear once a driver has been saved at least once — until then there is nothing configured to test.
 
-### 4. Test the connection
+### 2.4 Test the connection
 
 Click **Test** to verify the credentials work before relying on them. The result appears in the **Connection diagnostics** panel below, including any error the provider returned — useful for catching a mistyped or under-scoped credential before a sync ever runs.
 
-![The connection diagnostics panel after running Test](assets/supplier-setup/03-connection-test.png)
+![The connection diagnostics panel after running Test](assets/02-supplier-setup/03-connection-test.png)
 
 *The connection diagnostics panel after running Test*
 
-### 5. Import the Supplier’s domains
+### 2.5 Import the Supplier’s domains
 
 Click **Import** to list every domain visible in that provider’s account. Domains already tracked in GLPI are shown as already existing; the rest can be selected and imported in one action. This step needs working credentials — with an invalid or under-scoped token, the dialog reports the same error **Test** did instead of a domain list.
 
-![The domain import dialog](assets/supplier-setup/04-import-modal.png)
+![The domain import dialog](assets/02-supplier-setup/04-import-modal.png)
 
 *The domain import dialog*
 
 > **Note:** Domains already synced through this Supplier are updated automatically by the **DomainSync** automatic action; importing here is only needed for domains Domain Manager has not seen yet.
 
-## Monitoring a domain and its DNS records
+## 3. Monitoring a domain and its DNS records
 
 Once a domain is managed by Domain Manager, its own record shows a live status panel — registrar, DNS provider, sync health — and its DNS zone becomes editable from GLPI when the provider supports write-back.
 
-### 1. Open the domain’s Domain Manager panel
+### 3.1 Open the domain’s Domain Manager panel
 
 Open the domain from **Assets → Domains**. The **Domain Manager** panel on its main tab shows which Supplier acts as registrar and which one as DNS provider, plus a sync status badge for each — green for healthy, red for a failed sync, grey for "never synchronized".
 
-![The Domain Manager status panel on a managed domain](assets/domain-monitoring/01-domain-panel.png)
+![The Domain Manager status panel on a managed domain](assets/03-domain-monitoring/01-domain-panel.png)
 
 *The Domain Manager status panel on a managed domain*
 
-### 2. Open the domain’s DNS records
+### 3.2 Open the domain’s DNS records
 
 Switch to the domain’s **Records** tab to see its DNS zone. Records synced from the provider are locked against manual edits — this keeps GLPI from drifting out of sync with what the DNS provider actually serves.
 
-![The domain’s DNS records, synced from its provider](assets/domain-monitoring/02-records-list.png)
+![The domain’s DNS records, synced from its provider](assets/03-domain-monitoring/02-records-list.png)
 
 *The domain’s DNS records, synced from its provider*
 
-### 3. Add a DNS record
+### 3.3 Add a DNS record
 
 On a domain whose DNS provider supports write-back (here, Cloudflare), a **New record** form appears in place of the usual "Link a record" form. Creating a record here pushes it live to the DNS provider immediately, not just to GLPI's copy of the zone — the confirmation prompt exists for that reason.
 
-![Adding an A record; this will be created live at the DNS provider](assets/domain-monitoring/03-add-record-form.png)
+![Adding an A record; this will be created live at the DNS provider](assets/03-domain-monitoring/03-add-record-form.png)
 
 *Adding an A record; this will be created live at the DNS provider*
 
 > **Note:** Fields populated by the last sync (registration date, expiry, existing record values) are locked by default. A user with the "Unlock imported domain data" right can edit them anyway — useful when the provider reported something wrong.
 
-## Bulk-importing domains from a Supplier
+## 4. Bulk-importing domains from a Supplier
 
 Once a Supplier's API driver is configured, Domain Manager can discover all domains in that provider's account. Importing multiple domains at once is faster than adding them one by one.
 
-### 1. Open the Import Domains dialog
+### 4.1 Open the Import Domains dialog
 
 In the Domain Manager tab on a Supplier, click the **Import** button. This opens a modal showing every domain the provider's account contains that isn't already tracked in GLPI.
 
-![The domain import dialog showing multiple domains available to import](assets/bulk-import/01-import-list.png)
+![The domain import dialog showing multiple domains available to import](assets/04-bulk-import/01-import-list.png)
 
 *The domain import dialog showing multiple domains available to import*
 
-### 2. Select domains to import
+### 4.2 Select domains to import
 
 Each domain in the list can be checked or unchecked independently. Domains already in GLPI are shown with the **Already exists** label and cannot be selected. Use the checkbox in the header to quickly select or deselect all pending domains at once.
 
-![Two domains selected, one deselected (Domain Manager will import only the selected ones)](assets/bulk-import/02-select-partial.png)
+![Two domains selected, one deselected (Domain Manager will import only the selected ones)](assets/04-bulk-import/02-select-partial.png)
 
 *Two domains selected, one deselected (Domain Manager will import only the selected ones)*
 
-### 3. Complete the import
+### 4.3 Complete the import
 
 Click **Import selected domains** to create all checked domains in GLPI. They appear immediately in your domain list and automatically start syncing on the next cron run; no manual intervention is needed after import.
 
@@ -207,100 +207,102 @@ Click **Import selected domains** to create all checked domains in GLPI. They ap
 
 > **Note:** Importing multiple domains at once is much faster than creating them individually. After import, all domains are treated identically: they sync automatically, show status, and support DNS record management just like any domain you created by hand.
 
-## Editing an existing record & the managed/locked-field state
+## 5. Editing an existing record & the managed/locked-field state
 
 Domain Manager imports DNS records by syncing them from your provider's live account. Some records can be edited here; others are locked because the provider hasn't confirmed that your edits would succeed.
 
-### 1. Open a record that can be edited
+### 5.1 Open a record that can be edited
 
 Navigate to a Domain's Records tab and click **Edit** on an A or CNAME record. Since this domain's DNS provider is configured and working, the form shows an alert warning that **saving updates the record live** at the provider.
 
-![The data and TTL fields are editable (no lock icons)](assets/editing-records/01-editable-fields.png)
+![The data and TTL fields are editable (no lock icons)](assets/05-editing-records/01-editable-fields.png)
 
 *The data and TTL fields are editable (no lock icons)*
 
-### 2. Make a change and review before saving
+### 5.2 Make a change and review before saving
 
 Type a new value (the form doesn't require you to submit, so you can review the change). Notice there's no lock icon next to **data** or **TTL** — they're fully editable.
 
-![The form shows your change ready to save (no undo once submitted)](assets/editing-records/02-edit-form-changed.png)
+![The form shows your change ready to save (no undo once submitted)](assets/05-editing-records/02-edit-form-changed.png)
 
 *The form shows your change ready to save (no undo once submitted)*
 
-### 3. Open a record that cannot be edited
+### 5.3 Open a record that cannot be edited
 
 Go back to the domain list and open a different domain whose DNS provider is in a **read-only state** (write-back failed or never succeeded). Records on this domain cannot be edited here.
 
-### 4. See the locked-field explanation
+### 5.4 See the locked-field explanation
 
 The form shows an alert explaining that this record is **imported by Domain Manager synchronization** and cannot be edited. This happens when the provider hasn't confirmed that write-back would succeed.
 
-![The alert explains why this record cannot be edited](assets/editing-records/03-locked-alert.png)
+![The alert explains why this record cannot be edited](assets/05-editing-records/03-locked-alert.png)
 
 *The alert explains why this record cannot be edited*
 
-### 5. Notice the lock icons on editable fields
+### 5.5 Notice the lock icons on editable fields
 
 Look at the **data** and **TTL** fields — they have a lock icon next to them, indicating they're read-only. The fields are disabled, preventing any changes.
 
-![The data field has a lock icon and is disabled](assets/editing-records/04-locked-field.png)
+![The data field has a lock icon and is disabled](assets/05-editing-records/04-locked-field.png)
 
 *The data field has a lock icon and is disabled*
 
-### 6. Why records become locked
+### 5.6 Why records become locked
 
 Domain Manager locks imported records until a successful write confirms the provider can push updates. Once a write succeeds, these fields unlock. If the provider returns an error, the fields stay locked (the "read-only" state shown here). A user with the **Unlock imported domain data** right can override the lock if needed.
 
-## Proxy vs. origin IP indicators
+## 6. Proxy vs. origin IP indicators
 
 When a domain is proxied through Cloudflare (or another proxy service), Domain Manager displays both the origin IP address and the proxy service's address. Visual indicators make it clear which records are being proxied.
 
-### 1. Open the Records tab on a proxied domain
+### 6.1 Open the Records tab on a proxied domain
 
 Navigate to a domain with some records proxied through Cloudflare. Open the **Records** tab to see the full list of DNS records.
 
-![The records table shows both proxied (cloud icon) and non-proxied records](assets/proxy-indicators/01-records-table-with-proxied.png)
+![The records table shows both proxied (cloud icon) and non-proxied records](assets/06-proxy-indicators/01-records-table-with-proxied.png)
 
 *The records table shows both proxied (cloud icon) and non-proxied records*
 
-### 2. Identify which records are proxied
+### 6.2 Identify which records are proxied
 
 A **cloud icon** appears next to the name of any record that is proxied through Cloudflare. This small visual indicator tells you at a glance which records have proxy enabled.
 
-![The cloud icons next to proxied record names show which records are proxied](assets/proxy-indicators/02-proxy-icon-detail.png)
+![The cloud icons next to proxied record names show which records are proxied](assets/06-proxy-indicators/02-proxy-icon-detail.png)
 
 *The cloud icons next to proxied record names show which records are proxied*
 
-### 3. See the proxy service's address
+### 6.3 See the proxy service's address
 
 Below the **Target** (origin IP) for any proxied record, a second line shows the proxy service's address — for Cloudflare, this is the anycast IP they're using. This address is updated automatically during each sync and acts as the public-facing address for the record.
 
-![Proxy service anycast addresses appear below the origin IP on proxied records](assets/proxy-indicators/03-proxy-address-detail.png)
+![Proxy service anycast addresses appear below the origin IP on proxied records](assets/06-proxy-indicators/03-proxy-address-detail.png)
 
 *Proxy service anycast addresses appear below the origin IP on proxied records*
 
-## Dashboard cards & drill-down
+## 7. Dashboard cards & drill-down
 
 Domain Manager adds a set of widgets to GLPI's own dashboard system (the same "Home" dashboard, or any custom dashboard, that other GLPI plugins and core itemtypes contribute cards to). Add them from the dashboard's **Edit** mode, like any other GLPI widget, then arrange and resize them as needed.
 
-![Domain Manager's dashboard cards added to a GLPI dashboard](assets/dashboard/01-dashboard-overview.png)
+### 7.1 Add the widgets to a dashboard
+
+![Domain Manager's dashboard cards added to a GLPI dashboard](assets/07-dashboard/01-dashboard-overview.png)
 
 *Domain Manager's dashboard cards added to a GLPI dashboard*
 
-### Available cards
+> **Note:** this chapter's screenshot is a placeholder pending a real capture from a populated instance.
+
+### 7.2 Available cards
 
 - **Number of Managed Domains** and **Number of Managed Records** — simple totals.
 - **Number of Domains expiring soon** — domains whose registration expires within 30 days.
 - **Managed domains per registrar**, **per DNS provider**, **by TLD**, and **per registrar by TLD** — breakdown charts you can use to see where your domain portfolio is concentrated.
-- **DNS sync status** and **Registrar sync status** — breakdowns of how many domains are currently syncing cleanly versus in a warning or error state, the fleet-wide view of the per-domain status shown in [Monitoring a domain and its DNS records](#monitoring-a-domain-and-its-dns-records).
+- **DNS sync status** and **Registrar sync status** — breakdowns of how many domains are currently syncing cleanly versus in a warning or error state, the fleet-wide view of the per-domain status shown in [Monitoring a domain and its DNS records](#3-monitoring-a-domain-and-its-dns-records).
 - **Managed records by type**, **by DNS provider**, and **per DNS provider by type** — the same kind of breakdown, one level down at the DNS record.
-- **Proxied records** — how many managed records are currently proxied (see [Proxy vs. origin IP indicators](#proxy-vs-origin-ip-indicators)).
+- **Proxied records** — how many managed records are currently proxied (see [Proxy vs. origin IP indicators](#6-proxy-vs-origin-ip-indicators)).
 
-### Drilling down from a chart segment
+### 7.3 Drilling down from a chart segment
 
 Clicking a segment of any breakdown chart (a registrar's slice of "Managed domains per registrar", an "Error" slice of "DNS sync status", and so on) opens GLPI's Domain search already filtered to match that segment — so a spike in errors on the dashboard is one click away from the actual list of affected domains.
-
-> **Note:** this chapter's screenshot is a placeholder pending a real capture from a populated instance.
 
 ## Troubleshooting
 
