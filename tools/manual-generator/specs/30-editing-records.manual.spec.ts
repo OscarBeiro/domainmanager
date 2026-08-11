@@ -48,15 +48,6 @@ test('Editing an existing record & the managed/locked-field state', async ({ man
       await page.goto(`${new URL(page.url()).origin}/front/domainrecord.form.php?id=${domainRecordId}`);
       await page.waitForLoadState('networkidle');
 
-      // Stabilise and screenshot the form
-      const banner = page.locator('#domainmanager-managed-banner');
-      if (await banner.isVisible()) {
-        await manual.shot('edit-form-banner', {
-          target: banner,
-          caption: 'The "Managed by Domain Manager" banner warns that saving updates the record live',
-        });
-      }
-
       // Screenshot the editable fields (data and TTL)
       const dataField = page.locator('input[name="data"]');
       const ttlField = page.locator('input[name="ttl"]');

@@ -214,11 +214,7 @@ Domain Manager imports DNS records by syncing them from your provider's live acc
 
 Navigate to a Domain's Records tab and click **Edit** on an A or CNAME record. Since this domain's DNS provider is configured and working, the form shows an alert warning that **saving updates the record live** at the provider.
 
-![The "Managed by Domain Manager" banner warns that saving updates the record live](assets/editing-records/01-edit-form-banner.png)
-
-*The "Managed by Domain Manager" banner warns that saving updates the record live*
-
-![The data and TTL fields are editable (no lock icons)](assets/editing-records/02-editable-fields.png)
+![The data and TTL fields are editable (no lock icons)](assets/editing-records/01-editable-fields.png)
 
 *The data and TTL fields are editable (no lock icons)*
 
@@ -226,7 +222,7 @@ Navigate to a Domain's Records tab and click **Edit** on an A or CNAME record. S
 
 Type a new value (the form doesn't require you to submit, so you can review the change). Notice there's no lock icon next to **data** or **TTL** — they're fully editable.
 
-![The form shows your change ready to save (no undo once submitted)](assets/editing-records/03-edit-form-changed.png)
+![The form shows your change ready to save (no undo once submitted)](assets/editing-records/02-edit-form-changed.png)
 
 *The form shows your change ready to save (no undo once submitted)*
 
@@ -238,7 +234,7 @@ Go back to the domain list and open a different domain whose DNS provider is in 
 
 The form shows an alert explaining that this record is **imported by Domain Manager synchronization** and cannot be edited. This happens when the provider hasn't confirmed that write-back would succeed.
 
-![The alert explains why this record cannot be edited](assets/editing-records/04-locked-alert.png)
+![The alert explains why this record cannot be edited](assets/editing-records/03-locked-alert.png)
 
 *The alert explains why this record cannot be edited*
 
@@ -246,7 +242,7 @@ The form shows an alert explaining that this record is **imported by Domain Mana
 
 Look at the **data** and **TTL** fields — they have a lock icon next to them, indicating they're read-only. The fields are disabled, preventing any changes.
 
-![The data field has a lock icon and is disabled](assets/editing-records/05-locked-field.png)
+![The data field has a lock icon and is disabled](assets/editing-records/04-locked-field.png)
 
 *The data field has a lock icon and is disabled*
 
