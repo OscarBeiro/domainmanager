@@ -1,4 +1,11 @@
 /vendor
 composer.lock
+.phpunit.cache
 tools/phpstan/local-ci-parity.neon
 docs/plans/
+tools/manual-generator/node_modules/
+tools/manual-generator/manual.env
+tools/manual-generator/dist/
+tools/manual-generator/test-results/
+tools/manual-generator/playwright-report/
+docs/manual/*/.manifests/

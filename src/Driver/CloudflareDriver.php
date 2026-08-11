@@ -324,11 +324,10 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
             $expiration,
             self::mapStatus($result),
             // §9 Phase 7 (still true on the new schema, re-confirmed
-            // 2026-07-27): `authInfo`/`domainLock`/`domainType`/
-            // `dnsSecEnabled` remain genuinely absent — `locked` is still
-            // the only lock concept exposed, so it still maps to
-            // `transferLock`, never `domainLock`.
-            null,
+            // 2026-07-27): `domainLock`/`domainType`/`dnsSecEnabled` remain
+            // genuinely absent — `locked` is still the only lock concept
+            // exposed, so it still maps to `transferLock`, never
+            // `domainLock`.
             $privacy,
             null,
             isset($result['locked']) ? (bool) $result['locked'] : null,

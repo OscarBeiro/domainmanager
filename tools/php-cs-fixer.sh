@@ -14,4 +14,4 @@ if [ ! -f "vendor/bin/php-cs-fixer" ]; then
 fi
 
 # vendor/bin/php-cs-fixer check --config=.php-cs-fixer.php to check problems
-PHP_CS_FIXER_IGNORE_ENV=1 vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.php --no-interaction
+vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.php --no-interaction

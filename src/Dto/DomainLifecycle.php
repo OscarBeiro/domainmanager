@@ -39,9 +39,6 @@ use DateTimeImmutable;
  * per-driver: `null` means "this registrar's API does not report this",
  * confirmed against each driver's real API (never guessed) — the exact
  * same convention `registrationDate` already established for IONOS.
- * `authInfo` (the EPP transfer/auth code) is intentionally never rendered
- * in the Domain form UI even when populated — it is a transfer-enabling
- * secret, not display data (§6.2).
  */
 final class DomainLifecycle
 {
@@ -49,7 +46,6 @@ final class DomainLifecycle
         public readonly ?DateTimeImmutable $registrationDate,
         public readonly ?DateTimeImmutable $expirationDate,
         public readonly LifecycleStatus $status,
-        public readonly ?string $authInfo = null,
         public readonly ?bool $privacyEnabled = null,
         public readonly ?bool $domainLock = null,
         public readonly ?bool $transferLock = null,

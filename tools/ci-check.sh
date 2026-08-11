@@ -29,7 +29,7 @@ if [ ! -f "$CS_FIXER_PHAR" ]; then
     curl -fsSL -o "$CS_FIXER_PHAR" https://cs.symfony.com/download/php-cs-fixer-v3.phar
 fi
 cd "$REPO_DIR"
-PHP_CS_FIXER_IGNORE_ENV=1 php "$CS_FIXER_PHAR" fix --config=.php-cs-fixer.php --dry-run --diff
+php "$CS_FIXER_PHAR" fix --config=.php-cs-fixer.php --dry-run --diff
 
 echo
 echo -e "\033[0;33m==> PHPStan (via testing dev container)\033[0m"

@@ -178,13 +178,13 @@ Indexes: PK, `UNIQUE suppliers_id`, `KEY api_driver`, `KEY date_mod`, `KEY date_
 | `registrar_message` | text | last human-readable outcome (sanitised, no secrets) |
 | `dns_status` | varchar(50) NOT NULL DEFAULT 'never' | `never` \| `ok` \| `error` \| `unsupported` \| `unknown` \| `unconfigured` \| `supplier_inactive` |
 | `dns_message` | text | idem |
-| `registrar_auth_info` | varchar(255) NULL DEFAULT NULL | EPP transfer/auth code (§9 Phase 7) — persisted, **never rendered** in the Domain form (§6.2), only whether it's present |
 | `registrar_privacy_enabled` | tinyint NULL DEFAULT NULL | WHOIS privacy on/off; `NULL` = driver doesn't report it |
 | `registrar_domain_lock` | tinyint NULL DEFAULT NULL | idem, general registrar edit-lock |
 | `registrar_transfer_lock` | tinyint NULL DEFAULT NULL | idem, transfer-specific lock |
 | `registrar_auto_renew` | tinyint NULL DEFAULT NULL | idem, auto-renewal setting |
 | `registrar_domain_type` | varchar(50) NULL DEFAULT NULL | raw driver-supplied classification (currently only IONOS's `DOMAIN`/`X_DOMAIN`/`GENERIC_DOMAIN`) |
 | `registrar_dnssec_enabled` | tinyint NULL DEFAULT NULL | idem, DNSSEC on/off at the registrar |
+| ~~`registrar_auth_info`~~ | *dropped (Phase 91)* | was the EPP transfer/auth code (§9 Phase 7) — dropped entirely, driver fetch and all, rather than kept persisted-but-masked: a live domain-transfer secret at rest in the DB, viewable-in-principle by anyone with plain `domain` READ, was judged not worth the risk versus fetching it live from the registrar only if a real transfer workflow is ever built. `Installer::addRegistrarMetadataColumns()`'s `addField()` for it replaced with an unconditional `dropField()` so upgrading actually erases any codes already stored, not just hides them going forward. |
 | `is_managed` | tinyint NOT NULL DEFAULT 0 | Domain-level "Managed" (§9 Phase 14) — 1 iff either role currently resolves to a real, driver-backed, active supplier, independent of last sync success/failure |
 | `date_mod` / `date_creation` | timestamp NULL | |
 
@@ -635,7 +635,7 @@ The tab is laid out in two columns: the credentials form (left) and an always-re
 ### 6.2 Domain form injection
 | Hook | Itemtype | Handler | Purpose |
 |---|---|---|---|
-| `Hooks::POST_ITEM_FORM` | `Domain` | `DomainForm::inject()` | Renders `domain_panel.html.twig` inside the form: a ribbon-banner header (§6.5, title only — **Update Now** no longer lives here, see §9 Phase 9 addendum), then a one-row native `<table>` — columns Registrar, DNS/NS Provider, Registrar sync, DNS sync, Last sync (a one-row view of the same table shape as the Supplier tab's "Domains" list, §6.5). Registrar/DNS Provider are hyperlinked to the resolved Supplier's own Domain Manager tab when one exists (else plain text/muted fallback, with a link to the Infocom tab for Registrar, §0.1). Below the table: per-leg detail messages and the unsupported/unknown warning, plus the lock-disabling JS and the Update Now button-relocation JS (§9 Phase 9 addendum). When `registrar_status == 'ok'`, a further "Registrar details" section (§9 Phase 7) renders the field/value grid convention (§6.5) for WHOIS privacy / domain lock / transfer lock / auto-renew / DNSSEC (shared badge component, or "Not reported by this driver" when `NULL`) plus domain type and whether a transfer/EPP auth code is on file — the code's *value* is deliberately never rendered, only its presence, since it's a transfer-enabling secret, not display data. Rendered only with `domain` READ. |
+| `Hooks::POST_ITEM_FORM` | `Domain` | `DomainForm::inject()` | Renders `domain_panel.html.twig` inside the form: a ribbon-banner header (§6.5, title only — **Update Now** no longer lives here, see §9 Phase 9 addendum), then a one-row native `<table>` — columns Registrar, DNS/NS Provider, Registrar sync, DNS sync, Last sync (a one-row view of the same table shape as the Supplier tab's "Domains" list, §6.5). Registrar/DNS Provider are hyperlinked to the resolved Supplier's own Domain Manager tab when one exists (else plain text/muted fallback, with a link to the Infocom tab for Registrar, §0.1). Below the table: per-leg detail messages and the unsupported/unknown warning, plus the lock-disabling JS and the Update Now button-relocation JS (§9 Phase 9 addendum). When `registrar_status == 'ok'`, a further "Registrar details" section (§9 Phase 7) renders the field/value grid convention (§6.5) for WHOIS privacy / domain lock / transfer lock / auto-renew / DNSSEC (shared badge component, or "Not reported by this driver" when `NULL`) plus domain type. The transfer/EPP auth code badge that used to sit in this section was removed in Phase 91 — the feature (fetch + persist + masked display) was dropped entirely, not just hidden. Rendered only with `domain` READ. |
 | `Hooks::ITEM_ADD` / `ITEM_UPDATE` | `Infocom` | `HookHandler::infocomSaved()` | Mirror `suppliers_id` into `states.registrar_suppliers_id` whenever the Infocom row belongs to a `Domain` (§0.1) — the single source of truth is Infocom's own native field. Also recomputes `states.is_managed` live (§9 Phase 14). |
 | `Hooks::PRE_ITEM_UPDATE` | `Domain` | `LockEnforcer` | Strip locked fields w/o unlock right (§0.3). |
 | `Hooks::PRE_ITEM_UPDATE` | `Infocom` | `LockEnforcer::infocomPreUpdate()` | Strip a `suppliers_id` change once the Domain has a confirmed working registrar match, w/o unlock right or a bypassing action (§9 Phase 14). |
@@ -804,6 +804,7 @@ Right registered per-profile via `Migration::addRight` at install and manageable
    - **UI**: a new "Registrar details" section on the Domain form panel (§6.2), shown only when `registrar_status == 'ok'` — the field/value grid convention (§6.5), shared badge component for the 5 boolean-ish fields (`Not reported by this driver` text instead of a badge when `null`), plain formatted text for `domainType`, and a presence-only indicator for the auth code (see below). Not added to the existing one-row status table (§6.2) — a 12-column single row would be unreadable; this is exactly the "new section" alternative §9 originally floated.
    - **Security**: `authInfo` (the EPP transfer/auth code) is persisted but **deliberately never rendered** in the Domain form UI, even when populated — it's a transfer-enabling secret equivalent to a password, viewable by anyone with plain `domain` READ (a much broader audience than credential-management rights), not ordinary display data. The panel only ever shows whether one is on file, never its value; no reveal control exists in this phase (a real transfer workflow, if one is ever built, is the point where "reveal" would become an actual, scoped need — not before).
    - **Verified live end-to-end**, not just against specs: a real sync against a real IONOS-registered domain and a real Dinahosting-registered domain (both already-configured test suppliers on `glpi-claude`) correctly populated `authInfo` for both drivers (confirming the Dinahosting `Domain_GetAuthcode` shape inference was right) and `transferLock`/`autoRenew`/`domainType`/`dnsSecEnabled` for IONOS, with the rendered "Registrar details" section matching exactly. One real, live-observed data point worth recording: **IONOS's own `privacyEnabled`/`domainLock` fields, despite being documented as plain (non-optional) booleans in the spec, came back absent from the actual response for a real domain** — the defensive `isset()`-per-field handling already used for `authInfo` (spec-documented as optional) turned out to matter for the "always present" fields too; don't assume a schema's lack of an "optional" marker guarantees the key is always sent.
+   - **`authInfo` dropped entirely in Phase 91 (2026-08-10)** — user-directed security call: persisting a domain-transfer secret at rest, even masked in the UI, was judged not worth the risk. Removed from the DTO, both drivers' fetch logic (`Domain_GetAuthcode` call, `authInfo` read), `SyncEngine`, the search option, and the UI badge; existing stored values are erased on upgrade via an unconditional `dropField()`. The other 6 fields in the table above are unaffected. See `CHANGELOG-dev.md`'s `[Unreleased] - 1.7.1-beta1` entry for the full list of touched files.
    - **Phase 7 addendum "Searchable 'Proxy Status' Field for CDN-Proxied Records" — implemented.** Extended `glpi_plugin_domainmanager_records` (§5.7 — the same table `is_managed` lives on, not a separate one) with a second field, `is_proxied` (`ZoneRecord::$isProxied` → `RecordReconciler` → `Installer::addRecordProxiedColumn()`), a genuine **three-state** value: `1` proxied, `0` DNS-only-but-proxy-eligible, `NULL` not applicable. Refreshed on **every** sync for every matched record regardless of which reconcile branch ran (unlike `record_hash`-gated fields, a proxy toggle can change with no other content change, so it must never be gated behind "content changed").
      - **Eligibility is read live from Cloudflare's own per-record `proxiable` flag, not a hardcoded type list** — a deliberate improvement over this addendum's original sketch (which assumed only A/AAAA/CNAME, based on third-party docs). Confirmed directly against Cloudflare's current API docs (`developers.cloudflare.com/api/resources/dns/subresources/records/`) that **every** DNS record type's response schema carries both `proxied` (current state) and `proxiable` (`"whether the record can be proxied by Cloudflare or not"`) — the API's own live, per-record answer, matching this plugin's established "the provider's own answer wins over a guessed static list" principle (same reasoning already applied to Phase 8's registrar-mismatch handling). `CloudflareDriver::fetchZoneRecords()` sets `is_proxied` from `proxied` only when `proxiable` is true; `null` otherwise. IONOS/Dinahosting never populate it (always `null` — no `proxiable` concept exists for either).
      - **Tri-state search rendering — verified live end-to-end, and the original "promising lead" was only half right; corrected here rather than left stale.** Real test rows were created (`is_proxied` = `1`, `0`, `NULL`) and filtered through GLPI's actual search engine (`ajax/search.php?action=display_results`, a real authenticated HTTP round trip, plus the raw SQL captured via MariaDB's general query log to see exactly what the search engine built):
@@ -4424,3 +4425,181 @@ the hidden-panel states above already showed no indicator there, both before thi
 after both amendments. No template change — `domain_panel.html.twig`'s existing `is_managed`
 branch remains the "linked to a working driver, but genuinely not managed" path. See
 TESTING.md's Phase 88 entry for the live verification matrix.
+
+### 20.12 Post-ship bugfix: domain-level breakdown cards weren't scoped to managed domains
+
+User audit of the full dashboard card set (registrar/DNS-provider/TLD breakdowns, registrar/DNS
+sync status, expiring-soon) found that every record-level card (`recordsCount()`,
+`recordsByType()`, `recordsByDnsProvider()`, `recordsByDnsProviderAndType()`, `proxiedRecords()`)
+and `domainsCount()`'s "Number of Managed Domains" bigNumber already scope to
+`ImportedRecord.is_managed = 1`/`DomainState.is_managed = 1` respectively, but seven domain-level
+breakdown cards did not: `domainsByRegistrar()`, `domainsByDnsProvider()`, `domainsByTld()`,
+`domainsByRegistrarAndTld()`, `syncStatusBreakdown()` ("DNS status"), `registrarStatusBreakdown()`
+("Registrar status"), and `domainsExpiringSoon()` counted every in-scope `Domain` regardless of
+managed state. Four of them (`domainsByRegistrar`, `domainsByDnsProvider`, `domainsByTld`,
+`domainsByRegistrarAndTld`) already advertised "Managed domains per X" in their `alt` tooltip text
+despite never applying the filter — a real correctness bug, not just an inconsistency.
+
+Fixed by adding `DomainState.is_managed => 1` to each card's `WHERE`, same pattern
+`domainsCount()` (§20's "Number of Managed Domains") already used. Where the join to
+`DomainState` was a `LEFT JOIN` (`domainsByDnsProvider()`, `syncStatusBreakdown()`,
+`registrarStatusBreakdown()`), it was switched to `INNER JOIN` — filtering on `is_managed = 1`
+already forces this semantically, but an explicit `INNER JOIN` keeps the query honest and matches
+`domainsByTld()`'s existing style. `domainsByRegistrar()` and `domainsExpiringSoon()` had no
+`DomainState` join at all and gained one. One behavioral consequence worth noting:
+`syncStatusBreakdown()`/`registrarStatusBreakdown()` now exclude an unmanaged domain that was
+never synced (no `DomainState` row) outright, rather than folding it into the `STATUS_NEVER`
+bucket — correct, since the card is now managed-domains-only. `domainsExpiringSoon()`'s
+drill-down search URL also gained a matching `PLUGIN_DOMAINMANAGER_SO_DOMAIN_MANAGED = 1`
+criterion so the search-page click-through matches what the card counted.
+
+No `GROUP BY` expressions changed, so this carries none of §20.4/§20.6's "ambiguous column in
+GROUP BY" risk (those keep grouping by the raw joined column, not the SELECT alias).
+
+### 20.13 Post-ship bugfix: `registrarStatusBreakdown()`'s reconciliation CASE mishandled "no Infocom row at all"
+
+Found while investigating why `domainsByRegistrar()`'s "No driver linked" bucket bar wasn't
+click-through filterable to the right domains (that investigation didn't change `is_managed`
+semantics at all — confirmed `resolvesToActiveDriver()` in `DomainState.php` already requires an
+active Supplier + a real `api_driver` + non-empty decrypted credentials, so a Supplier linked with
+no driver correctly never sets `is_managed = 1`; no fix needed there).
+
+`registrarStatusBreakdown()`'s CASE (§20, `registrarStatusBreakdown()`) reconciles a domain's
+*stored* `registrar_suppliers_id` against its *current* Infocom `suppliers_id` to detect a stale,
+superseded registrar link, folding a mismatch into `STATUS_NEVER`. For a domain with no Infocom
+row at all, the `LEFT JOIN` leaves `infocom.suppliers_id` `NULL`, so the comparison becomes
+`0 = NULL` — SQL's three-valued logic evaluates that to `NULL`, not true — so the CASE always fell
+through to its `STATUS_NEVER` ELSE branch for that domain, regardless of what `registrar_status`
+was actually stored. Confirmed via `SyncEngine.php`'s registrar-leg sync logic: a domain with no
+registrar Supplier linked gets `registrar_status = SyncEngine::STATUS_UNCONFIGURED` written by the
+sync engine, not `STATUS_NEVER` — so this bug meant the card displayed "Never synchronized" for
+domains the sync engine had already correctly diagnosed as "Not configured".
+
+Fixed by `COALESCE`-ing both sides of the comparison to `0` (`COALESCE(registrar_suppliers_id, 0)
+= COALESCE(infocom.suppliers_id, 0)`), same "repeat/guard the joined-column comparison instead of
+trusting NULL-safe equality" reasoning as every other `COALESCE` fix in this file. No other card
+shares this specific registrar/Infocom reconciliation comparison, so no other fix needed.
+
+Deliberately **not** fixed in this pass: making `domainsByRegistrar()`'s "No driver linked" bucket
+bar itself clickable. Its click callback (§20, `toChartData()`'s per-row URL builder) still returns
+`null` for that bucket — an attempted fix linking to `field 53 searchtype=empty` was reverted after
+live testing showed it filtered the wrong domains (that search option only covers "no registrar
+linked at all", not the bucket's other case: "a registrar Supplier is linked but has no active
+driver configured"). A precise fix needs a dedicated search option mirroring the bucket's own CASE
+logic, or accepting `registrar_status = SyncEngine::STATUS_UNCONFIGURED` as a close-but-not-exact
+approximation (it also catches "driver configured but credentials empty", which the bucket's CASE
+does not) — left open pending a decision on that tradeoff.
+
+### 20.14 Post-ship bugfix: a Supplier with no active driver still listed domains on its own tab
+
+User-reported: a Supplier configured with `api_driver = DRIVER_NONE` ("None (no API integration)"
+in its own Domain Manager tab) still showed a domain in that same tab's "Domains" list — e.g. a
+Domain linked to it via native Infocom as the registrar. This is a genuinely different bug from
+§20.12/§20.13's dashboard-card fixes: `is_managed` itself was never wrong here (confirmed
+`resolvesToActiveDriver()` already gates it correctly, same confirmation as §20.13), but
+`DomainState::getDomainsForSupplier()` (§9 Phase 5.5's union-of-Infocom-and-`dns_suppliers_id`
+query, backing both `SupplierTab::showForSupplier()`'s list render and
+`SupplierTab::getTabNameForItem()`'s count badge — confirmed the only two callers) had no driver
+check of its own at all: any Domain linking to the Supplier via either half of that union showed
+up, regardless of whether the Supplier could ever actually manage it.
+
+This runs directly against the method's own pre-existing design intent, documented in its
+docblock: "never gate a domain's presence in this list on a state row existing just because the
+registrar link is real" — deliberately written so a real, driver-backed Supplier whose first sync
+simply hasn't run yet still shows its linked domains immediately, with no state row required. That
+reasoning doesn't extend to a Supplier that could never sync in the first place — there's no
+"hasn't run yet" for a Supplier with no driver configured at all, so showing its domains implies a
+management relationship that structurally cannot exist.
+
+Fixed with an early-return guard — `if (!self::resolvesToActiveDriver($suppliers_id)) return [];`,
+placed immediately after the method's existing `$suppliers_id <= 0` guard, before the query runs
+at all. Confirmed safe for both callers (both purely UI-display, no code path expects a non-empty
+result regardless of driver status). Left the union-query's own "never gate on sync status" logic
+untouched — this guard fires on driver configuration, not sync state, so a real driver-backed
+Supplier's not-yet-synced domains keep showing exactly as before.
+
+## 21. Phase 91 — drop the Transfer/EPP auth code feature entirely (2026-08-10)
+
+User-directed security call, raised while reviewing why the Domain form's "Transfer / EPP auth
+code" badge always read "On file" for their real domains (answer: it was working correctly —
+IONOS genuinely returns a real code for most of their domains, confirmed live against
+`testing_glpi_1`'s `registrar_auth_info` column). Once it was clear the raw code was actually
+being persisted in the DB (not just a UI stub), the user's judgment was that a live
+domain-transfer secret at rest — even one never rendered in the UI, only its presence shown, per
+§9 Phase 7's original "masked, never revealed" design — was a security liability not worth
+keeping, versus fetching it live from the registrar only if a real transfer workflow is ever
+built (no such workflow exists today).
+
+Removed, not just hidden:
+- `DomainLifecycle::$authInfo` (`src/Dto/DomainLifecycle.php`) — the DTO property.
+- `DinahostingDriver::fetchAuthInfo()` and its `Domain_GetAuthcode` call; `IonosDriver`'s
+  `authInfo` read off `domainLarge`; `CloudflareDriver`'s explicit `null` placeholder (it never
+  supported this field).
+- `SyncEngine`'s persistence of `registrar_auth_info` (default, conditional-touch list, and the
+  actual assignment from `$lifecycle->authInfo`).
+- The search option (`Domain`, id **9419**, `PLUGIN_DOMAINMANAGER_SO_DOMAIN_AUTH_CODE`) and its
+  `getSpecificValueToDisplay()` masking case in `DomainState.php` — id not reused, same
+  never-reassign convention as every other dropped search option in this doc (e.g.
+  `registrar_domain_type`'s slot, §9 Phase 7's own intro). Added to
+  `pruneStaleSearchOptionCriteria()`'s `Domain` stale-ID list so any saved search still
+  referencing it gets cleaned up on upgrade too.
+- The badge `<td>`/`<th>` pair in `domain_panel.html.twig`'s "Registrar details" table.
+- `Installer::addRegistrarMetadataColumns()`'s `addField()` for the column replaced with an
+  unconditional `dropField()` — upgrading an existing install actually **erases** any codes
+  already stored, not merely stops writing new ones. Verified live: domain #14 on
+  `testing_glpi_1` had a real stored code (`qn7!q$sv`, fetched from IONOS) before the migration;
+  `DESCRIBE glpi_plugin_domainmanager_states` confirms the column is gone after
+  `glpi:plugin:install`.
+
+The other 6 fields Phase 7 introduced alongside `authInfo` (`privacyEnabled`/`domainLock`/
+`transferLock`/`autoRenew`/`domainType`/`dnsSecEnabled`) are unaffected — none of them are
+credentials, and none were touched by this change. `phpcs`/`php -l` clean on every touched file.
+Full file list and rationale also recorded in `CHANGELOG-dev.md`'s `[Unreleased] - 1.7.1-beta1`
+entry; regression checklist in `TESTING.md`'s "Phase 91" section.
+
+## 22. Phase 92 — split "Last sync" into registrar/DNS vs. RDAP, per-source sync-now icons (2026-08-10)
+
+`DomainState.last_rdap_check_date` (added §9 Phase 26, stamped by
+`Cron::cronRdapEnrichment()`) existed since Phase 26 but was never exposed anywhere in the UI —
+no search option, no display in `domain_panel.html.twig`, only an aggregate "last processed at"
+in the config panel. Meanwhile the panel's single "Last sync" datetime (`last_sync_date`) reads
+as if it covers RDAP too, when it only reflects the registrar/DNS driver sync
+(`SyncEngine::sync()`/`Cron::cronDomainSync()`).
+
+- Renamed the existing search option `PLUGIN_DOMAINMANAGER_SO_DOMAIN_LAST_SYNC` (id **9410**)
+  label to "Reg/DNS last sync", and added a new one, `PLUGIN_DOMAINMANAGER_SO_DOMAIN_RDAP_LAST_CHECK`
+  (id **9434**, next free id after §20.6's `PLUGIN_DOMAINMANAGER_SO_DOMAIN_TLD` = 9433), field
+  `last_rdap_check_date`, `datatype => 'datetime'`. Unlike `rdap_registrar_name`/
+  `rdap_registrar_iana_id`/`rdap_nameservers` (deliberately excluded — read-only diagnostics,
+  never a source of truth, per §9 Phase 27's comment), this is a plain unambiguous timestamp,
+  same shape as `last_changed_date`/`transfer_date` — no reason to keep it hidden.
+- User-directed scope widen: dropped the standalone "Update Now" button
+  (`domainmanager-updatenow`, previously relocated by JS into the form's own Save/Put-in-trashbin
+  button row) in favor of two small inline `ti-refresh` icons, one in the "Reg/DNS last sync"
+  cell and one in the new "RDAP last sync" cell — following the same interaction pattern GLPI
+  core uses for its Agent "request inventory" icon
+  (`templates/components/form/inventory_info.html.twig`: `ti-refresh` + a spin CSS class toggled
+  during the AJAX call). This plugin's own button already used that exact pattern with its own
+  `ti-spin` class, so the new RDAP icon just reuses it rather than inventing a new one.
+- The registrar/DNS icon reuses the existing `POST /plugins/domainmanager/sync/{domains_id}`
+  endpoint (`SyncController`) untouched — only its trigger moved from a button to an icon. The
+  RDAP icon needed a genuinely new endpoint, since no on-demand RDAP path existed before: added
+  `RdapSyncController` (`POST /plugins/domainmanager/rdapsync/{domains_id}`), which required
+  changing `Cron::processRdapEnrichment()` from `private` to `public` so the controller can run
+  one real RDAP lookup synchronously, reusing the cron's own gap-fill logic. No rate-limit gate
+  was added on this on-demand path: the gate inside `cronRdapEnrichment()`'s candidate-selection
+  query is a scan-cost optimization for the periodic sweep, not a hard limit — its own §9 Phase
+  22 rationale comment already notes rdap.org's real limit (~10 req/10s) is nowhere near what
+  even a busy cron hits.
+- Per user direction, both icons get a **click-once-per-page-load** guard instead of a cooldown
+  timer: each icon's click handler is registered with `{ once: true }`, immediately sets
+  `pointer-events: none` (blocks further clicks while the request is in flight, spin animation
+  still visible), and its `.finally()` sets a permanent dimmed/disabled visual state that is
+  **never** reset once the request settles — unlike the old button's `disabled = false` in its
+  own `.finally()`. Only a full page reload re-arms either icon. Rationale: neither the
+  registrar/DNS driver APIs nor rdap.org enforce anything client-side today, and this is simply
+  to prevent a user from hammering either endpoint by repeat-clicking; a real per-minute cooldown
+  was judged unnecessary complexity for a scenario nobody could plausibly hit by accident.
+
+Full file list and rationale also recorded in `CHANGELOG-dev.md`'s `[Unreleased] - 1.7.1-beta1`
+entry.

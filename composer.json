@@ -5,6 +5,7 @@
 	},
 	"require-dev": {
         "glpi-project/tools": "^0.7.5",
+        "phpunit/phpunit": "^11",
         "squizlabs/php_codesniffer": "^3.7"
     },
     "config": {
@@ -25,7 +26,11 @@
     },
     "autoload-dev": {
         "psr-4": {
-            "Glpi\\Tools\\": "../../tools/src/"
+            "Glpi\\Tools\\": "../../tools/src/",
+            "GlpiPlugin\\Domainmanager\\Tests\\": "tests/"
         }
+    },
+    "scripts": {
+        "test": "phpunit"
     }
 }

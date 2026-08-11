@@ -23,4 +23,5 @@ $rules = [
 return $config
     ->setRules($rules)
     ->setFinder($finder)
-    ->setUsingCache(false);
+    ->setUsingCache(false)
+    ->setUnsupportedPhpVersionAllowed(true);

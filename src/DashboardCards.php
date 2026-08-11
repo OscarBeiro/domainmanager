@@ -209,6 +209,10 @@ class DashboardCards
      */
     public static function domainsByRegistrar(array $params = []): array
     {
+        // is_managed = 1: this card only ever counts managed domains, same
+        // scope domainsCount()'s "Number of Managed Domains" bigNumber uses
+        // — the alt text below already claimed "Managed domains per
+        // registrar" before this filter existed, which was misleading.
         /** @var \DBmysql $DB */
         global $DB;
 
@@ -234,6 +238,11 @@ class DashboardCards
                 'COUNT DISTINCT' => 'glpi_domains.id AS cpt',
             ],
             'FROM'      => 'glpi_domains',
+            'INNER JOIN' => [
+                DomainState::getTable() => [
+                    'ON' => [DomainState::getTable() => 'domains_id', 'glpi_domains' => 'id'],
+                ],
+            ],
             'LEFT JOIN' => [
                 'glpi_infocoms AS infocom' => [
                     'ON' => [
@@ -255,8 +264,9 @@ class DashboardCards
             ],
             'WHERE'     => array_merge(
                 [
-                    'glpi_domains.is_deleted'  => 0,
-                    'glpi_domains.is_template' => 0,
+                    'glpi_domains.is_deleted'                => 0,
+                    'glpi_domains.is_template'                => 0,
+                    DomainState::getTable() . '.is_managed'   => 1,
                 ],
                 getEntitiesRestrictCriteria('glpi_domains', '', '', true),
             ),
@@ -311,6 +321,8 @@ class DashboardCards
      * never synced, or synced to a provider with no linked Supplier —
      * folds into a single "Not matched to a supplier" bucket, same
      * reasoning as `domainsByRegistrar()`'s "No driver linked" catch-all.
+     * Filtered to `DomainState.is_managed = 1`, same scope as
+     * `domainsByRegistrar()`.
      */
     public static function domainsByDnsProvider(array $params = []): array
     {
@@ -335,18 +347,21 @@ class DashboardCards
                 'COUNT DISTINCT' => 'glpi_domains.id AS cpt',
             ],
             'FROM'      => 'glpi_domains',
-            'LEFT JOIN' => [
+            'INNER JOIN' => [
                 DomainState::getTable() => [
                     'ON' => [DomainState::getTable() => 'domains_id', 'glpi_domains' => 'id'],
                 ],
+            ],
+            'LEFT JOIN' => [
                 'glpi_suppliers AS supplier' => [
                     'ON' => ['supplier' => 'id', DomainState::getTable() => 'dns_suppliers_id'],
                 ],
             ],
             'WHERE'     => array_merge(
                 [
-                    'glpi_domains.is_deleted'  => 0,
-                    'glpi_domains.is_template' => 0,
+                    'glpi_domains.is_deleted'              => 0,
+                    'glpi_domains.is_template'              => 0,
+                    DomainState::getTable() . '.is_managed' => 1,
                 ],
                 getEntitiesRestrictCriteria('glpi_domains', '', '', true),
             ),
@@ -410,7 +425,8 @@ class DashboardCards
      * GLPI test/inventory entry like `something.internal` has no place next
      * to `.com`/`.gal` in it. `tld <> ''` also excludes NULL rows: SQL's
      * three-valued logic means `NULL <> ''` evaluates to NULL, which WHERE
-     * treats as false.
+     * treats as false. Filtered to `DomainState.is_managed = 1`, same scope
+     * as `domainsByRegistrar()`.
      */
     public static function domainsByTld(array $params = []): array
     {
@@ -430,9 +446,10 @@ class DashboardCards
             ],
             'WHERE'     => array_merge(
                 [
-                    'glpi_domains.is_deleted'    => 0,
-                    'glpi_domains.is_template'   => 0,
-                    DomainState::getTable() . '.tld' => ['<>', ''],
+                    'glpi_domains.is_deleted'                => 0,
+                    'glpi_domains.is_template'                => 0,
+                    DomainState::getTable() . '.tld'          => ['<>', ''],
+                    DomainState::getTable() . '.is_managed'   => 1,
                 ],
                 getEntitiesRestrictCriteria('glpi_domains', '', '', true),
             ),
@@ -476,6 +493,8 @@ class DashboardCards
      * as `domainsByTld()` — an INNER JOIN to the states table plus
      * `tld <> ''` (see that method's own doc comment for the NULL/empty
      * reasoning) rather than a LEFT JOIN + COALESCE + "Not set" series.
+     * Filtered to `DomainState.is_managed = 1`, same scope as
+     * `domainsByRegistrar()`.
      */
     public static function domainsByRegistrarAndTld(array $params = []): array
     {
@@ -520,9 +539,10 @@ class DashboardCards
             ],
             'WHERE'     => array_merge(
                 [
-                    'glpi_domains.is_deleted'        => 0,
-                    'glpi_domains.is_template'       => 0,
-                    DomainState::getTable() . '.tld' => ['<>', ''],
+                    'glpi_domains.is_deleted'                => 0,
+                    'glpi_domains.is_template'                => 0,
+                    DomainState::getTable() . '.tld'          => ['<>', ''],
+                    DomainState::getTable() . '.is_managed'   => 1,
                 ],
                 getEntitiesRestrictCriteria('glpi_domains', '', '', true),
             ),
@@ -577,7 +597,43 @@ class DashboardCards
                 // via toChartData()'s SQL-grouped iterator, so this matrix
                 // build is the one place that must replicate that "absent,
                 // not zero" behaviour by hand).
-                $seriesData[$tld][] = $matrix[$suppliers_id][$tld] ?? null;
+                $cpt = $matrix[$suppliers_id][$tld] ?? null;
+                if ($cpt === null) {
+                    $seriesData[$tld][] = null;
+                    continue;
+                }
+
+                // No single supplier id represents the "no driver linked"
+                // bucket (same reasoning as domainsByRegistrar()'s own
+                // urlBuilder), so that segment gets a plain value with no
+                // per-point drill-down instead of a meaningless "supplier 0"
+                // search.
+                if ($suppliers_id <= 0) {
+                    $seriesData[$tld][] = $cpt;
+                    continue;
+                }
+
+                $criteria = [
+                    'criteria' => [
+                        [
+                            'field'      => 53,
+                            'searchtype' => 'equals',
+                            'value'      => $suppliers_id,
+                        ],
+                        [
+                            'link'       => 'AND',
+                            'field'      => PLUGIN_DOMAINMANAGER_SO_DOMAIN_TLD,
+                            'searchtype' => 'equals',
+                            'value'      => $tld,
+                        ],
+                    ],
+                    'reset'    => 'reset',
+                ];
+
+                $seriesData[$tld][] = [
+                    'value' => $cpt,
+                    'url'   => Domain::getSearchURL() . '?' . Toolbox::append_params($criteria),
+                ];
             }
         }
 
@@ -607,7 +663,10 @@ class DashboardCards
      * already registered and searchable, no new option allocated. That
      * option needed its own `searchequalsonfield` fix (Phase 84 follow-up)
      * for the same reason PLUGIN_DOMAINMANAGER_SO_DOMAIN_NS_PROVIDER did —
-     * see that option's own comment in setup.php.
+     * see that option's own comment in setup.php. Filtered to
+     * `DomainState.is_managed = 1`, same scope as `domainsByRegistrar()` —
+     * an unmanaged domain that was never synced (no state row) is excluded
+     * outright rather than folding into the "Never synchronized" bucket.
      */
     public static function syncStatusBreakdown(array $params = []): array
     {
@@ -630,15 +689,16 @@ class DashboardCards
                 'COUNT DISTINCT' => 'glpi_domains.id AS cpt',
             ],
             'FROM'      => 'glpi_domains',
-            'LEFT JOIN' => [
+            'INNER JOIN' => [
                 DomainState::getTable() => [
                     'ON' => [DomainState::getTable() => 'domains_id', 'glpi_domains' => 'id'],
                 ],
             ],
             'WHERE'     => array_merge(
                 [
-                    'glpi_domains.is_deleted'  => 0,
-                    'glpi_domains.is_template' => 0,
+                    'glpi_domains.is_deleted'              => 0,
+                    'glpi_domains.is_template'              => 0,
+                    DomainState::getTable() . '.is_managed' => 1,
                 ],
                 getEntitiesRestrictCriteria('glpi_domains', '', '', true),
             ),
@@ -673,7 +733,8 @@ class DashboardCards
      * whose `registrar_suppliers_id` mirror no longer matches the domain's
      * *current* Infocom supplier describes a stale, now-superseded
      * registrar relationship, so it's folded into `STATUS_NEVER` here
-     * rather than shown as-is.
+     * rather than shown as-is. Filtered to `DomainState.is_managed = 1`,
+     * same scope as `domainsByRegistrar()`.
      */
     public static function registrarStatusBreakdown(array $params = []): array
     {
@@ -689,8 +750,17 @@ class DashboardCards
         // stored status) but whose CASE result is identically STATUS_NEVER
         // silently split into separate "Never synchronized" buckets. Same
         // hazard/fix as recordsByDnsProvider()'s dns_suppliers_id.
-        $registrarStatusExpr = 'CASE WHEN ' . $DB->quoteName(DomainState::getTable() . '.registrar_suppliers_id')
-            . ' = ' . $DB->quoteName('infocom.suppliers_id')
+        //
+        // Both sides of the comparison are COALESCE'd to 0: a domain with no
+        // Infocom row at all (LEFT JOIN, `infocom.suppliers_id` is NULL) has
+        // `registrar_suppliers_id = 0` in that case too, but `0 = NULL`
+        // evaluates to NULL under SQL's three-valued logic — not true — so
+        // without the COALESCE the CASE always fell through to its ELSE
+        // branch for that domain, masking its real stored `registrar_status`
+        // (typically `unconfigured`, set by SyncEngine when no registrar
+        // Supplier is linked) behind a hardcoded `STATUS_NEVER` instead.
+        $registrarStatusExpr = 'CASE WHEN COALESCE(' . $DB->quoteName(DomainState::getTable() . '.registrar_suppliers_id') . ', 0)'
+            . ' = COALESCE(' . $DB->quoteName('infocom.suppliers_id') . ', 0)'
             . ' THEN COALESCE(' . $DB->quoteName(DomainState::getTable() . '.registrar_status')
             . ', \'' . DomainState::STATUS_NEVER . '\')'
             . ' ELSE \'' . DomainState::STATUS_NEVER . '\' END';
@@ -701,6 +771,11 @@ class DashboardCards
                 'COUNT DISTINCT' => 'glpi_domains.id AS cpt',
             ],
             'FROM'      => 'glpi_domains',
+            'INNER JOIN' => [
+                DomainState::getTable() => [
+                    'ON' => [DomainState::getTable() => 'domains_id', 'glpi_domains' => 'id'],
+                ],
+            ],
             'LEFT JOIN' => [
                 'glpi_infocoms AS infocom' => [
                     'ON' => [
@@ -709,14 +784,12 @@ class DashboardCards
                         ['AND' => ['infocom.itemtype' => Domain::class]],
                     ],
                 ],
-                DomainState::getTable() => [
-                    'ON' => [DomainState::getTable() => 'domains_id', 'glpi_domains' => 'id'],
-                ],
             ],
             'WHERE'     => array_merge(
                 [
-                    'glpi_domains.is_deleted'  => 0,
-                    'glpi_domains.is_template' => 0,
+                    'glpi_domains.is_deleted'              => 0,
+                    'glpi_domains.is_template'              => 0,
+                    DomainState::getTable() . '.is_managed' => 1,
                 ],
                 getEntitiesRestrictCriteria('glpi_domains', '', '', true),
             ),
@@ -806,7 +879,9 @@ class DashboardCards
      * `send_domains_alert_close_expiries_delay` config core's own
      * `Domain::closeExpiriesDomainsCriteria()` uses, since that method is
      * scoped to a single entity and this card spans the active
-     * entity+children selection like every other card here.
+     * entity+children selection like every other card here. Filtered to
+     * `DomainState.is_managed = 1`, same scope as `domainsCount()`'s
+     * "Number of Managed Domains".
      */
     public static function domainsExpiringSoon(array $params = []): array
     {
@@ -815,8 +890,9 @@ class DashboardCards
 
         $where = array_merge(
             [
-                'glpi_domains.is_deleted'  => 0,
-                'glpi_domains.is_template' => 0,
+                'glpi_domains.is_deleted'                => 0,
+                'glpi_domains.is_template'                => 0,
+                DomainState::getTable() . '.is_managed'   => 1,
                 'NOT'                      => ['glpi_domains.date_expiration' => null],
                 new QueryExpression('glpi_domains.date_expiration >= CURDATE()'),
                 new QueryExpression(
@@ -828,9 +904,14 @@ class DashboardCards
         );
 
         $iterator = $DB->request([
-            'SELECT' => ['COUNT DISTINCT' => 'glpi_domains.id AS cpt'],
-            'FROM'   => 'glpi_domains',
-            'WHERE'  => $where,
+            'SELECT'    => ['COUNT DISTINCT' => 'glpi_domains.id AS cpt'],
+            'FROM'      => 'glpi_domains',
+            'INNER JOIN' => [
+                DomainState::getTable() => [
+                    'ON' => [DomainState::getTable() => 'domains_id', 'glpi_domains' => 'id'],
+                ],
+            ],
+            'WHERE'     => $where,
         ]);
         $count = (int) ($iterator->current()['cpt'] ?? 0);
 
@@ -848,6 +929,12 @@ class DashboardCards
 
         $criteria = [
             'criteria' => [
+                [
+                    'link'       => 'AND',
+                    'field'      => PLUGIN_DOMAINMANAGER_SO_DOMAIN_MANAGED,
+                    'searchtype' => 'equals',
+                    'value'      => 1,
+                ],
                 [
                     'link'       => 'AND',
                     'field'      => self::SO_DOMAIN_EXPIRATION_DATE,
@@ -1136,9 +1223,16 @@ class DashboardCards
      * volume" behaviour the user actually wants, without duplicating core's
      * slicing logic here.
      *
-     * There is no per-point drill-down `url` in this shape — same as core's
-     * own SLA-by-technician card, `Widget`'s multi-series bar/line renderers
-     * never read a `url` key per data point, only `name`/`data`.
+     * Each present data point carries a per-segment drill-down: `Widget`'s
+     * echarts click handler reads `params.data.url`, so a data value can be
+     * either a bare number (no click) or `{value, url}` (clickable) — see
+     * domainsByRegistrarAndTld()'s matching treatment. Unlike that card,
+     * there is no search option exposing `DomainState.dns_suppliers_id`
+     * under the `DomainRecord` itemtype (`PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_SUPPLIER`
+     * is only registered for `Domain`), so every segment's url can only
+     * carry the type + "Managed" criteria — a superset spanning all
+     * providers for that type, same accepted tradeoff as
+     * `recordsByDnsProvider()`'s own drill-down.
      */
     public static function recordsByDnsProviderAndType(array $params = []): array
     {
@@ -1241,7 +1335,33 @@ class DashboardCards
                 // null, not 0 — see domainsByRegistrarAndTld()'s matching
                 // comment: an absent provider/type combo shouldn't fabricate
                 // a real (tooltip/legend-visible) data point.
-                $seriesData[$typeId][] = $matrix[$grp][$typeId] ?? null;
+                $cpt = $matrix[$grp][$typeId] ?? null;
+                if ($cpt === null) {
+                    $seriesData[$typeId][] = null;
+                    continue;
+                }
+
+                $criteria = [
+                    'criteria' => [
+                        [
+                            'field'      => 3,
+                            'searchtype' => 'equals',
+                            'value'      => $typeId,
+                        ],
+                        [
+                            'link'       => 'AND',
+                            'field'      => PLUGIN_DOMAINMANAGER_SO_DOMAINRECORD_MANAGED,
+                            'searchtype' => 'equals',
+                            'value'      => 1,
+                        ],
+                    ],
+                    'reset'    => 'reset',
+                ];
+
+                $seriesData[$typeId][] = [
+                    'value' => $cpt,
+                    'url'   => DomainRecord::getSearchURL() . '?' . Toolbox::append_params($criteria),
+                ];
             }
         }
 

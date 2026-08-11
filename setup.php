@@ -29,6 +29,15 @@
  * -------------------------------------------------------------------------
  */
 
+// GLPI's plugin autoloader only registers this plugin's own PSR-4 namespace
+// (GlpiPlugin\Domainmanager\ -> src/); it never loads a plugin's Composer
+// vendor/autoload.php, so third-party deps (e.g. Pdp\Rules from
+// jeremykendall/php-domain-parser) are invisible at runtime unless required
+// here explicitly.
+if (file_exists(__DIR__ . '/vendor/autoload.php')) {
+    require_once __DIR__ . '/vendor/autoload.php';
+}
+
 use Glpi\Plugin\Hooks;
 use GlpiPlugin\Domainmanager\Config\Config as DomainmanagerConfig;
 use GlpiPlugin\Domainmanager\DashboardCards;
@@ -41,7 +50,7 @@ use GlpiPlugin\Domainmanager\Profile as DomainmanagerProfile;
 use GlpiPlugin\Domainmanager\Service\DnsRecordWriteback;
 use GlpiPlugin\Domainmanager\SupplierTab;
 
-define('PLUGIN_DOMAINMANAGER_VERSION', '1.7.0');
+define('PLUGIN_DOMAINMANAGER_VERSION', '1.7.1');
 define('PLUGIN_DOMAINMANAGER_MIN_GLPI', '11.0.0');
 define('PLUGIN_DOMAINMANAGER_MAX_GLPI', '11.0.99');
 define('PLUGIN_DOMAINMANAGER_REPOSITORY_URL', 'https://github.com/TICGAL-GLPI-Plugins/domainmanager');
@@ -105,7 +114,8 @@ define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_NAME_ASCII', 9416);
 // so its slot is not reused here.
 define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_WHOIS_PRIVACY', 9417);
 define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_TRANSFER_LOCK', 9418);
-define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_AUTH_CODE', 9419);
+// 9419 (PLUGIN_DOMAINMANAGER_SO_DOMAIN_AUTH_CODE) dropped along with the
+// registrar_auth_info column — not reused.
 define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_DOMAIN_LOCK', 9420);
 define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_AUTO_RENEW', 9421);
 define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNSSEC', 9422);
@@ -156,6 +166,14 @@ define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_SUPPLIER', 9432);
 // here (contrast PLUGIN_DOMAINMANAGER_SO_DOMAIN_NS_PROVIDER's
 // `detected_provider`, ARCHITECTURE.md §20.6).
 define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_TLD', 9433);
+// Real, filterable search option on Domain: the RDAP-check timestamp
+// (`last_rdap_check_date`, Installer.php Phase 26). Unlike
+// `rdap_registrar_name`/`rdap_registrar_iana_id`/`rdap_nameservers` above
+// (deliberately excluded, comment near 9423 — read-only diagnostics, never
+// a source of truth), this is a plain, unambiguous timestamp with the same
+// shape as PLUGIN_DOMAINMANAGER_SO_DOMAIN_LAST_CHANGED/TRANSFER_DATE, which
+// are already exposed — no reason to keep it hidden.
+define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_RDAP_LAST_CHECK', 9434);
 
 /**
  * Plugin_Version_Domainmanager
@@ -410,7 +428,7 @@ function plugin_domainmanager_getAddSearchOptionsNew($itemtype): array
             'table'         => DomainState::getTable(),
             'field'         => 'last_sync_date',
             'linkfield'     => 'domains_id',
-            'name'          => __('Last sync', 'domainmanager'),
+            'name'          => __('Reg/DNS last sync', 'domainmanager'),
             'datatype'      => 'datetime',
             'massiveaction' => false,
             'joinparams'    => [
@@ -559,28 +577,24 @@ function plugin_domainmanager_getAddSearchOptionsNew($itemtype): array
             ],
         ];
 
-        // Transfer/EPP auth code: the raw value is a live credential (same
-        // "never leaves the browser" treatment as any other secret in this
-        // plugin, per the template's own "On file"/"Not on file" badge,
-        // domain_panel.html.twig) — 'searchtype' is restricted to
-        // ['empty'] only, so this is filterable ("which domains have a code
-        // on file?") without ever exposing the value itself in a search
-        // results column or criteria input.
-        // `getSpecificValueToDisplay()` masks it unconditionally below.
         $options[] = [
-            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN_AUTH_CODE,
-            'itemtype'      => DomainState::class,
+            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN_RDAP_LAST_CHECK,
             'table'         => DomainState::getTable(),
-            'field'         => 'registrar_auth_info',
+            'field'         => 'last_rdap_check_date',
             'linkfield'     => 'domains_id',
-            'name'          => __('Auth code', 'domainmanager'),
-            'datatype'      => 'specific',
-            'searchtype'    => ['empty'],
+            'name'          => __('RDAP last sync', 'domainmanager'),
+            'datatype'      => 'datetime',
             'massiveaction' => false,
             'joinparams'    => [
                 'jointype' => 'child',
             ],
         ];
+
+        // Transfer/EPP auth code search option (id 9419) dropped along with
+        // the registrar_auth_info column itself: it's a transfer-enabling
+        // secret, and storing/searching it at rest — even masked — was
+        // judged not worth the risk. Slot not reused, same as
+        // registrar_domain_type's above.
     }
 
     if ($itemtype === DomainRecord::class) {

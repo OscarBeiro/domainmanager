@@ -14,7 +14,7 @@ Requires **GLPI 11.0.x**.
 ## Features
 - **Domain Manager** tab on each supplier to select an API driver (Cloudflare, IONOS, Dinahosting) and store its credentials encrypted (GLPIKey); secrets are never echoed back to the browser.
 - **Check Connection** validates stored credentials against the real provider API before any sync runs — for Cloudflare this includes a follow-up probe that catches a token which is valid but not actually scoped for zone/DNS access, a gap a plain token-verify call would miss.
-- Daily automatic action (`DomainSync`, tunable in *Setup → Automatic actions*) that synchronizes domain lifecycle data (registration/expiry/status) and DNS zone records from each configured supplier.
+- Automatic action (`DomainSync`, every 30 minutes by default, tunable in *Setup → Automatic actions*) that synchronizes domain lifecycle data (registration/expiry/status) and DNS zone records from each configured supplier.
 - Versioned NS→provider registry (`resources/ns-providers.json`, contributions welcome) auto-detects a domain's DNS provider from its NS records, even for providers with no configured driver — see the detected-providers list below.
 - **DNS record write-back** for Cloudflare and IONOS: create, update and delete DNS records for a domain directly from its GLPI form when the DNS provider is one of these two and the domain is recognized as write-capable. Per-domain editability (`manual` / `managed_readonly` / `managed_editable`) is learned only from real write attempts, never assumed. Native GLPI add/edit/delete controls are hidden/guarded on write-capable domains and replaced with plugin-branded, rights-scoped equivalents; every write is also recorded in GLPI's native History tab.
 - Per-type rights (A/AAAA/CNAME/TXT × Create/Update/Delete) gate who can write DNS records, managed from a **Domain Manager** tab on each profile alongside the existing *Unlock imported domain data* right.
@@ -44,7 +44,7 @@ Requires the account's plain **username and password** — Dinahosting has no sc
 |---|---|---|---|
 | Cloudflare | Yes | Yes | Yes |
 | IONOS | Yes | Yes | Yes |
-| Dinahosting | Yes | Yes | No |
+| Dinahosting | Yes | Yes | Yes |
 
 Only these three have a configurable driver (credentials + Check Connection + sync). Any domain hosted elsewhere is still inventoried, and its DNS provider is auto-detected from its NS records against the versioned registry below — it just isn't synced or write-capable until a matching driver exists.
 
@@ -58,3 +58,6 @@ Contributions to this registry (new providers/patterns) are welcome via PR.
 
 ## Use
 Add a Supplier, configure its driver on the **Domain Manager** tab, run Check Connection, then let the `DomainSync` automatic action populate domain lifecycle and DNS record data. On a synced domain whose DNS provider supports write-back (Cloudflare/IONOS) and the current user holds the relevant per-type right, the domain's Records tab exposes create/edit/delete controls that write live to the provider. See `ARCHITECTURE.md` for full design detail, `CHANGELOG.md` for the release history, and `CHANGELOG-dev.md` for the full phase-by-phase development history.
+
+## Testing
+`composer test` (or `vendor/bin/phpunit`) runs a small automated suite covering the plugin's pure logic — IDN/Punycode conversion, TLD extraction, driver selection, status-label mapping, DTO enums, and DNS-lookup input validation. It deliberately does **not** cover the registrar/DNS driver API calls, sync engine, or any itemtype CRUD — those need a real GLPI database and, for the drivers, real provider accounts, so they're covered instead by the manual regression checklist in `TESTING.md`.

@@ -345,8 +345,14 @@ class Cron
      * @throws DriverException on a genuine lookup failure (network error,
      *         non-404 non-2xx, unparsable body) — caller logs to
      *         domainmanager-errors.log, distinct from the 404 no-data case
+     *
+     * Public since Phase 92 (on-demand "RDAP last sync" icon,
+     * RdapSyncController) — the cron's own candidate-selection query
+     * (self::cronRdapEnrichment()) is a scan optimization, not a hard
+     * rate limit, so a manual one-off call from the panel is safe to run
+     * through the same lookup/gap-fill logic.
      */
-    private static function processRdapEnrichment(int $domains_id, string $fqdn, RdapClient $client): string
+    public static function processRdapEnrichment(int $domains_id, string $fqdn, RdapClient $client): string
     {
         $state    = DomainState::getForDomain($domains_id);
         $isFirst  = $state === null || $state->fields['last_rdap_check_date'] === null;

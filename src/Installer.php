@@ -92,6 +92,7 @@ class Installer
         self::clearRdapEnrichmentComment();
         self::clearDomainSyncComment();
         self::upgradeDomainSyncContinuousDefaults();
+        self::backfillDnsErrorWithoutSupplierManagedFlag();
         DashboardCards::install($migration);
 
         $migration->executeMigration();
@@ -385,7 +386,11 @@ class Installer
     {
         $table = 'glpi_plugin_domainmanager_states';
 
-        $migration->addField($table, 'registrar_auth_info', 'varchar(255) NULL DEFAULT NULL');
+        // registrar_auth_info (the EPP transfer/auth code) was dropped: it
+        // is a transfer-enabling secret and storing it at rest — even
+        // masked in the UI — was judged not worth the risk. dropField() is
+        // a no-op on installs that never had the column.
+        $migration->dropField($table, 'registrar_auth_info');
         $migration->addField($table, 'registrar_privacy_enabled', 'tinyint NULL DEFAULT NULL');
         $migration->addField($table, 'registrar_domain_lock', 'tinyint NULL DEFAULT NULL');
         $migration->addField($table, 'registrar_transfer_lock', 'tinyint NULL DEFAULT NULL');
@@ -890,7 +895,7 @@ class Installer
 
         $stale_ids_by_itemtype = [
             'Supplier' => [9401],
-            'Domain'   => [9402, 9403],
+            'Domain'   => [9402, 9403, 9419],
         ];
 
         foreach ($stale_ids_by_itemtype as $itemtype => $stale_ids) {
@@ -1360,6 +1365,42 @@ class Installer
      *
      * @return void
      */
+    /**
+     * One-time correction for a `SyncEngine::sync()`/`HookHandler::
+     * infocomSaved()` bug: both computed `is_managed` as "registrar leg
+     * resolved OR dns leg resolved" using only `dns_status IN (ok, error)`,
+     * but `dns_status` reaches `error` from a plain NS-lookup failure or an
+     * unmanageable-record-types profile restriction *before* any DNS
+     * supplier/driver is ever resolved (`dns_suppliers_id` stays 0 in that
+     * case). A domain whose registrar supplier has no driver at all and
+     * whose DNS simply failed to resolve was therefore flagged
+     * `is_managed = 1` with neither leg backed by a real driver. Idempotent
+     * (`WHERE` only ever matches rows still carrying the bug); every row
+     * gets recomputed for real the next time it syncs regardless.
+     *
+     * @return void
+     */
+    private static function backfillDnsErrorWithoutSupplierManagedFlag(): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $table = 'glpi_plugin_domainmanager_states';
+        if (!$DB->fieldExists($table, 'is_managed', false) || !$DB->fieldExists($table, 'dns_suppliers_id', false)) {
+            return;
+        }
+
+        $DB->update(
+            $table,
+            ['is_managed' => 0],
+            [
+                'is_managed'        => 1,
+                'dns_suppliers_id'  => 0,
+                'registrar_status'  => ['NOT IN', [DomainState::STATUS_OK, DomainState::STATUS_ERROR]],
+            ],
+        );
+    }
+
     private static function upgradeDomainSyncContinuousDefaults(): void
     {
         /** @var \DBmysql $DB */
@@ -1387,11 +1428,13 @@ class Installer
     /**
      * Register the continuous-mode sync automatic action (idempotent,
      * tunable in Setup > Automatic actions). ARCHITECTURE.md §16.10: these
-     * defaults (10 min / 3 domains per run / unrestricted hour range) only
-     * take effect on a fresh install — `CronTask::register()` no-ops once a
-     * task row already exists (§16.6 point 8), so an already-installed
-     * instance is upgraded separately by
-     * {@see Installer::upgradeDomainSyncContinuousDefaults()}.
+     * defaults (30 min / 2 domains per run / CLI mode / unrestricted hour
+     * range) only take effect on a fresh install — `CronTask::register()`
+     * no-ops once a task row already exists (§16.6 point 8), so an
+     * already-installed instance keeps whatever frequency/param/mode it
+     * already has; only {@see Installer::upgradeDomainSyncContinuousDefaults()}
+     * touches existing rows, and only those still on the old 1-day/20-domain
+     * shipped default.
      *
      * @return void
      */
@@ -1400,12 +1443,19 @@ class Installer
         CronTask::register(
             Cron::class,
             'DomainSync',
-            10 * MINUTE_TIMESTAMP,
+            30 * MINUTE_TIMESTAMP,
             [
                 'state'         => CronTask::STATE_WAITING,
+                // Fresh installs default to CLI (system cron / `bin/console
+                // glpi:cron`) rather than GLPI's internal scheduler; this is
+                // only a starting point — Setup > Automatic actions still
+                // lets an admin switch it. Existing installs are left
+                // untouched (CronTask::register() no-ops once a task row
+                // already exists, §16.6 point 8).
+                'mode'          => CronTask::MODE_EXTERNAL,
                 'hourmin'       => 0,
                 'hourmax'       => 24,
-                'param'         => 3,
+                'param'         => 2,
                 'logs_lifetime' => 30,
                 // No 'comment' here — that field is the admin's own free-text
                 // note (Setup > Automatic actions), not this plugin's to
@@ -1415,15 +1465,16 @@ class Installer
         );
 
         // §9 Phase 22: its own automatic action, independently configurable
-        // from the daily sync task above — default every 10 minutes, one
-        // domain per tick (the cron cadence itself is the rate-limit
-        // defense against rdap.org, §9 Phase 21 "Rate-limit rationale").
+        // from the sync task above — default every 15 minutes (the cron
+        // cadence itself is the rate-limit defense against rdap.org, §9
+        // Phase 21 "Rate-limit rationale").
         CronTask::register(
             Cron::class,
             'RdapEnrichment',
-            10 * MINUTE_TIMESTAMP,
+            15 * MINUTE_TIMESTAMP,
             [
                 'state'         => CronTask::STATE_WAITING,
+                'mode'          => CronTask::MODE_EXTERNAL,
                 'logs_lifetime' => 30,
                 // No 'comment' here — that field is the admin's own free-text
                 // note (Setup > Automatic actions), not this plugin's to

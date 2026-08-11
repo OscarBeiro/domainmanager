@@ -11,8 +11,23 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 
 ## [Unreleased]
 
-## [1.7.0] - 2026-08-09
+## [1.7.1]
 ### Features
+- The domain panel now shows the RDAP check date separately from the registrar/DNS sync date, and each has its own "sync now" icon so you can refresh either independently instead of a single shared "Update Now" button.
+- Added an automated test suite covering the plugin's internal logic. No behavior change.
+- Removed the Transfer/EPP auth code feature. It never showed the actual code, only whether one was on file, but the plugin no longer fetches or stores it at all — this is a security-sensitive domain-transfer secret that's now safest kept out of the database entirely.
+### Bugs
+- A domain whose registrar has no API driver linked at all could still be wrongly marked "Managed" (and counted in the dashboard cards) purely because its DNS simply failed to resolve — fixed so "Managed" now always reflects a real, driver-backed registrar or DNS provider.
+- The "Domains per registrar", "Domains per DNS provider", "Domains by TLD", "Domains per registrar by TLD", "Registrar status", "DNS status", and "Domains expiring soon" dashboard cards now only count managed domains, matching every other card on the Domain Manager dashboard.
+- The "Registrar status" dashboard card no longer misreports a domain with no registrar linked at all as "Never synchronized" when it was actually already known to be unconfigured.
+- A Supplier's "Domain Manager" tab no longer lists domains under it when that Supplier has no API driver configured — a Supplier with no driver can't actually manage anything, so showing domains there was misleading.
+- The DNS record add/edit forms' TTL info icon now shows GLPI's styled tooltip instead of the browser's plain native one.
+- The "select all" checkbox in the domain import modal now behaves consistently with every other list in GLPI, instead of using separate one-off behavior.
+- The registrar/DNS and RDAP "sync now" icons no longer sit still while a sync is in progress — they were using a spin animation class that doesn't exist in GLPI 11's Tabler-based UI.
+
+## [1.7.0]
+### Features
+- The "Domains per registrar by TLD" and "Records per provider by type" dashboard cards are now clickable, drilling into the matching filtered search.
 - Added a Domain Manager dashboard with cards showing domains per registrar, domains per DNS provider, DNS sync status, registrar sync status, and domains expiring soon at a glance.
 - The Domain Manager dashboard now also shows managed DNS records at a glance: how many, broken down by record type and by DNS provider, and how many are proxied.
 - Added a "Number of Managed Domains" card to the Domain Manager dashboard, distinct from GLPI's generic "Number of Domain" card (which counts every domain, including deleted/template ones outside your current entity).
@@ -40,7 +55,7 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 - Fixed the "Last transfer" date never being found for domains registered through certain registrars, where it was previously only looked up from a source that doesn't track transfer history.
 - Fixed the "Domains per registrar by TLD" and "Managed records per DNS provider by type" dashboard cards showing a "0" for combinations that never happened (e.g. a registrar with no domains of a given TLD), instead of just leaving them out like every other chart.
 
-## [1.6.0] - 2026-08-08
+## [1.6.0]
 ### Features
 - Proxied DNS records now show their public-facing address(es) directly under the Target column, saved automatically instead of requiring a click to look them up.
 - Cloudflare records using "Automatic" TTL now display "Automatic" instead of a confusing "1 second" value.
@@ -50,7 +65,7 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 ### Bugs
 - A Cloudflare token blocked by an IP address restriction now shows the actual reason instead of a misleading "missing permission" message.
 
-## [1.5.2] - 2026-08-07
+## [1.5.2]
 ### Features
 - Domain synchronization now runs continuously (every 10 minutes) instead of once a day, so newly added or changed domains are picked up much sooner. Existing installs are only switched over automatically if the automatic action's schedule hasn't been manually customized.
 - Renamed the "blast-radius guard" sync safety setting to "sync safety guard" for clarity, and added a warning on the Setup page marking its two thresholds as advanced settings best left at their defaults.
@@ -61,7 +76,7 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 - Check Connection now clearly flags a missing IONOS or Dinahosting credential field before contacting the provider, the same way it already did for Cloudflare, instead of surfacing a generic error.
 - The "creating this record pushes it live to the provider" warning on the new DNS record form now only appears when the domain you actually pick is managed with write-back enabled, and is shown at the top of the form instead of the bottom.
 
-## [1.5.0] - 2026-08-03
+## [1.5.0]
 ### Features
 - Ascio and Hostalia are now detected as DNS providers when a domain's nameservers resolve to them. Ubilibet, which runs as a reseller on Ascio's wholesale platform, is not separately detectable via nameserver records (and correctly identifies only the underlying DNS platform, Ascio, not the reseller). API integration not yet supported for either; detection offers visibility only.
 - Synchronization now refuses to run (and leaves the domain's records untouched) if it would move an unusually large number of DNS records to the trash bin at once — guards against a mis-scoped credential or a provider glitch being mistaken for a genuinely emptied zone. Configurable on the Setup page; an explicit confirmation lets you force the sync through if the emptied zone is expected.
@@ -81,7 +96,7 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 - Fixed the wording of the message shown when Domain Manager blocks a duplicate DNS record ("A A record named..." for A records).
 - Fixed a multi-entity install where a profile's per-record-type DNS write permission (e.g. TXT), granted for one entity, was wrongly honored for every entity's domains instead of only the entity it was granted for.
 
-## [1.4.2] - 2026-08-03
+## [1.4.2]
 ### Features
 - Domain Manager now refuses to create or restore a DNS record that would duplicate an existing one (same type and name) on any managed domain, regardless of which DNS provider is configured, with a clear message explaining why.
 - Saving a change to a managed DNS record no longer asks for confirmation first; deleting/purging one still does.
@@ -95,11 +110,11 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 - Fixed saving an edit to a trashed managed DNS record trying to push the change to the provider, even though a trashed record has already been removed from the provider and can only be recreated by restoring it.
 - Fixed a managed DNS record's locked Name field showing the domain name twice (e.g. "www.example.com" instead of "www").
 
-## [1.4.1] - 2026-08-01
+## [1.4.1]
 ### Features
 - Shortened the supplier tab's "Check Connection" and "Import Domains" button labels to "Test" and "Import" for a more compact toolbar on smaller screens.
 
-## [1.4.0] - 2026-07-31
+## [1.4.0]
 ### Features
 - Dinahosting driver now supports manual DNS record write-back (A/AAAA/CNAME/TXT), matching IONOS and Cloudflare.
 - A DomainRecord's `name` field is now structurally locked on its edit form, since editing it never actually pushed a change upstream.
@@ -108,11 +123,11 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 - The Purge button on a plugin-imported DomainRecord's trash view is now hidden for users lacking the per-type PURGE right, instead of appearing but silently bouncing back an error.
 - Fixed a missing lock icon on managed Domain/DomainRecord date fields.
 
-## [1.3.1] - 2026-07-31
+## [1.3.1]
 ### Features
 - Installer's display-preference seeding now uses the native `countElementsInTable()` helper instead of a manual query for its existence check (no behavior change).
 
-## [1.3.0] - 2026-07-31
+## [1.3.0]
 Note: `1.2.0` was never cut as a real release (only its alpha/beta line exists — see
 `CHANGELOG-dev.md`), so this entry also covers everything shipped since `1.1.0`, including the
 entire DNS record write-back feature.
@@ -141,7 +156,7 @@ entire DNS record write-back feature.
 - Removed the "record update conflict" resolution feature added earlier in this line — once managed, GLPI's value is always authoritative, so an edit now always pushes straight through instead of asking the user to pick a side.
 - Removed the Supplier list's combined "Domains" count column, which summed registrar+DNS roles into a misleading total.
 
-## [1.1.0] - 2026-07-28
+## [1.1.0]
 ### Features
 - RDAP added as a fallback data source: fills registration/expiration dates, last-changed date, pending-delete/transfer flags, and DNSSEC when the registrar driver doesn't report them.
 - Registrar/nameserver cross-check panel added to the Domain form.
@@ -150,69 +165,69 @@ entire DNS record write-back feature.
 ### Bugs
 - RDAP cross-check falsely flagged a match as a mismatch whenever the registrar name carried a legal suffix, or the nameserver set was just reordered.
 
-## [1.0.0] - 2026-07-28
+## [1.0.0]
 ### Bugs
 - Reimporting a previously trashed domain created a duplicate item instead of restoring the original, orphaning its linked tickets/contracts.
 
-## [0.12.0] - 2026-07-28
+## [0.12.0]
 ### Features
 - Search options added for the remaining registrar metadata fields (WHOIS privacy, transfer/domain lock, auto-renew, DNSSEC).
 
 ### Bugs
 - "Punycode name" search option matched every domain, not just genuine IDN ones.
 
-## [0.11.9] - 2026-07-28
+## [0.11.9]
 ### Features
 - Redesigned the Domain form's identity header (IDN badge, copyable Punycode form, Visit/WHOIS buttons).
 - New searchable "Punycode name" field.
 
-## [0.11.8] - 2026-07-28
+## [0.11.8]
 ### Features
 - Moved the Punycode/ASCII form into a clickable identity row above the status table.
 
-## [0.11.7] - 2026-07-28
+## [0.11.7]
 ### Features
 - Domain form panel visual polish to match the Supplier tab's own conventions.
 
-## [0.11.6] - 2026-07-27
+## [0.11.6]
 ### Features
 - Added searchable Registrar/DNS Provider domain lists and counts on the native Supplier search page.
 
-## [0.11.5] - 2026-07-27
+## [0.11.5]
 ### Features
 - Internal refactor: extracted status label/class logic into its own service. No behavior change.
 
-## [0.11.4] - 2026-07-27
+## [0.11.4]
 ### Features
 - Renamed the "NS provider" column to "DNS Provider" for consistency.
 
-## [0.11.3] - 2026-07-27
+## [0.11.3]
 ### Features
 - Reworded the "Provider unknown" status label to "Unknown provider".
 
 ### Bugs
 - Dinahosting-hosted domains using an undocumented nameserver pattern showed "Unknown provider".
 
-## [0.11.2] - 2026-07-27
+## [0.11.2]
 ### Bugs
 - Reverted a regression from 0.11.1 that made the DNS/NS provider column show a worse-looking status than before.
 
-## [0.11.1] - 2026-07-27
+## [0.11.1]
 ### Features
 - Unified the DNS/NS provider column's status badge with the Registrar column's own vocabulary.
 
 ### Bugs
 - Registrar sync status showed "Not yet checked" when viewed from a different supplier's tab than the domain's actual registrar.
 
-## [0.11.0] - 2026-07-27
+## [0.11.0]
 ### Features
 - Four new filterable Domain search options: NS Provider, Registrar sync status, DNS sync status, Last sync.
 
-## [0.10.1] - 2026-07-27
+## [0.10.1]
 ### Bugs
 - A recurring "invalid search options" warning wasn't fully resolved by 0.10.0.
 
-## [0.10.0] - 2026-07-27
+## [0.10.0]
 ### Features
 - Registrar field is now lock-protected once a domain has a confirmed registrar match, with a new "Unlink registrar" action.
 - New "Managed" search option on Domain.
@@ -220,22 +235,22 @@ entire DNS record write-back feature.
 ### Bugs
 - Two crashes on the upgrade path (missing version bump, unbuffered migration order) and a stale-search-option warning, all introduced by this same change.
 
-## [0.9.0] - 2026-07-27
+## [0.9.0]
 ### Features
 - Made the domain type applied to imported domains a configurable setting (Setup > General) instead of hardcoded.
 
-## [0.8.0] - 2026-07-27
+## [0.8.0]
 ### Features
 - Added nameserver detection for RaiolaNetworks and LucusHost.
 
-## [0.7.0] - 2026-07-27
+## [0.7.0]
 ### Features
 - Added nameserver detection for Strato and Arsys.
 
 ### Bugs
 - A false-positive IONOS detection was silently matching every sibling United Internet brand sharing the same DNS platform.
 
-## [0.6.0] - 2026-07-27
+## [0.6.0]
 ### Features
 - Added bulk-import domain discovery for Dinahosting and Cloudflare registrar accounts.
 - Added IDN/Punycode support across NS detection and sync.
@@ -244,7 +259,7 @@ entire DNS record write-back feature.
 ### Bugs
 - IONOS registrar domain lookup failed for IDN domains via a name filter — now matches client-side instead.
 
-## [0.5.0] - 2026-07-22
+## [0.5.0]
 ### Features
 - Added bulk-import of undiscovered IONOS registrar domains.
 - Added richer registrar metadata (WHOIS privacy, locks, auto-renew, DNSSEC, EPP auth code on file).
@@ -253,7 +268,7 @@ entire DNS record write-back feature.
 ### Bugs
 - A native PHP `true`/`false` value was silently persisted as `NULL` instead of `1`/`0`.
 
-## [0.4.0] - 2026-07-21
+## [0.4.0]
 ### Features
 - Cloudflare now requires an Account ID and only supports account-scoped API tokens.
 - A vanished DNS record is now soft-deleted into GLPI's native trash instead of flagged with a comment marker.
@@ -263,18 +278,18 @@ entire DNS record write-back feature.
 - Duplicate driver assignment across suppliers, an undercounted "Domains" list, a registrar mirror that could go stale, inactive suppliers still usable for API calls, and a misleading Dinahosting authorization error — all fixed.
 - A valid Cloudflare Account API Token still failed Check Connection due to a wrong verify endpoint.
 
-## [0.3.2] - 2026-07-21
+## [0.3.2]
 ### Bugs
 - Critical: any connection test silently wiped the supplier's stored API credentials.
 
-## [0.3.1] - 2026-07-21
+## [0.3.1]
 ### Features
 - Unified all Domain Manager panels on GLPI's native ribbon-banner convention.
 
 ### Bugs
 - Panel fetch URLs broke on a subdirectory install.
 
-## [0.3.0] - 2026-07-21
+## [0.3.0]
 ### Features
 - Added real Dinahosting and IONOS DNS driver implementations.
 - Added a read-only "Domains" list on the Supplier tab.
@@ -283,24 +298,24 @@ entire DNS record write-back feature.
 - "Check Connection" and "Update Now" never worked from a real browser click.
 - Plugin log files never appeared until first triggered.
 
-## [0.2.0] - 2026-07-20
+## [0.2.0]
 ### Features
 - Added `search-options-registry.json` and ten more nameserver-detection providers.
 
 ### Bugs
 - Native History entries rendered with a blank "field" column.
 
-## [0.1.2] - 2026-07-19
+## [0.1.2]
 ### Features
 - Added native History audit trail, on-demand connection diagnostics ("Check Connection"), and consolidated logging into two files.
 
 ### Bugs
 - Plugin logging silently wrote nothing on a stock install.
 
-## [0.1.1] - 2026-07-19
+## [0.1.1]
 Version bump only — no functional changes; superseded by 0.1.2 before any separate release.
 
-## [0.1.0] - 2026-07-19
+## [0.1.0]
 ### Features
 - Initial release: supplier API credential storage, sync engine (registrar lifecycle + DNS zone records) for Cloudflare/IONOS/Dinahosting, nameserver-provider detection registry, Domain form status panel, daily automatic sync action, and field locking for synced domains/records.
 
