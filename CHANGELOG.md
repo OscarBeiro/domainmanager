@@ -9,7 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Entries are grouped into **Features** and **Bugs**, one line each.
 
-## [Unreleased] - 1.7.1-beta1
+## [Unreleased]
+
+## [1.7.1]
 ### Features
 - The domain panel now shows the RDAP check date separately from the registrar/DNS sync date, and each has its own "sync now" icon so you can refresh either independently instead of a single shared "Update Now" button.
 - Added an automated test suite covering the plugin's internal logic. No behavior change.
@@ -21,6 +23,7 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 - A Supplier's "Domain Manager" tab no longer lists domains under it when that Supplier has no API driver configured — a Supplier with no driver can't actually manage anything, so showing domains there was misleading.
 - The DNS record add/edit forms' TTL info icon now shows GLPI's styled tooltip instead of the browser's plain native one.
 - The "select all" checkbox in the domain import modal now behaves consistently with every other list in GLPI, instead of using separate one-off behavior.
+- The registrar/DNS and RDAP "sync now" icons no longer sit still while a sync is in progress — they were using a spin animation class that doesn't exist in GLPI 11's Tabler-based UI.
 
 ## [1.7.0]
 ### Features
