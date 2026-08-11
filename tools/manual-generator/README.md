@@ -1,8 +1,9 @@
-# docs/manual — how the domainmanager manual is built
+# tools/manual-generator — how the domainmanager manual is built
 
 This directory builds the user manual for the domainmanager plugin. The manual itself is a
-build artifact; the sources are the narrated Playwright specs in `specs/` plus the
-hand-written `en/_intro.md` / `en/_outro.md` files.
+build artifact published to `docs/manual/<locale>/`; the sources here are the narrated
+Playwright specs in `specs/` plus the hand-written `docs/manual/<locale>/_intro.md` /
+`_outro.md` files.
 
 **Current scope: 2 chapters, English only** — Supplier driver setup/import
 (`10-supplier-setup.manual.spec.ts`) and domain monitoring/DNS records
@@ -10,15 +11,15 @@ hand-written `en/_intro.md` / `en/_outro.md` files.
 locales are expected later; see `fixtures/CHECKLIST.md` before adding either.
 
 Packaging: no release/packaging script exists in this repo yet. When one is added, keep
-`docs/manual/**` (specs, fixtures, node_modules) out of the shipped plugin zip — it's a
-repo/GitHub-release artifact, not something the plugin needs at runtime. The generated
-`en/MANUAL.md` and its screenshots are still committed to git so PRs show documentation
-changes and the repo doubles as the published manual.
+`tools/manual-generator/**` (specs, fixtures, node_modules) out of the shipped plugin zip —
+it's a repo/GitHub-release artifact, not something the plugin needs at runtime. The generated
+`docs/manual/en_GB/MANUAL.md` and its screenshots are still committed to git so PRs show
+documentation changes and the repo doubles as the published manual.
 
 ## One-time setup
 
 ```bash
-cd docs/manual
+cd tools/manual-generator
 npm install                                   # installs the pinned @playwright/test
 cp manual.env.example manual.env              # already filled in for this repo's dev stack
 $EDITOR manual.env                            # only needed on a different machine/stack
@@ -38,7 +39,7 @@ npm run manual:fixture:dump
 ## Every run
 
 ```bash
-cd docs/manual
+cd tools/manual-generator
 npm run manual                     # restore fixture → capture → render MANUAL.md
 npm run manual:pdf                 # optional, for a release
 ```
@@ -70,13 +71,15 @@ regression. That is the second job this pipeline does.
 ## Layout
 
 ```
-manual.env            stack-specific values (gitignored); every script sources it
-manual.css            print stylesheet for the PDF build
-run.sh                capture in a version-matched Playwright container
-render-manual.mjs     manifests → MANUAL.md
-build-pdf.sh          MANUAL.md → dist/MANUAL-domainmanager-<version>-<locale>.pdf
-lib/                  manual-recorder.ts (the fixture), glpi.ts (login, routes, masking)
-specs/                narrated scenarios + fixtures.ts
-fixtures/             golden.sql.gz (after dump.sh), dump.sh, restore.sh, CHECKLIST.md
-en/                    _intro.md, _outro.md (hand-written); MANUAL.md, assets/ (generated)
+tools/manual-generator/
+  manual.env            stack-specific values (gitignored); every script sources it
+  manual.css            print stylesheet for the PDF build
+  run.sh                capture in a version-matched Playwright container
+  render-manual.mjs     manifests → MANUAL.md
+  build-pdf.sh          MANUAL.md → dist/MANUAL-domainmanager-<version>-<locale>.pdf
+  lib/                  manual-recorder.ts (the fixture), glpi.ts (login, routes, masking)
+  specs/                narrated scenarios + fixtures.ts
+  fixtures/             golden.sql.gz (after dump.sh), dump.sh, restore.sh, CHECKLIST.md
+
+docs/manual/<locale>/    _intro.md, _outro.md (hand-written); MANUAL.md, assets/ (generated)
 ```

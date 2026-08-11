@@ -1,5 +1,5 @@
 /**
- * docs/manual/specs/20-domain-monitoring.manual.spec.ts
+ * tools/manual-generator/specs/20-domain-monitoring.manual.spec.ts
  *
  * Chapter 2: reading a Domain's Domain Manager status panel and managing its DNS records.
  *

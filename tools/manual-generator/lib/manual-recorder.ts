@@ -4,7 +4,7 @@
  * A spec describes a user task once; this records both what happened and what to say
  * about it, so the prose and the screenshots cannot drift apart.
  *
- * Place in docs/manual/lib/.
+ * Place in tools/manual-generator/lib/.
  */
 import { test as base, expect, type Locator, type Page, type TestInfo } from '@playwright/test';
 import fs from 'node:fs/promises';
@@ -63,7 +63,7 @@ export class ManualRecorder {
    * Record a chapter step and run its actions.
    *
    * `body` is either literal Markdown prose, or — for multi-locale manuals — a message
-   * key resolved against docs/manual/i18n/<locale>.json (see references/
+   * key resolved against tools/manual-generator/i18n/<locale>.json (see references/
    * authoring-and-output.md). A missing translation is marked, not silently skipped.
    */
   async step(id: string, title: string, body: string, fn: () => Promise<void>): Promise<void> {

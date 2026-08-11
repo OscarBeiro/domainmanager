@@ -1,6 +1,6 @@
 /**
  * playwright.config.ts — capture settings for generated manuals.
- * Place in docs/manual/. Run: npx playwright test --config docs/manual/playwright.config.ts
+ * Place in tools/manual-generator/. Run: npx playwright test --config tools/manual-generator/playwright.config.ts
  *
  * Every setting here exists to make screenshots byte-stable across runs. Changing one
  * rewrites every PNG in the repo, so change deliberately.

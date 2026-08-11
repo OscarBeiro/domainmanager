@@ -3,9 +3,9 @@ composer.lock
 .phpunit.cache
 tools/phpstan/local-ci-parity.neon
 docs/plans/
-docs/manual/node_modules/
-docs/manual/manual.env
-docs/manual/dist/
-docs/manual/test-results/
-docs/manual/playwright-report/
+tools/manual-generator/node_modules/
+tools/manual-generator/manual.env
+tools/manual-generator/dist/
+tools/manual-generator/test-results/
+tools/manual-generator/playwright-report/
 docs/manual/*/.manifests/

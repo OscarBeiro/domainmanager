@@ -1,5 +1,5 @@
 /**
- * docs/manual/specs/fixtures.ts
+ * tools/manual-generator/specs/fixtures.ts
  *
  * The demo data every spec imports. One place to rename, and — more importantly — every
  * value is a fixed literal. Anything derived from the clock or a random source changes the

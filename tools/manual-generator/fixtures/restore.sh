@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# docs/manual/fixtures/restore.sh — reset GLPI to the golden doc fixture.
+# tools/manual-generator/fixtures/restore.sh — reset GLPI to the golden doc fixture.
 #
 # Runs before every capture pass, from the host rather than from a Playwright hook: a failed
 # capture must still leave the database in a known state for the next attempt.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
-source docs/manual/manual.env
+source tools/manual-generator/manual.env
 
-DUMP=docs/manual/fixtures/golden.sql.gz
-[[ -f "$DUMP" ]] || { echo "missing $DUMP — run docs/manual/fixtures/dump.sh first" >&2; exit 1; }
+DUMP=tools/manual-generator/fixtures/golden.sql.gz
+[[ -f "$DUMP" ]] || { echo "missing $DUMP — run tools/manual-generator/fixtures/dump.sh first" >&2; exit 1; }
 
 echo "==> dropping and recreating ${DB_NAME}"
 # Recreate rather than import over the top: mysqldump's DROP TABLE only covers tables that
@@ -23,9 +23,9 @@ echo "==> importing golden fixture"
 gunzip -c "$DUMP" | "${ENGINE}" exec -i "${DB_CONTAINER}" \
   mariadb --default-character-set=utf8mb4 -u root -p"${DB_ROOT_PASS}" "${DB_NAME}"
 
-if [[ -f docs/manual/fixtures/golden-files.tar.gz ]]; then
+if [[ -f tools/manual-generator/fixtures/golden-files.tar.gz ]]; then
   echo "==> restoring files/_plugins/${PLUGIN_KEY}"
-  gunzip -c docs/manual/fixtures/golden-files.tar.gz \
+  gunzip -c tools/manual-generator/fixtures/golden-files.tar.gz \
     | "${ENGINE}" exec -i "${GLPI_CONTAINER}" tar -xf - -C files/_plugins
 fi
 

@@ -1,5 +1,5 @@
 /**
- * docs/manual/specs/10-supplier-setup.manual.spec.ts
+ * tools/manual-generator/specs/10-supplier-setup.manual.spec.ts
  *
  * Chapter 1: configuring a Supplier's Domain Manager API driver and importing its domains.
  *

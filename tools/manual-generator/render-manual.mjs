@@ -2,8 +2,8 @@
 /**
  * render-manual.mjs — manifests → MANUAL.md
  *
- * Place in docs/manual/. Run after a capture pass:
- *   MANUAL_LOCALE=es_ES node docs/manual/render-manual.mjs
+ * Place in tools/manual-generator/. Run after a capture pass, from the repo root:
+ *   MANUAL_LOCALE=es_ES node tools/manual-generator/render-manual.mjs
  *
  * MANUAL.md is a build artifact and is overwritten. Hand-written prose lives in
  * _intro.md and _outro.md, which this script only ever reads.
@@ -87,7 +87,7 @@ const main = async () => {
   const doc = [
     `# ${name} — User Manual`,
     '',
-    `<!-- GENERATED FILE — edit the specs in docs/manual/specs/ or _intro.md / _outro.md -->`,
+    `<!-- GENERATED FILE — edit the specs in tools/manual-generator/specs/ or _intro.md / _outro.md -->`,
     `> ${S.banner(`${name} ${version}`, glpi, date)}`,
     '',
     await readIfPresent(path.join(OUT, '_intro.md')),

@@ -1,6 +1,6 @@
 # Golden fixture checklist — domainmanager
 
-Build this state once by hand, then `docs/manual/fixtures/dump.sh`. Everything here exists
+Build this state once by hand, then `tools/manual-generator/fixtures/dump.sh`. Everything here exists
 to be photographed, so choose values that read as examples in any language and that exercise
 the cases the manual needs to explain.
 
@@ -36,7 +36,7 @@ One Supplier, name **"Manual Demo Registrar"**, created empty (no driver configu
 chapter 1's own spec does the configuring live, as that's the workflow being documented).
 
 - **Decision (resolved, not left open):** the spec fills in an obviously fake Cloudflare
-  Account ID and API Token (`docs/manual/specs/fixtures.ts`), saves, then runs Test and
+  Account ID and API Token (`tools/manual-generator/specs/fixtures.ts`), saves, then runs Test and
   Import for real against Cloudflare's actual API. There is no real Cloudflare account
   behind this fixture, so both calls fail — and chapter 1's prose documents the *failure*
   UI (the diagnostics panel's error state, the import dialog's error banner) rather than a
@@ -65,7 +65,7 @@ and DNS provider (the common case — one provider handles both):
 On `manual-example.com`: an **A** record (`@` → a fixed demo IP, e.g. `203.0.113.10` —
 TEST-NET-3, guaranteed non-routable) and a **CNAME** (`www` → `manual-example.com`). Enough
 variety to show the record-type UI without needing every type. Same values as
-`docs/manual/specs/fixtures.ts` — the spec and the fixture must agree, and `fixtures.ts` is
+`tools/manual-generator/specs/fixtures.ts` — the spec and the fixture must agree, and `fixtures.ts` is
 the source of truth for names the specs type or click.
 
 ## 4b. `url_base` must match `BASE_URL` *(keep — easy to lose on a rebuild)*

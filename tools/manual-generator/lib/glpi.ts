@@ -6,7 +6,7 @@
  * starting points to confirm against the running instance — not facts to rely on. Confirm
  * them once, fix them here, and no spec ever needs to know.
  *
- * Place in docs/manual/lib/.
+ * Place in tools/manual-generator/lib/.
  */
 import type { Page } from '@playwright/test';
 

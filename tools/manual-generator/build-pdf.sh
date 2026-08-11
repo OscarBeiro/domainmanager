@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# docs/manual/build-pdf.sh — MANUAL.md → client-ready PDF.
-#   ./docs/manual/build-pdf.sh            # all locales in manual.env
-#   ./docs/manual/build-pdf.sh es_ES
+# tools/manual-generator/build-pdf.sh — MANUAL.md → client-ready PDF.
+#   ./tools/manual-generator/build-pdf.sh            # all locales in manual.env
+#   ./tools/manual-generator/build-pdf.sh es_ES
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
-source docs/manual/manual.env
+source tools/manual-generator/manual.env
 
 command -v pandoc >/dev/null || { echo "pandoc not installed: apt install pandoc" >&2; exit 1; }
 command -v weasyprint >/dev/null || {
@@ -14,21 +14,21 @@ command -v weasyprint >/dev/null || {
 
 VERSION="$(grep -oP "define\('PLUGIN_[A-Z_]+_VERSION',\s*'\K[^']+" setup.php)"
 LOCALES="${1:-${MANUAL_LOCALES}}"
-mkdir -p dist
+mkdir -p tools/manual-generator/dist
 
 for LOC in ${LOCALES}; do
   SRC="docs/manual/${LOC}/MANUAL.md"
   [[ -f "$SRC" ]] || { echo "skipping ${LOC}: no ${SRC}"; continue; }
-  OUT="dist/MANUAL-${PLUGIN_KEY}-${VERSION}-${LOC}.pdf"
+  OUT="tools/manual-generator/dist/MANUAL-${PLUGIN_KEY}-${VERSION}-${LOC}.pdf"
   echo "==> ${OUT}"
   pandoc "$SRC" \
     --resource-path="docs/manual/${LOC}" \
     --toc --toc-depth=2 \
     --pdf-engine=weasyprint \
-    --css=docs/manual/manual.css \
+    --css=tools/manual-generator/manual.css \
     -M title="${PLUGIN_KEY} ${VERSION} — User Manual" \
     -M lang="${LOC/_/-}" \
     -o "$OUT"
 done
 
-ls -lh dist/MANUAL-*.pdf
+ls -lh tools/manual-generator/dist/MANUAL-*.pdf
