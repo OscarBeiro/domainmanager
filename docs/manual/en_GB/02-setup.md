@@ -49,6 +49,8 @@ Install and enable from the GLPI Marketplace like any other plugin (no extra ste
 
 - Standard `config` right — required to access Setup > Automatic actions and configure the two cron tasks.
 
+![rights-and-profiles — 01-rights-matrix-before](assets/01-rights-and-profiles/01-rights-matrix-before.png)
+
 ## 2.4 Granting Domain Manager rights to a profile
 
 Domain Manager adds its own rights to GLPI’s profile system. A profile has no access to the plugin’s protected actions until an administrator grants them here — this is the first thing to check if a user reports missing DNS record buttons or an un-editable synced field.

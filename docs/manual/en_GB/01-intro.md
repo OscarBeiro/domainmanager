@@ -29,6 +29,8 @@ Domain Manager keeps GLPI's Domain and DNS record inventory synchronized with re
 - Full IDN/punycode support for internationalized domain names.
 - Multi-entity aware, with per-entity breakdowns in sync logs and entity-scoped rights.
 
+![domain-monitoring — 01-domain-panel](assets/03-domain-monitoring/01-domain-panel.png)
+
 ## 1.4 Supported nameservers & drivers
 
 Three drivers cover both registrar (lifecycle) data and DNS zone data; the proxy toggle is a Cloudflare-specific feature (Cloudflare's "orange cloud" CDN/proxying):
@@ -38,6 +40,8 @@ Three drivers cover both registrar (lifecycle) data and DNS zone data; the proxy
 | Cloudflare | Yes | Yes | Yes | Yes |
 | IONOS | Yes | Yes | Yes | No |
 | Dinahosting | Yes | Yes | Yes | No |
+
+![supplier-setup — 02-driver-fields](assets/02-supplier-setup/02-driver-fields.png)
 
 Beyond these three, Domain Manager auto-detects a domain's DNS provider from its NS records even without any credentials configured — useful for portfolio-wide visibility even where you don't hold an API key. Auto-detection alone has no write-back. Recognized providers:
 

@@ -21,10 +21,21 @@ suffix — a client-facing manual must never advertise a pre-release build. Bump
 past the pre-release stage before regenerating for a real release; `MANUAL_ALLOW_PRERELEASE=1`
 is available for a developer's own local test render only, never for CI or a release job.
 
-**Current scope: 2 chapters, English only** — Supplier driver setup/import
-(`10-supplier-setup.manual.spec.ts`) and domain monitoring/DNS records
-(`20-domain-monitoring.manual.spec.ts`). More chapters (dashboard, profile rights) and
-locales are expected later; see `fixtures/CHECKLIST.md` before adding either.
+**Current scope: 7 chapters, English only.** Adding a second locale later: no new
+screenshots get captured — every locale's manual (and the KB deliverable below) reuses the
+`en_GB` PNGs verbatim via `MANUAL_BASE_LOCALE`. Bolded UI-label mentions (`**Setup**`) get a
+localized twin appended (`**Setup (Configuración)**`) from a glossary file,
+`tools/manual-generator/i18n/labels.<locale>.json` — every value in it must be copied from
+GLPI's own rendered UI (log in as that locale's documentation user), never
+machine-translated. See `fixtures/CHECKLIST.md` before adding a locale.
+
+**KB doc and manual share images, generated together.** `docs/kb/domain-manager.md` (the
+marketplace-style doc) can embed a manual screenshot inline via a
+`<!-- shot: <chapter-slug>/<filename-without-ext> -->` marker — `render-manual.mjs` resolves
+it against the same PNG the manual itself references (never a copy) and, in the same run
+that builds the four manual files, emits `docs/kb/domain-manager.<locale>.md`. The
+hand-written `docs/kb/domain-manager.md` is never overwritten; only the locale-suffixed
+deliverable is generated.
 
 Packaging: no release/packaging script exists in this repo yet. When one is added, keep
 `tools/manual-generator/**` (specs, fixtures, node_modules) out of the shipped plugin zip —

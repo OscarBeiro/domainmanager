@@ -20,7 +20,7 @@ Three drivers cover both registrar (lifecycle) data and DNS zone data; the proxy
 | IONOS | Yes | Yes | Yes | No |
 | Dinahosting | Yes | Yes | Yes | No |
 
-<!-- shot: supplier-setup/02-driver-fields -->
+![supplier-setup — 02-driver-fields](../manual/en_GB/assets/02-supplier-setup/02-driver-fields.png)
 
 Beyond these three, Domain Manager auto-detects a domain's DNS provider from its NS records even without any credentials configured — useful for portfolio-wide visibility even where you don't hold an API key. Auto-detection alone has no write-back. Recognized providers:
 
@@ -65,7 +65,7 @@ Beyond these three, Domain Manager auto-detects a domain's DNS provider from its
 - Full IDN/punycode support for internationalized domain names.
 - Multi-entity aware, with per-entity breakdowns in sync logs and entity-scoped rights.
 
-<!-- shot: domain-monitoring/01-domain-panel -->
+![domain-monitoring — 01-domain-panel](../manual/en_GB/assets/03-domain-monitoring/01-domain-panel.png)
 
 ## Impacted GLPI items
 
@@ -106,7 +106,7 @@ None. Domain Manager has no dependency on, and no integration hooks for, other G
 
 - Standard `config` right — required to access Setup > Automatic actions and configure the two cron tasks.
 
-<!-- shot: rights-and-profiles/01-rights-matrix-before -->
+![rights-and-profiles — 01-rights-matrix-before](../manual/en_GB/assets/01-rights-and-profiles/01-rights-matrix-before.png)
 
 ## Automatic Actions
 

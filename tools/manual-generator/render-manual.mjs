@@ -16,14 +16,28 @@
  * _troubleshooting.md is hand-written and the renderer never overwrites it. Section and
  * subsection numbers (2.3, 2.3.1, ...) are assigned by this script from the chapter order
  * below, so inserting/reordering a chapter here renumbers the manual consistently.
+ *
+ * This run also (re)generates a per-locale KB deliverable, docs/kb/<slug>.<locale>.md, from
+ * the single hand-written docs/kb/<slug>.md — same run, so the two documents never drift.
+ * Its `<!-- shot: <chapter-slug>/<filename-without-ext> -->` markers resolve to real image
+ * embeds pointing at the *manual's own* screenshots (shared files, never copied or
+ * regenerated) under the base locale's assets/ — see loadLabelGlossary's header comment for
+ * why no locale other than MANUAL_BASE_LOCALE ever gets its own screenshots.
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
 const LOCALE = process.env.MANUAL_LOCALE ?? 'en_GB';
+// The only locale screenshots are ever captured for. Every other locale's manual and KB
+// deliverable reuse these same PNGs verbatim — see the header comment above and Trap 15 in
+// the glpi-plugin-manual-generator skill: a screenshot shows GLPI's UI, and re-capturing it
+// per locale is exactly the churn this pipeline exists to avoid paying twice for.
+const BASE_LOCALE = process.env.MANUAL_BASE_LOCALE ?? 'en_GB';
 const ROOT = process.env.MANUAL_ROOT ?? path.join('docs', 'manual');
 const OUT = process.env.MANUAL_OUT ?? path.join(ROOT, LOCALE);
 const KB_DIR = process.env.MANUAL_KB_DIR ?? path.join('docs', 'kb');
+const KB_I18N_DIR = process.env.MANUAL_KB_I18N_DIR ?? path.join(KB_DIR, 'i18n');
+const LABELS_DIR = process.env.MANUAL_LABELS_DIR ?? path.join('tools', 'manual-generator', 'i18n');
 
 const STRINGS = {
   en_GB: {
@@ -44,12 +58,18 @@ async function readIfPresent(p) {
   try { return (await fs.readFile(p, 'utf8')).trim(); } catch { return ''; }
 }
 
-/** Locate the plugin's KB/marketplace-style doc (docs/kb/*.md, or MANUAL_KB override). */
+// Matches the per-locale KB deliverables this script itself generates (<slug>.<locale>.md,
+// e.g. "domain-manager.en_GB.md") so findKbFile() below doesn't mistake its own previous
+// output for a second hand-written source and give up disambiguating.
+const KB_LOCALE_SUFFIX_RE = /\.[a-z]{2,3}(?:_[A-Z]{2,3})?\.md$/;
+
+/** Locate the plugin's hand-written KB/marketplace-style doc (docs/kb/*.md, or MANUAL_KB override). */
 async function findKbFile() {
   if (process.env.MANUAL_KB) return process.env.MANUAL_KB;
   let files;
   try {
-    files = (await fs.readdir(KB_DIR)).filter((f) => f.endsWith('.md'));
+    files = (await fs.readdir(KB_DIR))
+      .filter((f) => f.endsWith('.md') && !KB_LOCALE_SUFFIX_RE.test(f));
   } catch {
     return null;
   }
@@ -168,21 +188,111 @@ async function renumberAssetDirs(manifests) {
   }
 }
 
-/** Render one chapter under a dotted section prefix, e.g. prefix "2.3" -> "2.3", "2.3.1", "2.3.2"... */
-function renderChapter(m, assetDir, prefix) {
+/**
+ * Render one chapter under a dotted section prefix, e.g. prefix "2.3" -> "2.3", "2.3.1",
+ * "2.3.2"... `localize` runs over every piece of prose (chapter intro, step body, notes) —
+ * the step's own screenshot is never touched, since it was captured once against the base
+ * locale's UI and is reused as-is for every other locale (Trap 15).
+ */
+function renderChapter(m, assetDir, prefix, localize) {
   const out = [`## ${prefix} ${m.title}`, ''];
-  if (m.intro) out.push(m.intro, '');
+  if (m.intro) out.push(localize(m.intro), '');
   for (const step of m.steps) {
     out.push(`### ${prefix}.${step.seq} ${step.title}`, '');
-    if (step.body) out.push(step.body, '');
+    if (step.body) out.push(localize(step.body), '');
     for (const shot of step.shots) {
       const alt = (shot.caption ?? `${m.title} — ${step.title}`).replace(/[[\]]/g, '');
       out.push(`![${alt}](assets/${assetDir}/${shot.file})`, '');
       if (shot.caption) out.push(`*${shot.caption}*`, '');
     }
-    for (const note of step.notes) out.push(`> **${S.note}:** ${note}`, '');
+    for (const note of step.notes) out.push(`> **${S.note}:** ${localize(note)}`, '');
   }
   return out.join('\n');
+}
+
+/**
+ * Load { English label -> localized label } for LOCALE from tools/manual-generator/i18n/
+ * labels.<locale>.json, e.g. { "Setup": "Configuración", "General": "General" }. Returns
+ * null for the base locale (nothing to localize) or when no glossary file exists yet.
+ *
+ * This glossary is NOT a translation exercise for an LLM to do — every value in it must come
+ * from GLPI's own rendered UI (core + this plugin) in that locale: log in as that locale's
+ * documentation user (the fixture already has one per Trap 4) and copy the real label text
+ * from the DOM, once, into this file. A glossary entry that was guessed/machine-translated
+ * instead of read off the actual UI is worse than a missing one — a reader trusts it to be
+ * the literal button/menu text they'll see, not an approximation of it.
+ */
+async function loadLabelGlossary() {
+  if (LOCALE === BASE_LOCALE) return null;
+  const raw = await readIfPresent(path.join(LABELS_DIR, `labels.${LOCALE}.json`));
+  if (!raw) return null;
+  try {
+    return new Map(Object.entries(JSON.parse(raw)));
+  } catch {
+    throw new Error(`labels.${LOCALE}.json is not valid JSON — fix or delete it`);
+  }
+}
+
+/**
+ * Append each glossary hit as "**English (Localized)**" beside every bolded UI-label mention
+ * this pipeline emits — KB prose, Setup/Intro text pulled from the KB, and chapter step
+ * bodies alike. Longest keys are substituted first so "Setup > Automatic actions" doesn't
+ * get its "Setup" swapped out from under the more specific match. A no-op when `glossary`
+ * is null (base locale, or no glossary file yet for this locale).
+ */
+function localizeLabels(text, glossary) {
+  if (!text || !glossary) return text;
+  const keys = [...glossary.keys()].sort((a, b) => b.length - a.length);
+  let out = text;
+  for (const key of keys) {
+    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    out = out.replace(new RegExp(`\\*\\*${escaped}\\*\\*`, 'g'), `**${key} (${glossary.get(key)})**`);
+  }
+  return out;
+}
+
+/**
+ * Resolve `<!-- shot: <chapter-slug>/<filename-without-ext> --> markers in the KB doc into
+ * real image embeds against the *manual's own* screenshots — same PNG files the manual
+ * itself references, always under the base locale's assets/ regardless of which locale's KB
+ * deliverable is being rendered (Trap 15: no locale but the base one ever gets its own
+ * screenshots). Throws on a marker whose chapter/file doesn't exist, rather than silently
+ * dropping the image — a KB doc referencing a screenshot that was never captured is a bug in
+ * the marker, not something to paper over.
+ */
+// `assetsPathPrefix` differs by consumer: the manual's own 0N-*.md files live inside
+// docs/manual/<LOCALE>/ already, right next to assets/, so they need a bare "assets/...";
+// the KB deliverable lives in docs/kb/, so it needs to reach across into
+// "../manual/<BASE_LOCALE>/assets/...". Same markers, same underlying PNGs either way —
+// only the relative path differs.
+function resolveKbShotMarkers(text, manifests, assetsPathPrefix) {
+  const assetDirByChapterSlug = new Map(manifests.map((m, i) => [m.slug, assetDirName(i + 1, m.slug)]));
+  const shotFilesByChapterSlug = new Map(
+    manifests.map((m) => [m.slug, new Set(m.steps.flatMap((s) => s.shots.map((sh) => sh.file)))]),
+  );
+  return text.replace(/<!--\s*shot:\s*([\w-]+)\/([\w-]+)\s*-->/g, (whole, chapterSlug, fileStem) => {
+    const assetDir = assetDirByChapterSlug.get(chapterSlug);
+    const file = `${fileStem}.png`;
+    if (!assetDir || !shotFilesByChapterSlug.get(chapterSlug)?.has(file)) {
+      throw new Error(`KB doc shot marker '${chapterSlug}/${fileStem}' has no matching chapter/screenshot`);
+    }
+    return `![${chapterSlug} — ${fileStem}](${assetsPathPrefix}/${assetDir}/${file})`;
+  });
+}
+
+/**
+ * docs/kb/<slug>.<locale>.md — generated in the same run as the manual from the single
+ * hand-written docs/kb/<slug>.md, with its shot markers resolved and (for any locale but the
+ * base one) its bolded UI labels given a localized twin from the glossary. Never overwrites
+ * the hand-written source it reads from — that file has no locale suffix.
+ */
+async function renderKbDoc(kbPath, kbRawWithShots, glossary) {
+  if (!kbPath) return;
+  const localized = localizeLabels(kbRawWithShots, glossary);
+  const slug = path.basename(kbPath, '.md');
+  const target = path.join(KB_DIR, `${slug}.${LOCALE}.md`);
+  await fs.writeFile(target, localized.trimEnd() + '\n', 'utf8');
+  console.log(`${target}: generated from ${kbPath} (${LOCALE}${glossary ? ', localized labels' : ''})`);
 }
 
 const main = async () => {
@@ -192,8 +302,23 @@ const main = async () => {
   const date = new Date().toISOString().slice(0, 10);
   const banner = `> ${S.banner(`${name} ${version}`, glpi, date)}`;
 
+  // Shot markers are resolved once, here, on the raw KB text — before it's split into
+  // sections — so the manual's Intro/Setup pull-through and the KB deliverable both get the
+  // same embedded images from the same source text, rather than the manual leaking raw
+  // `<!-- shot: ... -->` comments because only the KB doc's own render step resolved them.
+  // Two variants because the two consumers sit in different directories (see
+  // resolveKbShotMarkers's header comment for why the path prefix differs).
   const kbPath = await findKbFile();
-  const kb = kbPath ? parseKbSections(await fs.readFile(kbPath, 'utf8')) : new Map();
+  const kbSourceText = kbPath ? await fs.readFile(kbPath, 'utf8') : '';
+  const kbRawForManual = kbPath ? resolveKbShotMarkers(kbSourceText, manifests, 'assets') : '';
+  const kbRawForKb = kbPath ? resolveKbShotMarkers(kbSourceText, manifests, `../manual/${BASE_LOCALE}/assets`) : '';
+  const kb = kbPath ? parseKbSections(kbRawForManual) : new Map();
+  const glossary = await loadLabelGlossary();
+  // Every mention of a KB section below (and step prose from a chapter manifest, which was
+  // authored once against the base locale's UI — Trap 15) is routed through this, not just
+  // raw kb.get() calls, so "**Setup**" reads "**Setup (Configuración)**" everywhere it
+  // appears, not only inside the KB deliverable itself.
+  const localize = (text) => localizeLabels(text, glossary);
 
   // Chapters split between Setup (2.x) and Usage (3.x); order here drives numbering.
   const setupSlugs = ['rights-and-profiles', 'supplier-setup'];
@@ -214,19 +339,19 @@ const main = async () => {
     '',
     '## 1.1 What is Domain Manager',
     '',
-    stripHeading(kb.get('Description')),
+    localize(stripHeading(kb.get('Description'))),
     '',
     '## 1.2 Pain points it addresses',
     '',
-    stripHeading(kb.get('Why this plugin?')),
+    localize(stripHeading(kb.get('Why this plugin?'))),
     '',
     '## 1.3 Features',
     '',
-    stripHeading(kb.get('Features list')),
+    localize(stripHeading(kb.get('Features list'))),
     '',
     '## 1.4 Supported nameservers & drivers',
     '',
-    stripHeading(kb.get('Supported providers')),
+    localize(stripHeading(kb.get('Supported providers'))),
     '',
     '## 1.5 Affected GLPI elements',
     '',
@@ -234,7 +359,7 @@ const main = async () => {
     '',
     '### 1.5.1 Assets, management & administration items',
     '',
-    (stripHeading(kb.get('Impacted GLPI items')) || impactedNamesOnly).replace(/^###\s+/gm, '**').replace(/^(\*\*.+)$/gm, '$1**'),
+    localize((stripHeading(kb.get('Impacted GLPI items')) || impactedNamesOnly).replace(/^###\s+/gm, '**').replace(/^(\*\*.+)$/gm, '$1**')),
     '',
     '### 1.5.2 Automatic actions',
     '',
@@ -244,11 +369,11 @@ const main = async () => {
     '',
     '### 1.5.3 Notifications',
     '',
-    stripHeading(kb.get('Notifications')) || '_None._',
+    localize(stripHeading(kb.get('Notifications'))) || '_None._',
     '',
     '### 1.5.4 Rules',
     '',
-    stripHeading(kb.get('Rules')) || '_None._',
+    localize(stripHeading(kb.get('Rules'))) || '_None._',
     '',
     '### 1.5.5 Permissions',
     '',
@@ -259,21 +384,21 @@ const main = async () => {
   ].join('\n');
 
   // ---- 2. Setup -------------------------------------------------------------
-  const automaticActionsBlock = stripHeading(kb.get('Automatic Actions'));
+  const automaticActionsBlock = localize(stripHeading(kb.get('Automatic Actions')));
   const setupParts = [
     `# 2. ${S.setup}`,
     banner,
     `*Part of the ${name} manual — see also [1. Introduction](01-intro.md), [3. Usage](03-usage.md), [4. Troubleshooting](04-troubleshooting.md).*`,
     '## 2.1 Installation',
-    (stripHeading(kb.get('Setup')).match(/### Installation\n([\s\S]*?)(?=\n### |$)/)?.[1] ?? '').trim(),
+    localize((stripHeading(kb.get('Setup')).match(/### Installation\n([\s\S]*?)(?=\n### |$)/)?.[1] ?? '').trim()),
     '## 2.2 Configuration',
-    (stripHeading(kb.get('Setup')).match(/### Configuration\n([\s\S]*?)(?=\n### |$)/)?.[1] ?? '').trim(),
+    localize((stripHeading(kb.get('Setup')).match(/### Configuration\n([\s\S]*?)(?=\n### |$)/)?.[1] ?? '').trim()),
   ];
   if (automaticActionsBlock) setupParts.push('### 2.2.1 Automatic actions', automaticActionsBlock);
   setupParts.push(
     '## 2.3 Permissions',
-    stripHeading(kb.get('Permissions')),
-    ...setupChapters.map(({ m, assetDir }, i) => renderChapter(m, assetDir, `2.${4 + i}`)),
+    localize(stripHeading(kb.get('Permissions'))),
+    ...setupChapters.map(({ m, assetDir }, i) => renderChapter(m, assetDir, `2.${4 + i}`, localize)),
   );
   const setupDoc = setupParts.join('\n\n');
 
@@ -287,18 +412,18 @@ const main = async () => {
     '',
     '## 3.1 How to use',
     '',
-    (stripHeading(kb.get('How to use'))),
+    localize(stripHeading(kb.get('How to use'))),
     '',
-    ...usageChapters.map(({ m, assetDir }, i) => renderChapter(m, assetDir, `3.${i + 2}`)),
+    ...usageChapters.map(({ m, assetDir }, i) => renderChapter(m, assetDir, `3.${i + 2}`, localize)),
   ].join('\n');
 
   // ---- 4. Troubleshooting (hand-written, never overwritten) ------------
   // Hand-written source lives at _troubleshooting.md (never overwritten by this script);
   // 04-troubleshooting.md itself is the generated file this section produces.
-  const troubleshootingBody = (
+  const troubleshootingBody = localize((
     await readIfPresent(path.join(OUT, '_troubleshooting.md'))
     || await readIfPresent(path.join(OUT, '4-troubleshooting.md'))
-  ).replace(/^##\s+Troubleshooting\s*\n/, '').trim();
+  ).replace(/^##\s+Troubleshooting\s*\n/, '').trim());
   const troubleshootingDoc = [
     '# 4. Troubleshooting',
     '',
@@ -321,6 +446,8 @@ const main = async () => {
     const target = path.join(OUT, filename);
     await fs.writeFile(target, content.replace(/\n{3,}/g, '\n\n').trimEnd() + '\n', 'utf8');
   }
+
+  await renderKbDoc(kbPath, kbRawForKb, glossary);
 
   const shots = manifests.reduce((n, m) => n + m.steps.reduce((k, s) => k + s.shots.length, 0), 0);
   console.log(`${OUT}: 4 files (01-intro, 02-setup, 03-usage, 04-troubleshooting), ${manifests.length} chapters, ${shots} screenshots, ${LOCALE}`);
