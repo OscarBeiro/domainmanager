@@ -166,6 +166,14 @@ define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_DNS_SUPPLIER', 9432);
 // here (contrast PLUGIN_DOMAINMANAGER_SO_DOMAIN_NS_PROVIDER's
 // `detected_provider`, ARCHITECTURE.md §20.6).
 define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_TLD', 9433);
+// Real, filterable search option on Domain: the RDAP-check timestamp
+// (`last_rdap_check_date`, Installer.php Phase 26). Unlike
+// `rdap_registrar_name`/`rdap_registrar_iana_id`/`rdap_nameservers` above
+// (deliberately excluded, comment near 9423 — read-only diagnostics, never
+// a source of truth), this is a plain, unambiguous timestamp with the same
+// shape as PLUGIN_DOMAINMANAGER_SO_DOMAIN_LAST_CHANGED/TRANSFER_DATE, which
+// are already exposed — no reason to keep it hidden.
+define('PLUGIN_DOMAINMANAGER_SO_DOMAIN_RDAP_LAST_CHECK', 9434);
 
 /**
  * Plugin_Version_Domainmanager
@@ -420,7 +428,7 @@ function plugin_domainmanager_getAddSearchOptionsNew($itemtype): array
             'table'         => DomainState::getTable(),
             'field'         => 'last_sync_date',
             'linkfield'     => 'domains_id',
-            'name'          => __('Last sync', 'domainmanager'),
+            'name'          => __('Reg/DNS last sync', 'domainmanager'),
             'datatype'      => 'datetime',
             'massiveaction' => false,
             'joinparams'    => [
@@ -563,6 +571,19 @@ function plugin_domainmanager_getAddSearchOptionsNew($itemtype): array
             'linkfield'     => 'domains_id',
             'name'          => __('Pending transfer', 'domainmanager'),
             'datatype'      => 'bool',
+            'massiveaction' => false,
+            'joinparams'    => [
+                'jointype' => 'child',
+            ],
+        ];
+
+        $options[] = [
+            'id'            => PLUGIN_DOMAINMANAGER_SO_DOMAIN_RDAP_LAST_CHECK,
+            'table'         => DomainState::getTable(),
+            'field'         => 'last_rdap_check_date',
+            'linkfield'     => 'domains_id',
+            'name'          => __('RDAP last sync', 'domainmanager'),
+            'datatype'      => 'datetime',
             'massiveaction' => false,
             'joinparams'    => [
                 'jointype' => 'child',

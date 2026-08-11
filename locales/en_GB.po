@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-10 20:04+0200\n"
-"PO-Revision-Date: 2026-08-10 20:04+0200\n"
+"POT-Creation-Date: 2026-08-10 22:39+0200\n"
+"PO-Revision-Date: 2026-08-10 22:39+0200\n"
 "Last-Translator: Automatically generated\n"
 "Language-Team: none\n"
 "Language: en_GB\n"
@@ -17,7 +17,7 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
-#: setup.php:204
+#: setup.php:212
 msgid ""
 "The intl PHP extension is required by Domain Manager (used for IDN/Punycode "
 "domain name conversion)."
@@ -25,99 +25,103 @@ msgstr ""
 "The intl PHP extension is required by Domain Manager (used for IDN/Punycode "
 "domain name conversion)."
 
-#: setup.php:230 setup.php:582 setup.php:670 src/HookHandler.php:241
+#: setup.php:238 setup.php:603 setup.php:691 src/HookHandler.php:241
 #: src/Service/SyncLogger.php:57 src/SupplierTab.php:55
 #: src/Config/Config.php:57 src/Profile.php:101 src/SupplierConfig.php:429
 #: src/SupplierConfig.php:469 templates/domain_panel.html.twig:44
 msgid "Domain Manager"
 msgstr "Domain Manager"
 
-#: setup.php:246 setup.php:611
+#: setup.php:254 setup.php:632
 msgid "Managed"
 msgstr "Managed"
 
-#: setup.php:265 setup.php:658
+#: setup.php:273 setup.php:679
 msgid "Native"
 msgstr "Native"
 
-#: setup.php:293 setup.php:761
+#: setup.php:301 setup.php:782
 msgid "NS Provider"
 msgstr "NS Provider"
 
-#: setup.php:332
+#: setup.php:340
 msgid "DNS provider (Supplier)"
 msgstr "DNS provider (Supplier)"
 
-#: setup.php:363
+#: setup.php:371
 msgid "TLD"
 msgstr "TLD"
 
-#: setup.php:378 src/DashboardCards.php:130 src/DashboardCards.php:812
+#: setup.php:386 src/DashboardCards.php:130 src/DashboardCards.php:812
 msgid "Registrar sync status"
 msgstr "Registrar sync status"
 
-#: setup.php:400 src/DashboardCards.php:119 src/DashboardCards.php:721
+#: setup.php:408 src/DashboardCards.php:119 src/DashboardCards.php:721
 msgid "DNS sync status"
 msgstr "DNS sync status"
 
-#: setup.php:423 templates/domain_panel.html.twig:115
-msgid "Last sync"
-msgstr "Last sync"
+#: setup.php:431 templates/domain_panel.html.twig:115
+msgid "Reg/DNS last sync"
+msgstr "Reg/DNS last sync"
 
-#: setup.php:439
+#: setup.php:447
 msgid "Punycode name"
 msgstr "Punycode name"
 
-#: setup.php:461 templates/domain_panel.html.twig:212
+#: setup.php:469 templates/domain_panel.html.twig:228
 msgid "WHOIS privacy"
 msgstr "WHOIS privacy"
 
-#: setup.php:473 templates/domain_panel.html.twig:213
+#: setup.php:481 templates/domain_panel.html.twig:229
 msgid "Transfer lock"
 msgstr "Transfer lock"
 
-#: setup.php:485 templates/domain_panel.html.twig:214
+#: setup.php:493 templates/domain_panel.html.twig:230
 msgid "Domain lock"
 msgstr "Domain lock"
 
-#: setup.php:497 templates/domain_panel.html.twig:215
+#: setup.php:505 templates/domain_panel.html.twig:231
 msgid "Auto-renew"
 msgstr "Auto-renew"
 
-#: setup.php:509 templates/domain_panel.html.twig:216
+#: setup.php:517 templates/domain_panel.html.twig:232
 msgid "DNSSEC"
 msgstr "DNSSEC"
 
-#: setup.php:528 templates/domain_panel.html.twig:113
+#: setup.php:536 templates/domain_panel.html.twig:113
 msgid "Last changed"
 msgstr "Last changed"
 
-#: setup.php:540 templates/domain_panel.html.twig:114
+#: setup.php:548 templates/domain_panel.html.twig:114
 msgid "Last transfer"
 msgstr "Last transfer"
 
-#: setup.php:552 templates/domain_panel.html.twig:218
+#: setup.php:560 templates/domain_panel.html.twig:234
 msgid "Pending delete"
 msgstr "Pending delete"
 
-#: setup.php:564 templates/domain_panel.html.twig:219
+#: setup.php:572 templates/domain_panel.html.twig:235
 msgid "Pending transfer"
 msgstr "Pending transfer"
 
-#: setup.php:637
+#: setup.php:585 templates/domain_panel.html.twig:116
+msgid "RDAP last sync"
+msgstr "RDAP last sync"
+
+#: setup.php:658
 msgid "Proxy status"
 msgstr "Proxy status"
 
-#: setup.php:707 templates/supplier_domains_list.html.twig:73
-#: templates/domain_panel.html.twig:104 templates/domain_panel.html.twig:179
+#: setup.php:728 templates/supplier_domains_list.html.twig:73
+#: templates/domain_panel.html.twig:104 templates/domain_panel.html.twig:195
 msgid "Registrar"
 msgstr "Registrar"
 
-#: setup.php:733
+#: setup.php:754
 msgid "Registrar Count"
 msgstr "Registrar Count"
 
-#: setup.php:784
+#: setup.php:805
 msgid "Provider Count"
 msgstr "Provider Count"
 
@@ -258,7 +262,7 @@ msgid "Domain sync state"
 msgstr "Domain sync state"
 
 #: src/DomainState.php:157 src/Service/DomainStatusResolver.php:56
-#: templates/domain_panel.html.twig:129
+#: templates/domain_panel.html.twig:130
 msgid "Never synchronized"
 msgstr "Never synchronized"
 
@@ -627,6 +631,7 @@ msgstr "You do not have permission to update this supplier"
 
 #: src/Controller/DomainRegistrarReassignController.php:77
 #: src/Controller/SyncController.php:60
+#: src/Controller/RdapSyncController.php:66
 #: src/Controller/DomainRegistrarUnlinkController.php:65
 msgid "Domain not found"
 msgstr "Domain not found"
@@ -636,10 +641,12 @@ msgid "Failed to reassign the registrar"
 msgstr "Failed to reassign the registrar"
 
 #: src/Controller/SyncController.php:55
+#: src/Controller/RdapSyncController.php:61
 msgid "You do not have permission to synchronize domains"
 msgstr "You do not have permission to synchronize domains"
 
 #: src/Controller/SyncController.php:64
+#: src/Controller/RdapSyncController.php:70
 msgid "You do not have permission to synchronize this domain"
 msgstr "You do not have permission to synchronize this domain"
 
@@ -1230,7 +1237,8 @@ msgid "Import Domains — %s"
 msgstr "Import Domains — %s"
 
 #: src/SupplierTab.php:420 templates/supplier_domains_list.html.twig:34
-#: templates/domain_panel.html.twig:154 templates/domain_panel.html.twig:261
+#: templates/domain_panel.html.twig:155 templates/domain_panel.html.twig:176
+#: templates/domain_panel.html.twig:277
 msgid "Not yet checked"
 msgstr "Not yet checked"
 
@@ -1339,7 +1347,7 @@ msgid "Not yet in GLPI"
 msgstr "Not yet in GLPI"
 
 #: templates/domain_discovery_modal.html.twig:105
-#: templates/domain_panel.html.twig:293
+#: templates/domain_panel.html.twig:309
 msgid "Registrar mismatch"
 msgstr "Registrar mismatch"
 
@@ -1549,7 +1557,7 @@ msgstr ""
 "edited here."
 
 #: templates/domainrecord_edit_panel.html.twig:142
-#: templates/domain_panel.html.twig:404
+#: templates/domain_panel.html.twig:384
 msgid "Locked by Domain Manager synchronization"
 msgstr "Locked by Domain Manager synchronization"
 
@@ -1623,7 +1631,7 @@ msgid "Last checked"
 msgstr "Last checked"
 
 #: templates/connection_test_panel.html.twig:121
-#: templates/domain_panel.html.twig:165
+#: templates/domain_panel.html.twig:166
 msgid "Never"
 msgstr "Never"
 
@@ -1655,7 +1663,7 @@ msgstr ""
 "Not managed by Domain Manager: no registrar or DNS supplier with API access "
 "is configured for this domain."
 
-#: templates/domain_panel.html.twig:97 templates/domain_panel.html.twig:174
+#: templates/domain_panel.html.twig:97 templates/domain_panel.html.twig:190
 msgid "Set the Registrar via the Financial and administrative information tab"
 msgstr "Set the Registrar via the Financial and administrative information tab"
 
@@ -1667,74 +1675,82 @@ msgstr "Registrar sync"
 msgid "DNS sync"
 msgstr "DNS sync"
 
-#: templates/domain_panel.html.twig:124
+#: templates/domain_panel.html.twig:125
 msgid "No registrar supplier set"
 msgstr "No registrar supplier set"
 
-#: templates/domain_panel.html.twig:161
+#: templates/domain_panel.html.twig:162
 msgid "Not yet checked, or never transferred"
 msgstr "Not yet checked, or never transferred"
 
-#: templates/domain_panel.html.twig:181
+#: templates/domain_panel.html.twig:169
+msgid "Sync registrar/DNS now"
+msgstr "Sync registrar/DNS now"
+
+#: templates/domain_panel.html.twig:180
+msgid "Run RDAP lookup now"
+msgstr "Run RDAP lookup now"
+
+#: templates/domain_panel.html.twig:197
 msgid "DNS"
 msgstr "DNS"
 
-#: templates/domain_panel.html.twig:189
+#: templates/domain_panel.html.twig:205
 #, php-format
 msgid "API integration for %s is not currently supported."
 msgstr "API integration for %s is not currently supported."
 
-#: templates/domain_panel.html.twig:191
+#: templates/domain_panel.html.twig:207
 msgid "The DNS provider of this domain could not be identified."
 msgstr "The DNS provider of this domain could not be identified."
 
-#: templates/domain_panel.html.twig:195
+#: templates/domain_panel.html.twig:211
 msgid "Help us support this provider"
 msgstr "Help us support this provider"
 
-#: templates/domain_panel.html.twig:226
+#: templates/domain_panel.html.twig:242
 msgid "Not reported by this driver"
 msgstr "Not reported by this driver"
 
-#: templates/domain_panel.html.twig:228 templates/domain_panel.html.twig:249
-#: templates/domain_panel.html.twig:263
+#: templates/domain_panel.html.twig:244 templates/domain_panel.html.twig:265
+#: templates/domain_panel.html.twig:279
 msgid "Yes"
 msgstr "Yes"
 
-#: templates/domain_panel.html.twig:230 templates/domain_panel.html.twig:251
-#: templates/domain_panel.html.twig:265
+#: templates/domain_panel.html.twig:246 templates/domain_panel.html.twig:267
+#: templates/domain_panel.html.twig:281
 msgid "No"
 msgstr "No"
 
-#: templates/domain_panel.html.twig:247
+#: templates/domain_panel.html.twig:263
 msgid "Not reported"
 msgstr "Not reported"
 
-#: templates/domain_panel.html.twig:289
+#: templates/domain_panel.html.twig:305
 msgid "RDAP cross-check"
 msgstr "RDAP cross-check"
 
-#: templates/domain_panel.html.twig:294
+#: templates/domain_panel.html.twig:310
 msgid "RDAP reports"
 msgstr "RDAP reports"
 
-#: templates/domain_panel.html.twig:297
+#: templates/domain_panel.html.twig:313
 msgid "Supplier on file"
 msgstr "Supplier on file"
 
-#: templates/domain_panel.html.twig:302
+#: templates/domain_panel.html.twig:318
 msgid "Nameserver mismatch"
 msgstr "Nameserver mismatch"
 
-#: templates/domain_panel.html.twig:303
+#: templates/domain_panel.html.twig:319
 msgid "RDAP"
 msgstr "RDAP"
 
-#: templates/domain_panel.html.twig:305
+#: templates/domain_panel.html.twig:321
 msgid "Live"
 msgstr "Live"
 
-#: templates/domain_panel.html.twig:315
+#: templates/domain_panel.html.twig:331
 msgid ""
 "Registrar and DNS provider information is available after the domain is "
 "created."
@@ -1742,25 +1758,25 @@ msgstr ""
 "Registrar and DNS provider information is available after the domain is "
 "created."
 
-#: templates/domain_panel.html.twig:333
-msgid "Update Now"
-msgstr "Update Now"
-
-#: templates/domain_panel.html.twig:418
+#: templates/domain_panel.html.twig:398
 msgid "Unlink this domain's registrar?"
 msgstr "Unlink this domain's registrar?"
 
-#: templates/domain_panel.html.twig:440
+#: templates/domain_panel.html.twig:420
 msgid "Failed to unlink the registrar:"
 msgstr "Failed to unlink the registrar:"
 
-#: templates/domain_panel.html.twig:545
+#: templates/domain_panel.html.twig:537
 msgid "Force this synchronization anyway?"
 msgstr "Force this synchronization anyway?"
 
-#: templates/domain_panel.html.twig:550
+#: templates/domain_panel.html.twig:542
 msgid "Synchronization request failed:"
 msgstr "Synchronization request failed:"
+
+#: templates/domain_panel.html.twig:582
+msgid "RDAP lookup request failed:"
+msgstr "RDAP lookup request failed:"
 
 #: templates/domainrecord_add_panel.html.twig:48
 msgid "Add a DNS record (Domain Manager)"

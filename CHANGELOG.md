@@ -11,6 +11,7 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 
 ## [Unreleased] - 1.7.1-beta1
 ### Features
+- The domain panel now shows the RDAP check date separately from the registrar/DNS sync date, and each has its own "sync now" icon so you can refresh either independently instead of a single shared "Update Now" button.
 - Added an automated test suite covering the plugin's internal logic. No behavior change.
 - Removed the Transfer/EPP auth code feature. It never showed the actual code, only whether one was on file, but the plugin no longer fetches or stores it at all — this is a security-sensitive domain-transfer secret that's now safest kept out of the database entirely.
 ### Bugs

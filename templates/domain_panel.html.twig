@@ -112,7 +112,8 @@
                            and in ARCHITECTURE.md/CHANGELOG.md instead. #}
                         <th>{{ __('Last changed', 'domainmanager') }}</th>
                         <th>{{ __('Last transfer', 'domainmanager') }}</th>
-                        <th>{{ __('Last sync', 'domainmanager') }}</th>
+                        <th>{{ __('Reg/DNS last sync', 'domainmanager') }}</th>
+                        <th>{{ __('RDAP last sync', 'domainmanager') }}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -163,6 +164,21 @@
                         </td>
                         <td id="domainmanager-lastsync">
                             {{ state and state.last_sync_date ? state.last_sync_date : __('Never', 'domainmanager') }}
+                            {% if can_update and is_managed %}
+                                <i class="ti ti-refresh ms-1" id="domainmanager-sync-regdns" role="button"
+                                   data-bs-toggle="tooltip" title="{{ __('Sync registrar/DNS now', 'domainmanager') }}"></i>
+                            {% endif %}
+                        </td>
+                        <td id="domainmanager-lastrdap">
+                            {% if state and state.last_rdap_check_date %}
+                                {{ state.last_rdap_check_date }}
+                            {% else %}
+                                <span class="text-muted" title="{{ __('Not yet checked', 'domainmanager') }}">&mdash;</span>
+                            {% endif %}
+                            {% if can_update and is_managed %}
+                                <i class="ti ti-refresh ms-1" id="domainmanager-sync-rdap" role="button"
+                                   data-bs-toggle="tooltip" title="{{ __('Run RDAP lookup now', 'domainmanager') }}"></i>
+                            {% endif %}
                         </td>
                     </tr>
                 </tbody>
@@ -318,44 +334,8 @@
     {% endif %}
 </div>
 
-{% if not is_new and can_update and is_managed %}
-    {# Rendered here (hidden) and relocated by JS into the form's own
-       Save / Put in trashbin button row (`.form-button-separator`,
-       core's `templates/components/form/buttons.html.twig`) once that
-       row exists in the DOM — this hook fires *before* that row is
-       rendered, so the button can't be placed there directly. Styled
-       with the same `btn ... me-2` classes core itself uses for
-       plugin-contributed buttons in that row (see that template's
-       `addbuttons` handling), for consistent size/padding/border with
-       its "Save"/"Put in trashbin" neighbours. #}
-    <button type="button" class="btn btn-outline-secondary me-2 d-none" id="domainmanager-updatenow">
-        <i class="ti ti-refresh me-1"></i>
-        {{ __('Update Now', 'domainmanager') }}
-    </button>
-{% endif %}
-
 <script>
 (function () {
-    const updateNowButton = document.getElementById('domainmanager-updatenow');
-    if (updateNowButton) {
-        const relocateUpdateNowButton = function () {
-            const buttonRow = document.querySelector('.form-button-separator');
-            if (buttonRow) {
-                const saveButton = buttonRow.querySelector('button[name="update"]');
-                if (saveButton) {
-                    saveButton.insertAdjacentElement('afterend', updateNowButton);
-                } else {
-                    buttonRow.appendChild(updateNowButton);
-                }
-            }
-            updateNowButton.classList.remove('d-none');
-        };
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', relocateUpdateNowButton);
-        } else {
-            relocateUpdateNowButton();
-        }
-    }
 
     // Cosmetic lock layer: disable synced fields for users without the
     // unlock right (server-side enforcement is authoritative)
@@ -443,11 +423,6 @@
         });
     }
 
-    const button = updateNowButton;
-    if (!button) {
-        return;
-    }
-
     const labels  = {{ status_labels|json_encode|raw }};
     const classes = {{ status_classes|json_encode|raw }};
 
@@ -461,101 +436,155 @@
         badge.title = message || '';
     }
 
-    function runSync(force) {
-        const csrf = document.querySelector('meta[property="glpi:csrf_token"]');
-        button.disabled = true;
-        button.querySelector('i').classList.add('ti-spin');
-
-        return fetch({{ path('/plugins/domainmanager/sync/' ~ domains_id)|json_encode|raw }}, {
-            method: 'POST',
-            headers: {
-                'X-Glpi-Csrf-Token': csrf ? csrf.getAttribute('content') : '',
-                'X-Requested-With': 'XMLHttpRequest',
-                'Content-Type': 'application/x-www-form-urlencoded'
-            },
-            body: force ? 'force=1' : ''
-        }).then(function (response) {
-            return response.json().then(function (data) {
-                return { ok: response.ok, data: data };
-            });
-        }).then(function (result) {
-            if (!result.ok) {
-                throw new Error(result.data.error || 'HTTP error');
-            }
-            const data = result.data;
-            setBadge('domainmanager-badge-registrar', data.registrar_status, data.registrar_message);
-            setBadge('domainmanager-badge-dns', data.dns_status, data.dns_message);
-
-            const last = document.getElementById('domainmanager-lastsync');
-            if (last) {
-                last.textContent = data.last_sync_date;
-            }
-
-            const provider = document.getElementById('domainmanager-provider');
-            if (provider && data.detected_provider) {
-                if (data.dns_supplier_link_url) {
-                    provider.textContent = '';
-                    const link = document.createElement('a');
-                    link.href = data.dns_supplier_link_url + '{{ supplier_tab_forcetab }}';
-                    link.textContent = data.detected_provider;
-                    provider.appendChild(link);
-                } else {
-                    provider.textContent = data.detected_provider;
-                }
-            }
-
-            ['registrar', 'dns'].forEach(function (leg) {
-                const span = document.getElementById('domainmanager-msg-' + leg);
-                if (span) {
-                    span.textContent = data[leg + '_message'] || '';
-                    document.getElementById('domainmanager-msg-' + leg + '-wrap')
-                        .classList.toggle('d-none', !data[leg + '_message']);
-                }
-            });
-
-            const syncLine = document.getElementById('domainmanager-sync-line');
-            if (syncLine) {
-                syncLine.classList.toggle('d-none', !data.registrar_message && !data.dns_message);
-            }
-            const syncSep = document.getElementById('domainmanager-sync-sep');
-            if (syncSep) {
-                syncSep.classList.toggle('d-none', !(data.registrar_message && data.dns_message));
-            }
-
-            const warning = document.getElementById('domainmanager-provider-warning');
-            if (warning) {
-                const text = document.getElementById('domainmanager-provider-warning-text');
-                if (data.dns_status === 'unsupported' || data.dns_status === 'unknown') {
-                    warning.classList.remove('d-none');
-                    if (text) {
-                        text.textContent = data.dns_message;
-                    }
-                } else {
-                    warning.classList.add('d-none');
-                }
-            }
-
-            // ARCHITECTURE.md §15.3 Phase 55: this run's reconciliation
-            // refused to apply because it would have trashed more records
-            // than the configured sync safety guard allows — the domain
-            // was left untouched. Offer an explicit, one-off override
-            // rather than silently retrying or leaving no way forward
-            // short of the Setup config page.
-            if (data.dns_status === 'sync_safety_guard' && !force) {
-                if (window.confirm(data.dns_message + '\n\n' + {{ __('Force this synchronization anyway?', 'domainmanager')|json_encode|raw }})) {
-                    return runSync(true);
-                }
-            }
-        }).catch(function (error) {
-            window.alert({{ __('Synchronization request failed:', 'domainmanager')|json_encode|raw }} + ' ' + error.message);
-        }).finally(function () {
-            button.disabled = false;
-            button.querySelector('i').classList.remove('ti-spin');
-        });
+    // Phase 92: both icons below disable permanently on first click (dimmed,
+    // pointer-events off) rather than re-enabling once the request settles
+    // — a full page reload is the only way to sync/RDAP-check again. This
+    // is a deliberate one-click-per-page-load guard against hammering
+    // either endpoint (registrar/DNS driver APIs, or rdap.org's own rate
+    // limit), not a cooldown timer.
+    function lockIcon(icon) {
+        icon.style.pointerEvents = 'none';
     }
 
-    button.addEventListener('click', function () {
-        runSync(false);
-    });
+    function disablePermanently(icon) {
+        icon.classList.add('disabled');
+        icon.style.pointerEvents = 'none';
+        icon.style.opacity = '0.5';
+    }
+
+    const regDnsIcon = document.getElementById('domainmanager-sync-regdns');
+    if (regDnsIcon) {
+        function runSync(force) {
+            const csrf = document.querySelector('meta[property="glpi:csrf_token"]');
+            regDnsIcon.classList.add('ti-spin');
+
+            return fetch({{ path('/plugins/domainmanager/sync/' ~ domains_id)|json_encode|raw }}, {
+                method: 'POST',
+                headers: {
+                    'X-Glpi-Csrf-Token': csrf ? csrf.getAttribute('content') : '',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: force ? 'force=1' : ''
+            }).then(function (response) {
+                return response.json().then(function (data) {
+                    return { ok: response.ok, data: data };
+                });
+            }).then(function (result) {
+                if (!result.ok) {
+                    throw new Error(result.data.error || 'HTTP error');
+                }
+                const data = result.data;
+                setBadge('domainmanager-badge-registrar', data.registrar_status, data.registrar_message);
+                setBadge('domainmanager-badge-dns', data.dns_status, data.dns_message);
+
+                const last = document.getElementById('domainmanager-lastsync');
+                if (last) {
+                    last.childNodes[0].textContent = data.last_sync_date + ' ';
+                }
+
+                const provider = document.getElementById('domainmanager-provider');
+                if (provider && data.detected_provider) {
+                    if (data.dns_supplier_link_url) {
+                        provider.textContent = '';
+                        const link = document.createElement('a');
+                        link.href = data.dns_supplier_link_url + '{{ supplier_tab_forcetab }}';
+                        link.textContent = data.detected_provider;
+                        provider.appendChild(link);
+                    } else {
+                        provider.textContent = data.detected_provider;
+                    }
+                }
+
+                ['registrar', 'dns'].forEach(function (leg) {
+                    const span = document.getElementById('domainmanager-msg-' + leg);
+                    if (span) {
+                        span.textContent = data[leg + '_message'] || '';
+                        document.getElementById('domainmanager-msg-' + leg + '-wrap')
+                            .classList.toggle('d-none', !data[leg + '_message']);
+                    }
+                });
+
+                const syncLine = document.getElementById('domainmanager-sync-line');
+                if (syncLine) {
+                    syncLine.classList.toggle('d-none', !data.registrar_message && !data.dns_message);
+                }
+                const syncSep = document.getElementById('domainmanager-sync-sep');
+                if (syncSep) {
+                    syncSep.classList.toggle('d-none', !(data.registrar_message && data.dns_message));
+                }
+
+                const warning = document.getElementById('domainmanager-provider-warning');
+                if (warning) {
+                    const text = document.getElementById('domainmanager-provider-warning-text');
+                    if (data.dns_status === 'unsupported' || data.dns_status === 'unknown') {
+                        warning.classList.remove('d-none');
+                        if (text) {
+                            text.textContent = data.dns_message;
+                        }
+                    } else {
+                        warning.classList.add('d-none');
+                    }
+                }
+
+                // ARCHITECTURE.md §15.3 Phase 55: this run's reconciliation
+                // refused to apply because it would have trashed more records
+                // than the configured sync safety guard allows — the domain
+                // was left untouched. Offer an explicit, one-off override
+                // rather than silently retrying or leaving no way forward
+                // short of the Setup config page.
+                if (data.dns_status === 'sync_safety_guard' && !force) {
+                    if (window.confirm(data.dns_message + '\n\n' + {{ __('Force this synchronization anyway?', 'domainmanager')|json_encode|raw }})) {
+                        return runSync(true);
+                    }
+                }
+            }).catch(function (error) {
+                window.alert({{ __('Synchronization request failed:', 'domainmanager')|json_encode|raw }} + ' ' + error.message);
+            }).finally(function () {
+                regDnsIcon.classList.remove('ti-spin');
+                disablePermanently(regDnsIcon);
+            });
+        }
+
+        regDnsIcon.addEventListener('click', function () {
+            lockIcon(regDnsIcon);
+            runSync(false);
+        }, { once: true });
+    }
+
+    const rdapIcon = document.getElementById('domainmanager-sync-rdap');
+    if (rdapIcon) {
+        rdapIcon.addEventListener('click', function () {
+            const csrf = document.querySelector('meta[property="glpi:csrf_token"]');
+            lockIcon(rdapIcon);
+            rdapIcon.classList.add('ti-spin');
+
+            fetch({{ path('/plugins/domainmanager/rdapsync/' ~ domains_id)|json_encode|raw }}, {
+                method: 'POST',
+                headers: {
+                    'X-Glpi-Csrf-Token': csrf ? csrf.getAttribute('content') : '',
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            }).then(function (response) {
+                return response.json().then(function (data) {
+                    return { ok: response.ok, data: data };
+                });
+            }).then(function (result) {
+                if (!result.ok) {
+                    throw new Error(result.data.error || 'HTTP error');
+                }
+                const data = result.data;
+                const rdap = document.getElementById('domainmanager-lastrdap');
+                if (rdap && data.last_rdap_check_date) {
+                    rdap.childNodes[0].textContent = data.last_rdap_check_date + ' ';
+                }
+            }).catch(function (error) {
+                window.alert({{ __('RDAP lookup request failed:', 'domainmanager')|json_encode|raw }} + ' ' + error.message);
+            }).finally(function () {
+                rdapIcon.classList.remove('ti-spin');
+                disablePermanently(rdapIcon);
+            });
+        }, { once: true });
+    }
 })();
 </script>

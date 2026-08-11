@@ -4556,3 +4556,50 @@ The other 6 fields Phase 7 introduced alongside `authInfo` (`privacyEnabled`/`do
 credentials, and none were touched by this change. `phpcs`/`php -l` clean on every touched file.
 Full file list and rationale also recorded in `CHANGELOG-dev.md`'s `[Unreleased] - 1.7.1-beta1`
 entry; regression checklist in `TESTING.md`'s "Phase 91" section.
+
+## 22. Phase 92 — split "Last sync" into registrar/DNS vs. RDAP, per-source sync-now icons (2026-08-10)
+
+`DomainState.last_rdap_check_date` (added §9 Phase 26, stamped by
+`Cron::cronRdapEnrichment()`) existed since Phase 26 but was never exposed anywhere in the UI —
+no search option, no display in `domain_panel.html.twig`, only an aggregate "last processed at"
+in the config panel. Meanwhile the panel's single "Last sync" datetime (`last_sync_date`) reads
+as if it covers RDAP too, when it only reflects the registrar/DNS driver sync
+(`SyncEngine::sync()`/`Cron::cronDomainSync()`).
+
+- Renamed the existing search option `PLUGIN_DOMAINMANAGER_SO_DOMAIN_LAST_SYNC` (id **9410**)
+  label to "Reg/DNS last sync", and added a new one, `PLUGIN_DOMAINMANAGER_SO_DOMAIN_RDAP_LAST_CHECK`
+  (id **9434**, next free id after §20.6's `PLUGIN_DOMAINMANAGER_SO_DOMAIN_TLD` = 9433), field
+  `last_rdap_check_date`, `datatype => 'datetime'`. Unlike `rdap_registrar_name`/
+  `rdap_registrar_iana_id`/`rdap_nameservers` (deliberately excluded — read-only diagnostics,
+  never a source of truth, per §9 Phase 27's comment), this is a plain unambiguous timestamp,
+  same shape as `last_changed_date`/`transfer_date` — no reason to keep it hidden.
+- User-directed scope widen: dropped the standalone "Update Now" button
+  (`domainmanager-updatenow`, previously relocated by JS into the form's own Save/Put-in-trashbin
+  button row) in favor of two small inline `ti-refresh` icons, one in the "Reg/DNS last sync"
+  cell and one in the new "RDAP last sync" cell — following the same interaction pattern GLPI
+  core uses for its Agent "request inventory" icon
+  (`templates/components/form/inventory_info.html.twig`: `ti-refresh` + a spin CSS class toggled
+  during the AJAX call). This plugin's own button already used that exact pattern with its own
+  `ti-spin` class, so the new RDAP icon just reuses it rather than inventing a new one.
+- The registrar/DNS icon reuses the existing `POST /plugins/domainmanager/sync/{domains_id}`
+  endpoint (`SyncController`) untouched — only its trigger moved from a button to an icon. The
+  RDAP icon needed a genuinely new endpoint, since no on-demand RDAP path existed before: added
+  `RdapSyncController` (`POST /plugins/domainmanager/rdapsync/{domains_id}`), which required
+  changing `Cron::processRdapEnrichment()` from `private` to `public` so the controller can run
+  one real RDAP lookup synchronously, reusing the cron's own gap-fill logic. No rate-limit gate
+  was added on this on-demand path: the gate inside `cronRdapEnrichment()`'s candidate-selection
+  query is a scan-cost optimization for the periodic sweep, not a hard limit — its own §9 Phase
+  22 rationale comment already notes rdap.org's real limit (~10 req/10s) is nowhere near what
+  even a busy cron hits.
+- Per user direction, both icons get a **click-once-per-page-load** guard instead of a cooldown
+  timer: each icon's click handler is registered with `{ once: true }`, immediately sets
+  `pointer-events: none` (blocks further clicks while the request is in flight, spin animation
+  still visible), and its `.finally()` sets a permanent dimmed/disabled visual state that is
+  **never** reset once the request settles — unlike the old button's `disabled = false` in its
+  own `.finally()`. Only a full page reload re-arms either icon. Rationale: neither the
+  registrar/DNS driver APIs nor rdap.org enforce anything client-side today, and this is simply
+  to prevent a user from hammering either endpoint by repeat-clicking; a real per-minute cooldown
+  was judged unnecessary complexity for a scenario nobody could plausibly hit by accident.
+
+Full file list and rationale also recorded in `CHANGELOG-dev.md`'s `[Unreleased] - 1.7.1-beta1`
+entry.
