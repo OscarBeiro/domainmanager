@@ -13,6 +13,36 @@ This manual covers the two things you'll do most often:
 2. **Monitor a domain** through its Domain Manager status panel and manage its DNS
    records.
 
+## Why this plugin?
+
+- Native GLPI treats Domains and DNS Records as manually-entered inventory — nothing
+  tells you a domain expired, whether WHOIS privacy or transfer lock is on, or whether the
+  DNS record in GLPI still matches what's live at the provider.
+- Without this plugin, "is our inventory accurate?" means logging into each registrar/DNS
+  panel one by one. There is no official plugin that talks to registrar/DNS APIs.
+- Editing a DNS record in GLPI normally does nothing to the real zone — teams end up
+  maintaining two copies by hand, which drift silently. Domain Manager can push changes
+  live and locks fields that were just synced so nobody overwrites fresh data by accident.
+
+## Supported registrars and DNS providers
+
+Three drivers cover both registrar (lifecycle) data and DNS zone data; the proxy toggle is
+a Cloudflare-specific feature (Cloudflare's "orange cloud" CDN/proxying):
+
+| Provider | Registrar (lifecycle) | DNS sync (read) | DNS write-back | Proxy toggle |
+|---|---|---|---|---|
+| Cloudflare | Yes | Yes | Yes | Yes |
+| IONOS | Yes | Yes | Yes | No |
+| Dinahosting | Yes | Yes | No | No |
+
+Beyond these three, Domain Manager auto-detects a domain's DNS provider from its NS
+records even without any credentials configured — useful for portfolio-wide visibility
+even where you don't hold an API key. Auto-detection alone has no write-back. Recognized
+providers: Ascio, AWS Route 53, Google Cloud DNS, Azure DNS, GoDaddy, OVHcloud,
+DigitalOcean, Linode (Akamai), Vercel, Gandi, Namecheap, Hetzner, Hostalia, Squarespace,
+Wix, Hostinger, Porkbun, cdmon, one.com, NS1 (IBM NS1 Connect), bunny.net (Bunny DNS),
+Strato, Arsys, RaiolaNetworks and LucusHost.
+
 ## Before you start
 
 You'll need:
