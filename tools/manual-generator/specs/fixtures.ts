@@ -27,11 +27,20 @@ export const DEMO = {
     // Same supplier/driver as domain above, but in managed_readonly state (write failed)
     // — used to demonstrate locked-field UI in chapter 5.
   },
+  domainProxied: {
+    name: 'proxy-example.com',
+    // Linked to the same Cloudflare supplier, with both proxied and non-proxied records
+    // — used to demonstrate proxy indicators in chapter 6.
+  },
   dnsRecord: {
     a: { name: '@', type: 'A', value: '203.0.113.10', ttl: '3600' }, // TEST-NET-3, non-routable
     cname: { name: 'www', type: 'CNAME', value: 'manual-example.com', ttl: '3600' },
   },
   dnsRecordLocked: {
     a: { name: '@', type: 'A', value: '203.0.113.20', ttl: '3600' }, // On locked-example.com
+  },
+  dnsRecordsProxied: {
+    nonProxied: { name: 'non-proxied', type: 'A', value: '203.0.113.40', ttl: '3600' }, // TEST-NET-3
+    proxied: { name: 'proxied', type: 'A', value: '203.0.113.41', ttl: '3600' }, // TEST-NET-3
   },
 } as const;

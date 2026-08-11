@@ -111,6 +111,16 @@ A second Domain, name **`locked-example.com`**, linked to the Manual Demo Regist
 - **Why locked:** When a domain has no DNS provider or the provider doesn't support write-back, its records cannot be edited in GLPI — they're read-only/imported. This state is rendered by setting `dns_suppliers_id=0` (no provider link), which makes `DnsRecordWriteback::isDomainDnsEditable()` return false in `src/DomainForm.php`, triggering the locked-field banner and disabling edit controls.
 - One **A** record (`@` → `203.0.113.20`, TEST-NET-3) with corresponding `ImportedRecord` row to mark it as plugin-managed. When opened for edit, this record shows the lock-field alert and disabled data/TTL inputs, demonstrating to users why some records can't be edited inline.
 
+## 5e. Proxy indicators — dedicated domain (chapter 6)
+
+A third Domain, name **`proxy-example.com`**, linked to the Manual Demo Registrar supplier (same Cloudflare driver as `manual-example.com`). This domain exists only to demonstrate proxy indicators in isolation, without changing the Records tab appearance of domains used by earlier chapters.
+
+- Two **A** records:
+  - `non-proxied` → `203.0.113.40` (TEST-NET-3), linked to `glpi_plugin_domainmanager_records` with `is_proxied=0`
+  - `proxied` → `203.0.113.41` (TEST-NET-3), linked to `glpi_plugin_domainmanager_records` with `is_proxied=1` and `proxy_addresses='["104.16.134.229", "104.16.135.229"]'` (typical Cloudflare anycast IPs)
+
+**Why:** Chapter 6 documents the cloud-icon indicator and the persisted proxy address overlay for Cloudflare-proxied records. Using a dedicated domain (separate from `manual-example.com` used by chapter 2) keeps the Records tab screenshots of each chapter stable — chapter 2's `02-records-list.png` doesn't change when chapter 6 fixture data is modified, preventing regressions in already-published material.
+
 ## 5b. `url_base` must match `BASE_URL` *(keep — easy to lose on a rebuild)*
 
 `glpi_configs` (context `core`, name `url_base`) defaults to whatever hostname the browser
