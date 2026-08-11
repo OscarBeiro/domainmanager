@@ -4,9 +4,9 @@ Build this state once by hand, then `tools/manual-generator/fixtures/dump.sh`. E
 to be photographed, so choose values that read as examples in any language and that exercise
 the cases the manual needs to explain.
 
-Current manual scope is **3 chapters, English only**: (0) granting Domain Manager rights to
-a profile, (1) Supplier driver setup and domain import, (2) Domain status panel and DNS
-record management. Sections 2–5 below are scoped to those three chapters — extend them here
+Current manual scope is **4 chapters, English only**: (0) granting Domain Manager rights to
+a profile, (1) Supplier driver setup and domain import (error case), (2) Domain status panel and DNS
+record management, (3) Bulk-importing multiple domains. Sections 2–5 below are scoped to those chapters — extend them here
 first when a new chapter is added.
 
 ## 1. Documentation users *(keep)*
@@ -64,6 +64,26 @@ chapter 1's own spec does the configuring live, as that's the workflow being doc
   spec change.
 - Credentials are encrypted at rest, but **labels and notes are not** — keep them generic;
   this fixture's screenshots go to clients.
+
+## 3b. Domain discovery modal — showing success (chapter 4)
+
+Chapter 4 documents the **successful** bulk-import workflow, not an error case like chapter 1.
+Since there is no real registrar account with actual domains behind the fixture (and maintaining
+one would be fragile and expensive), the spec uses **Playwright route interception** to mock
+the `/plugins/domainmanager/domaindiscovery/{suppliers_id}` AJAX endpoint's HTTP response.
+
+- **Decision rationale:** Mocking at the HTTP response layer (not the driver/API layer) stays
+  true to the spirit of "test the real code path" — the spec exercises the actual bulk-select
+  and import form submission workflow, the actual browser JS that checks/unchecks domains, the
+  actual modal rendering logic in `templates/domain_discovery_modal.html.twig`. Only the
+  *discovery source* (the list of domains) is mocked, not the interaction or submission code.
+- The mock response includes three domains (`example-one.com`, `example-two.com`,
+  `example-three.com`), all marked as "Not yet in GLPI", so the spec can screenshot both the
+  full-selected state and the partially-selected state (to demonstrate independent checkbox
+  control).
+- If this plugin later gains a driver test-mode or a stable sandbox account with real domains,
+  revisit and remove the route interception — let the spec call the real API instead. For now,
+  this is honest, deterministic, and requires no live credentials.
 
 ## 4. Domain (chapter 2)
 

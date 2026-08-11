@@ -72,6 +72,7 @@ This manual documents version 1.7.1-beta1 against GLPI 11.0.8.
 1. [Granting Domain Manager rights to a profile](#granting-domain-manager-rights-to-a-profile)
 2. [Configuring a Supplier as a domain source](#configuring-a-supplier-as-a-domain-source)
 3. [Monitoring a domain and its DNS records](#monitoring-a-domain-and-its-dns-records)
+4. [Bulk-importing domains from a Supplier](#bulk-importing-domains-from-a-supplier)
 
 ## Granting Domain Manager rights to a profile
 
@@ -174,6 +175,34 @@ On a domain whose DNS provider supports write-back (here, Cloudflare), a **New r
 *Adding an A record; this will be created live at the DNS provider*
 
 > **Note:** Fields populated by the last sync (registration date, expiry, existing record values) are locked by default. A user with the "Unlock imported domain data" right can edit them anyway — useful when the provider reported something wrong.
+
+## Bulk-importing domains from a Supplier
+
+Once a Supplier's API driver is configured, Domain Manager can discover all domains in that provider's account. Importing multiple domains at once is faster than adding them one by one.
+
+### 1. Open the Import Domains dialog
+
+In the Domain Manager tab on a Supplier, click the **Import** button. This opens a modal showing every domain the provider's account contains that isn't already tracked in GLPI.
+
+![The domain import dialog showing multiple domains available to import](assets/bulk-import/01-import-list.png)
+
+*The domain import dialog showing multiple domains available to import*
+
+### 2. Select domains to import
+
+Each domain in the list can be checked or unchecked independently. Domains already in GLPI are shown with the **Already exists** label and cannot be selected. Use the checkbox in the header to quickly select or deselect all pending domains at once.
+
+![Two domains selected, one deselected (Domain Manager will import only the selected ones)](assets/bulk-import/02-select-partial.png)
+
+*Two domains selected, one deselected (Domain Manager will import only the selected ones)*
+
+### 3. Complete the import
+
+Click **Import selected domains** to create all checked domains in GLPI. They appear immediately in your domain list and automatically start syncing on the next cron run; no manual intervention is needed after import.
+
+> **Note:** The imported domains are now part of your domain inventory. Their first sync happens automatically on the next scheduled sync run (typically within minutes), and they sync thereafter on your configured interval.
+
+> **Note:** Importing multiple domains at once is much faster than creating them individually. After import, all domains are treated identically: they sync automatically, show status, and support DNS record management just like any domain you created by hand.
 
 ## Troubleshooting
 
