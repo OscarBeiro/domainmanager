@@ -2,8 +2,15 @@
 
 This directory builds the user manual for the domainmanager plugin. The manual itself is a
 build artifact published to `docs/manual/<locale>/`; the sources here are the narrated
-Playwright specs in `specs/` plus the hand-written `docs/manual/<locale>/_intro.md` /
-`_outro.md` files.
+Playwright specs in `specs/` plus `docs/kb/domain-manager.md`. Intro and Setup content is
+auto-pulled from that KB doc's matching sections (Description/Why this plugin?/Supported
+providers/Features list/Impacted GLPI items/Interactions with other plugins for Intro;
+Permissions/Automatic Actions/Notifications/Rules/Setup for Setup) — there is no
+hand-written intro/setup file to keep in sync. Only Troubleshooting
+(`docs/manual/<locale>/4-troubleshooting.md`) is hand-written, since there's no automatable
+source for it. See `render-manual.mjs`'s header comment for the full fallback chain
+(optional `1-intro.md`/`2-setup.md`/`3-usage.md` overrides, legacy `_intro.md`/`_outro.md`
+support).
 
 **Current scope: 2 chapters, English only** — Supplier driver setup/import
 (`10-supplier-setup.manual.spec.ts`) and domain monitoring/DNS records
@@ -81,5 +88,6 @@ tools/manual-generator/
   specs/                narrated scenarios + fixtures.ts
   fixtures/             golden.sql.gz (after dump.sh), dump.sh, restore.sh, CHECKLIST.md
 
-docs/manual/<locale>/    _intro.md, _outro.md (hand-written); MANUAL.md, assets/ (generated)
+docs/manual/<locale>/    4-troubleshooting.md (hand-written); MANUAL.md, assets/ (generated)
+docs/kb/                domain-manager.md (hand-written; also feeds the manual's Intro/Setup)
 ```

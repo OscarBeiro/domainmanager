@@ -5,8 +5,10 @@
  * Place in tools/manual-generator/. Run after a capture pass, from the repo root:
  *   MANUAL_LOCALE=es_ES node tools/manual-generator/render-manual.mjs
  *
- * MANUAL.md is a build artifact and is overwritten. Hand-written prose lives in
- * _intro.md and _outro.md, which this script only ever reads.
+ * MANUAL.md is a build artifact and is overwritten. The Intro and Setup sections are
+ * auto-pulled from a docs/kb/*.md file if one exists (see loadKbSections); only
+ * Troubleshooting (4-troubleshooting.md, or legacy _outro.md) is hand-written, since
+ * there is no automatable source for it.
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -14,6 +16,7 @@ import path from 'node:path';
 const LOCALE = process.env.MANUAL_LOCALE ?? 'en_GB';
 const ROOT = process.env.MANUAL_ROOT ?? path.join('docs', 'manual');
 const OUT = process.env.MANUAL_OUT ?? path.join(ROOT, LOCALE);
+const KB_DIR = process.env.MANUAL_KB_DIR ?? path.join('docs', 'kb');
 
 const STRINGS = {
   en_GB: { toc: 'Contents', note: 'Note', banner: (p, g, d) =>
@@ -29,6 +32,68 @@ const slugify = (s) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(
 
 async function readIfPresent(p) {
   try { return (await fs.readFile(p, 'utf8')).trim(); } catch { return ''; }
+}
+
+/**
+ * Locate the plugin's KB/marketplace-style doc (this project's convention, not a
+ * standard GLPI one — see MANUAL_KB or a lone file under docs/kb/).
+ */
+async function findKbFile() {
+  if (process.env.MANUAL_KB) return process.env.MANUAL_KB;
+  let files;
+  try {
+    files = (await fs.readdir(KB_DIR)).filter((f) => f.endsWith('.md'));
+  } catch {
+    return null;
+  }
+  return files.length === 1 ? path.join(KB_DIR, files[0]) : null;
+}
+
+/** Split a KB doc into { headingText: fullBlockIncludingHeadingAndNestedSubheadings }. */
+function parseKbSections(md) {
+  const sections = new Map();
+  let current = null;
+  let buf = [];
+  for (const line of md.split('\n')) {
+    const h2 = line.match(/^##\s+(.+)$/);
+    if (h2) {
+      if (current) sections.set(current, buf.join('\n').trim());
+      current = h2[1].trim();
+      buf = [line];
+    } else if (current) {
+      buf.push(line);
+    }
+  }
+  if (current) sections.set(current, buf.join('\n').trim());
+  return sections;
+}
+
+const pickSections = (sections, names) =>
+  names.map((n) => sections.get(n)).filter(Boolean).join('\n\n');
+
+/**
+ * Intro/Setup content: auto-pulled from the KB doc's matching sections when one exists
+ * (each KB section already carries its own heading, so no wrapper heading is added here);
+ * otherwise falls back to an optional hand file, then to nothing.
+ */
+async function loadFrontMatterBlock(kbSections, kbSectionNames, fallbackFile) {
+  if (kbSections) {
+    const picked = pickSections(kbSections, kbSectionNames);
+    if (picked) return picked;
+  }
+  return readIfPresent(path.join(OUT, fallbackFile));
+}
+
+async function loadUsageBlock() {
+  const override = await readIfPresent(path.join(OUT, '3-usage.md'));
+  if (override) return override;
+  return ['## Usage', '', 'The following chapters walk through everyday tasks.'].join('\n');
+}
+
+async function loadTroubleshootingBlock() {
+  const current = await readIfPresent(path.join(OUT, '4-troubleshooting.md'));
+  if (current) return current;
+  return readIfPresent(path.join(OUT, '_outro.md'));
 }
 
 /** Plugin name and version from setup.php; env wins if provided. */
@@ -112,6 +177,22 @@ const main = async () => {
   await renumberAssetDirs(manifests);
   const date = new Date().toISOString().slice(0, 10);
 
+  const kbPath = await findKbFile();
+  const kbSections = kbPath ? parseKbSections(await fs.readFile(kbPath, 'utf8')) : null;
+
+  const introBlock = await loadFrontMatterBlock(
+    kbSections,
+    ['Description', 'Why this plugin?', 'Supported providers', 'Features list', 'Impacted GLPI items', 'Interactions with other plugins'],
+    '1-intro.md',
+  );
+  const setupBlock = await loadFrontMatterBlock(
+    kbSections,
+    ['Permissions', 'Automatic Actions', 'Notifications', 'Rules', 'Setup'],
+    '2-setup.md',
+  );
+  const usageBlock = await loadUsageBlock();
+  const troubleshootingBlock = await loadTroubleshootingBlock();
+
   const toc = manifests
     .map((m, i) => `${i + 1}. [${m.title}](#${slugify(`${i + 1}. ${m.title}`)})`)
     .join('\n');
@@ -119,17 +200,21 @@ const main = async () => {
   const doc = [
     `# ${name} — User Manual`,
     '',
-    `<!-- GENERATED FILE — edit the specs in tools/manual-generator/specs/ or _intro.md / _outro.md -->`,
+    `<!-- GENERATED FILE — edit docs/kb/*.md, tools/manual-generator/specs/, or the numbered override files in ${OUT} -->`,
     `> ${S.banner(`${name} ${version}`, glpi, date)}`,
     '',
-    await readIfPresent(path.join(OUT, '_intro.md')),
+    introBlock,
     '',
     `## ${S.toc}`,
     '',
     toc,
     '',
+    setupBlock,
+    '',
+    usageBlock,
+    '',
     ...manifests.map((m, i) => renderChapter(m, i + 1)),
-    await readIfPresent(path.join(OUT, '_outro.md')),
+    troubleshootingBlock,
     '',
   ]
     .filter((block, i, arr) => !(block === '' && arr[i - 1] === '')) // collapse blank runs

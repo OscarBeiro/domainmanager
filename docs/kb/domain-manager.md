@@ -10,6 +10,18 @@ Domain Manager keeps GLPI's Domain and DNS record inventory synchronized with re
 - Without this plugin, "is our inventory accurate?" means logging into each registrar/DNS panel one by one. There is no official plugin that talks to registrar/DNS APIs.
 - Editing a DNS record in GLPI normally does nothing to the real zone — teams end up maintaining two copies by hand, which drift silently. Domain Manager can push changes live and locks fields that were just synced so nobody overwrites fresh data by accident.
 
+## Supported providers
+
+Three drivers cover both registrar (lifecycle) data and DNS zone data; the proxy toggle is a Cloudflare-specific feature (Cloudflare's "orange cloud" CDN/proxying):
+
+| Provider | Registrar (lifecycle) | DNS sync (read) | DNS write-back | Proxy toggle |
+|---|---|---|---|---|
+| Cloudflare | Yes | Yes | Yes | Yes |
+| IONOS | Yes | Yes | Yes | No |
+| Dinahosting | Yes | Yes | No | No |
+
+Beyond these three, Domain Manager auto-detects a domain's DNS provider from its NS records even without any credentials configured — useful for portfolio-wide visibility even where you don't hold an API key. Auto-detection alone has no write-back. Recognized providers: Ascio, AWS Route 53, Google Cloud DNS, Azure DNS, GoDaddy, OVHcloud, DigitalOcean, Linode (Akamai), Vercel, Gandi, Namecheap, Hetzner, Hostalia, Squarespace, Wix, Hostinger, Porkbun, cdmon, one.com, NS1 (IBM NS1 Connect), bunny.net (Bunny DNS), Strato, Arsys, RaiolaNetworks and LucusHost.
+
 ## Features list
 
 - Registrar sync: pulls registration date, expiry date, status, and lock/privacy/DNSSEC/auto-renew flags into each Domain.
@@ -68,7 +80,7 @@ None. Domain Manager has no dependency on, and no integration hooks for, other G
 
 | Name | Affected action | Recommended execution |
 |---|---|---|
-| DomainSync | Syncs registration lifecycle and DNS records for a batch of domains, oldest-synced first | Every 10 minutes |
+| DomainSync | Syncs registration lifecycle and DNS records for a batch of domains, oldest-synced first (default batch size: 3 domains/run, tunable from Setup > Automatic actions) | Every 10 minutes |
 | RdapEnrichment | Looks up missing RDAP data for one domain per run (max 1 lookup/domain/day) | Every 10 minutes |
 
 ## Notifications
@@ -86,7 +98,7 @@ None — Domain Manager does not add criteria or actions to GLPI's Rules engine.
 **Manual install**
 
 1. Copy the plugin folder into GLPI's `plugins/` directory as `domainmanager`.
-2. Run `composer install --no-dev` inside the plugin folder to install dependencies (Cloudflare/IONOS/Dinahosting SDKs, etc.).
+2. Run `composer install --no-dev` inside the plugin folder to install dependencies (only `php-domain-parser`; the Cloudflare/IONOS/Dinahosting drivers call each provider's REST API directly over Guzzle, there are no vendor SDKs).
 3. In GLPI, go to Setup > Plugins, install and enable "Domain Manager".
 
 **Marketplace**
@@ -95,7 +107,7 @@ Install and enable from the GLPI Marketplace like any other plugin (no extra ste
 
 ### Configuration
 
-1. **Setup > General > Domain Manager**: set the default Domain Type for imported domains, optionally enable global read-only mode, and set the sync safety-guard thresholds (max record count/percentage allowed to trash per sync).
+1. **Setup > General > Domain Manager**: set the default Domain Type for imported domains, optionally enable global read-only mode, and set the sync safety-guard thresholds (max record count/percentage allowed to trash per sync). This page also shows a read-only RDAP enrichment status display (pending count, last processed time).
 2. **Suppliers > [pick a supplier] > Domain Manager**: choose the API driver (Cloudflare, IONOS, or Dinahosting) and enter credentials, then click "Check Connection" to validate.
 3. **Setup > Automatic actions**: enable and schedule `DomainSync` and `RdapEnrichment`, set the DomainSync batch size.
 4. **Administration > Profiles > Domain Manager**: grant the unlock right and per-record-type write-back permissions to the relevant profiles.
