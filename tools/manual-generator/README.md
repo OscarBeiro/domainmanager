@@ -15,6 +15,12 @@ for it: its source lives in `docs/manual/<locale>/_troubleshooting.md` (never ov
 the renderer) and `04-troubleshooting.md` is the generated file built from it. See
 `render-manual.mjs`'s header comment for the exact section/file layout.
 
+**Production versions only.** `render-manual.mjs` refuses to run (non-zero exit) while
+`setup.php`'s `PLUGIN_DOMAINMANAGER_VERSION` still carries a `-dev`/`-alpha`/`-beta`/`-rc`
+suffix — a client-facing manual must never advertise a pre-release build. Bump the version
+past the pre-release stage before regenerating for a real release; `MANUAL_ALLOW_PRERELEASE=1`
+is available for a developer's own local test render only, never for CI or a release job.
+
 **Current scope: 2 chapters, English only** — Supplier driver setup/import
 (`10-supplier-setup.manual.spec.ts`) and domain monitoring/DNS records
 (`20-domain-monitoring.manual.spec.ts`). More chapters (dashboard, profile rights) and

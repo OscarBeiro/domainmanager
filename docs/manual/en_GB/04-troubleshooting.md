@@ -1,6 +1,6 @@
 # 4. Troubleshooting
 
-> Generated for **domainmanager 1.7.1-beta2** on GLPI 11.0 — 2026-08-11. Screenshots are produced automatically; do not edit generated sections by hand.
+> Generated for **domainmanager 1.7.1** on GLPI 11.0 — 2026-08-11. Screenshots are produced automatically; do not edit generated sections by hand.
 
 *Part of the domainmanager manual — see also [1. Introduction](01-intro.md), [2. Setup](02-setup.md), [3. Usage](03-usage.md).*
 

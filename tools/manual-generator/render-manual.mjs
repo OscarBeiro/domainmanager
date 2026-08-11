@@ -97,6 +97,11 @@ function namesOnly(block) {
   return names.length ? names.map((n) => `- ${n}`).join('\n') : '';
 }
 
+// A manual is a client deliverable: it must never advertise a dev/alpha/beta/rc build as
+// if it were the released product. Matches a trailing -dev, -alpha, -beta, -rc (optionally
+// followed by a number), case-insensitively, e.g. "1.7.1-beta2", "2.0.0-rc1", "1.0-dev".
+const PRERELEASE_RE = /-(dev|alpha|beta|rc)\.?\d*$/i;
+
 /** Plugin name and version from setup.php; env wins if provided. */
 async function pluginInfo() {
   let name = process.env.PLUGIN_NAME ?? path.basename(process.cwd());
@@ -106,6 +111,14 @@ async function pluginInfo() {
     version = setup.match(/define\(\s*'PLUGIN_\w+_VERSION'\s*,\s*'([^']+)'/)?.[1] ?? 'unknown';
     const declared = setup.match(/PLUGIN_(\w+)_VERSION/)?.[1];
     if (declared && !process.env.PLUGIN_NAME) name = declared.toLowerCase();
+  }
+  if (PRERELEASE_RE.test(version) && process.env.MANUAL_ALLOW_PRERELEASE !== '1') {
+    throw new Error(
+      `refusing to build the manual for pre-release version '${version}' — this pipeline ` +
+      `only targets production releases (no -dev/-alpha/-beta/-rc). Bump the version past ` +
+      `the pre-release stage before regenerating, or set MANUAL_ALLOW_PRERELEASE=1 for a ` +
+      `local-only test render.`,
+    );
   }
   return { name, version, glpi: process.env.GLPI_VERSION ?? '11.0' };
 }
