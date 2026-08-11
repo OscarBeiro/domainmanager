@@ -22,8 +22,16 @@ export const DEMO = {
     // A fixed future date, never "today + 30 days".
     expiry: '2027-06-30',
   },
+  domainLocked: {
+    name: 'locked-example.com',
+    // Same supplier/driver as domain above, but in managed_readonly state (write failed)
+    // — used to demonstrate locked-field UI in chapter 5.
+  },
   dnsRecord: {
     a: { name: '@', type: 'A', value: '203.0.113.10', ttl: '3600' }, // TEST-NET-3, non-routable
     cname: { name: 'www', type: 'CNAME', value: 'manual-example.com', ttl: '3600' },
+  },
+  dnsRecordLocked: {
+    a: { name: '@', type: 'A', value: '203.0.113.20', ttl: '3600' }, // On locked-example.com
   },
 } as const;

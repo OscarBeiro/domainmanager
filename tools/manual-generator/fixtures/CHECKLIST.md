@@ -4,9 +4,9 @@ Build this state once by hand, then `tools/manual-generator/fixtures/dump.sh`. E
 to be photographed, so choose values that read as examples in any language and that exercise
 the cases the manual needs to explain.
 
-Current manual scope is **4 chapters, English only**: (0) granting Domain Manager rights to
+Current manual scope is **5 chapters, English only**: (0) granting Domain Manager rights to
 a profile, (1) Supplier driver setup and domain import (error case), (2) Domain status panel and DNS
-record management, (3) Bulk-importing multiple domains. Sections 2–5 below are scoped to those chapters — extend them here
+record management, (3) Bulk-importing multiple domains, (4) Editing records and locked-field state. Sections 2–5 below are scoped to those chapters — extend them here
 first when a new chapter is added.
 
 ## 1. Documentation users *(keep)*
@@ -103,6 +103,13 @@ TEST-NET-3, guaranteed non-routable) and a **CNAME** (`www` → `manual-example.
 variety to show the record-type UI without needing every type. Same values as
 `tools/manual-generator/specs/fixtures.ts` — the spec and the fixture must agree, and `fixtures.ts` is
 the source of truth for names the specs type or click.
+
+## 5d. Locked domain & record (chapter 5)
+
+A second Domain, name **`locked-example.com`**, linked to the Manual Demo Registrar supplier as **registrar only** (no DNS supplier, `dns_suppliers_id=0`). This domain demonstrates the locked-field UI on records when a domain has no write-capable DNS provider configured.
+
+- **Why locked:** When a domain has no DNS provider or the provider doesn't support write-back, its records cannot be edited in GLPI — they're read-only/imported. This state is rendered by setting `dns_suppliers_id=0` (no provider link), which makes `DnsRecordWriteback::isDomainDnsEditable()` return false in `src/DomainForm.php`, triggering the locked-field banner and disabling edit controls.
+- One **A** record (`@` → `203.0.113.20`, TEST-NET-3) with corresponding `ImportedRecord` row to mark it as plugin-managed. When opened for edit, this record shows the lock-field alert and disabled data/TTL inputs, demonstrating to users why some records can't be edited inline.
 
 ## 5b. `url_base` must match `BASE_URL` *(keep — easy to lose on a rebuild)*
 
