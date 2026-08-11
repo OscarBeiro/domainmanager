@@ -75,6 +75,7 @@ This manual documents version 1.7.1-beta1 against GLPI 11.0.8.
 4. [Bulk-importing domains from a Supplier](#bulk-importing-domains-from-a-supplier)
 5. [Editing an existing record & the managed/locked-field state](#editing-an-existing-record-the-managed-locked-field-state)
 6. [Proxy vs. origin IP indicators](#proxy-vs-origin-ip-indicators)
+7. [Dashboard cards & drill-down](#dashboard-cards-drill-down)
 
 ## Granting Domain Manager rights to a profile
 
@@ -277,6 +278,29 @@ Below the **Target** (origin IP) for any proxied record, a second line shows the
 ![Proxy service anycast addresses appear below the origin IP on proxied records](assets/proxy-indicators/03-proxy-address-detail.png)
 
 *Proxy service anycast addresses appear below the origin IP on proxied records*
+
+## Dashboard cards & drill-down
+
+Domain Manager adds a set of widgets to GLPI's own dashboard system (the same "Home" dashboard, or any custom dashboard, that other GLPI plugins and core itemtypes contribute cards to). Add them from the dashboard's **Edit** mode, like any other GLPI widget, then arrange and resize them as needed.
+
+![Domain Manager's dashboard cards added to a GLPI dashboard](assets/dashboard/01-dashboard-overview.png)
+
+*Domain Manager's dashboard cards added to a GLPI dashboard*
+
+### Available cards
+
+- **Number of Managed Domains** and **Number of Managed Records** — simple totals.
+- **Number of Domains expiring soon** — domains whose registration expires within 30 days.
+- **Managed domains per registrar**, **per DNS provider**, **by TLD**, and **per registrar by TLD** — breakdown charts you can use to see where your domain portfolio is concentrated.
+- **DNS sync status** and **Registrar sync status** — breakdowns of how many domains are currently syncing cleanly versus in a warning or error state, the fleet-wide view of the per-domain status shown in [Monitoring a domain and its DNS records](#monitoring-a-domain-and-its-dns-records).
+- **Managed records by type**, **by DNS provider**, and **per DNS provider by type** — the same kind of breakdown, one level down at the DNS record.
+- **Proxied records** — how many managed records are currently proxied (see [Proxy vs. origin IP indicators](#proxy-vs-origin-ip-indicators)).
+
+### Drilling down from a chart segment
+
+Clicking a segment of any breakdown chart (a registrar's slice of "Managed domains per registrar", an "Error" slice of "DNS sync status", and so on) opens GLPI's Domain search already filtered to match that segment — so a spike in errors on the dashboard is one click away from the actual list of affected domains.
+
+> **Note:** this chapter's screenshot is a placeholder pending a real capture from a populated instance.
 
 ## Troubleshooting
 
