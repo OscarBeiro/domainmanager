@@ -22,6 +22,14 @@ export const DOC_USERS: Record<string, { user: string; pass: string }> = {
   en_GB: { user: 'manual_en', pass: 'ManualPass1234' },
 };
 
+/**
+ * Second documentation user for Chapter 1 (rights & profiles): a Technician-profile user
+ * with no Domain Manager rights granted, used only to demonstrate that the plugin's rights
+ * matrix genuinely gates access — chapter 1's spec grants rights to this user's profile
+ * (id 6, "Technician") as its own Super-Admin session action, it never logs in as this user.
+ */
+export const RESTRICTED_USER = { user: 'manual_en_restricted', profileName: 'Technician' };
+
 /** Kills every source of pixel jitter that isn't the UI itself. */
 export async function stabilise(page: Page): Promise<void> {
   await page.addStyleTag({
