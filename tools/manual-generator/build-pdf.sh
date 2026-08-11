@@ -17,11 +17,14 @@ LOCALES="${1:-${MANUAL_LOCALES}}"
 mkdir -p tools/manual-generator/dist
 
 for LOC in ${LOCALES}; do
-  SRC="docs/manual/${LOC}/MANUAL.md"
-  [[ -f "$SRC" ]] || { echo "skipping ${LOC}: no ${SRC}"; continue; }
+  DIR="docs/manual/${LOC}"
+  SRCS=("${DIR}/01-intro.md" "${DIR}/02-setup.md" "${DIR}/03-usage.md" "${DIR}/04-troubleshooting.md")
+  MISSING=0
+  for f in "${SRCS[@]}"; do [[ -f "$f" ]] || MISSING=1; done
+  [[ "$MISSING" -eq 0 ]] || { echo "skipping ${LOC}: missing one of ${SRCS[*]}"; continue; }
   OUT="tools/manual-generator/dist/MANUAL-${PLUGIN_KEY}-${VERSION}-${LOC}.pdf"
   echo "==> ${OUT}"
-  pandoc "$SRC" \
+  pandoc "${SRCS[@]}" \
     --resource-path="docs/manual/${LOC}" \
     --toc --toc-depth=2 \
     --pdf-engine=weasyprint \

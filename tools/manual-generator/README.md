@@ -6,11 +6,14 @@ Playwright specs in `specs/` plus `docs/kb/domain-manager.md`. Intro and Setup c
 auto-pulled from that KB doc's matching sections (Description/Why this plugin?/Supported
 providers/Features list/Impacted GLPI items/Interactions with other plugins for Intro;
 Permissions/Automatic Actions/Notifications/Rules/Setup for Setup) — there is no
-hand-written intro/setup file to keep in sync. Only Troubleshooting
-(`docs/manual/<locale>/4-troubleshooting.md`) is hand-written, since there's no automatable
-source for it. See `render-manual.mjs`'s header comment for the full fallback chain
-(optional `1-intro.md`/`2-setup.md`/`3-usage.md` overrides, legacy `_intro.md`/`_outro.md`
-support).
+hand-written intro/setup file to keep in sync. The manual is published as four numbered,
+cross-linked files — `01-intro.md`, `02-setup.md`, `03-usage.md`, `04-troubleshooting.md` —
+instead of one monolithic `MANUAL.md`; section numbers (`2.3`, `2.3.1`, ...) are assigned by
+`render-manual.mjs` from the chapter order baked into that script (which chapters land in
+Setup vs. Usage). Only Troubleshooting is hand-written, since there's no automatable source
+for it: its source lives in `docs/manual/<locale>/_troubleshooting.md` (never overwritten by
+the renderer) and `04-troubleshooting.md` is the generated file built from it. See
+`render-manual.mjs`'s header comment for the exact section/file layout.
 
 **Current scope: 2 chapters, English only** — Supplier driver setup/import
 (`10-supplier-setup.manual.spec.ts`) and domain monitoring/DNS records
@@ -20,8 +23,8 @@ locales are expected later; see `fixtures/CHECKLIST.md` before adding either.
 Packaging: no release/packaging script exists in this repo yet. When one is added, keep
 `tools/manual-generator/**` (specs, fixtures, node_modules) out of the shipped plugin zip —
 it's a repo/GitHub-release artifact, not something the plugin needs at runtime. The generated
-`docs/manual/en_GB/MANUAL.md` and its screenshots are still committed to git so PRs show
-documentation changes and the repo doubles as the published manual.
+`docs/manual/en_GB/0{1,2,3,4}-*.md` files and their screenshots are still committed to git so
+PRs show documentation changes and the repo doubles as the published manual.
 
 ## One-time setup
 
@@ -47,7 +50,7 @@ npm run manual:fixture:dump
 
 ```bash
 cd tools/manual-generator
-npm run manual                     # restore fixture → capture → render MANUAL.md
+npm run manual                     # restore fixture → capture → render the 4 manual files
 npm run manual:pdf                 # optional, for a release
 ```
 
@@ -82,12 +85,12 @@ tools/manual-generator/
   manual.env            stack-specific values (gitignored); every script sources it
   manual.css            print stylesheet for the PDF build
   run.sh                capture in a version-matched Playwright container
-  render-manual.mjs     manifests → MANUAL.md
-  build-pdf.sh          MANUAL.md → dist/MANUAL-domainmanager-<version>-<locale>.pdf
+  render-manual.mjs     manifests → 01-intro.md/02-setup.md/03-usage.md/04-troubleshooting.md
+  build-pdf.sh          the 4 manual files → dist/MANUAL-domainmanager-<version>-<locale>.pdf
   lib/                  manual-recorder.ts (the fixture), glpi.ts (login, routes, masking)
   specs/                narrated scenarios + fixtures.ts
   fixtures/             golden.sql.gz (after dump.sh), dump.sh, restore.sh, CHECKLIST.md
 
-docs/manual/<locale>/    4-troubleshooting.md (hand-written); MANUAL.md, assets/ (generated)
+docs/manual/<locale>/    _troubleshooting.md (hand-written); 0{1,2,3,4}-*.md, assets/ (generated)
 docs/kb/                domain-manager.md (hand-written; also feeds the manual's Intro/Setup)
 ```
