@@ -86,25 +86,27 @@
         </div>
     {% else %}
         {% set entry = primary_capability is not null ? (connection_test[primary_capability]|default({'status': 'never', 'message': '', 'http_code': null, 'date': null})) : {'status': 'never', 'message': '', 'http_code': null, 'date': null} %}
-        {% set connection_value %}
-            <div class="d-flex align-items-center gap-2">
-                <span class="badge {{ status_classes[entry.status]|default('text-bg-secondary') }}"
-                      id="domainmanager-test-badge">
-                    {{ status_labels[entry.status]|default(entry.status) }}
+        {% set status_value %}
+            <span class="badge {{ status_classes[entry.status]|default('text-bg-secondary') }}"
+                  id="domainmanager-test-badge">
+                {{ status_labels[entry.status]|default(entry.status) }}
+            </span>
+            {% if entry.http_code %}
+                <span class="text-muted small" id="domainmanager-test-httpcode">
+                    HTTP {{ entry.http_code }}
                 </span>
-                {% if entry.http_code %}
-                    <span class="text-muted small" id="domainmanager-test-httpcode">
-                        HTTP {{ entry.http_code }}
-                    </span>
-                {% else %}
-                    <span class="text-muted small d-none" id="domainmanager-test-httpcode"></span>
-                {% endif %}
-            </div>
-            <div class="form-text" id="domainmanager-test-message">
-                {{ entry.message }}
-            </div>
+            {% else %}
+                <span class="text-muted small d-none" id="domainmanager-test-httpcode"></span>
+            {% endif %}
         {% endset %}
-        {{ fields.htmlField('domainmanager_test_connection', connection_value, __('Connection', 'domainmanager'), {
+        {{ fields.htmlField('domainmanager_test_status', status_value, __('Connection status', 'domainmanager'), {
+            'field_class': 'col-12 col-sm-6 domainmanager-test-capability',
+            'add_field_attribs': primary_capability is not null ? {} : {'hidden': 'hidden'},
+        }) }}
+        {% set message_value %}
+            <span id="domainmanager-test-message">{{ entry.message }}</span>
+        {% endset %}
+        {{ fields.htmlField('domainmanager_test_message', message_value, __('Message', 'domainmanager'), {
             'field_class': 'col-12 col-sm-6 domainmanager-test-capability',
             'add_field_attribs': primary_capability is not null ? {} : {'hidden': 'hidden'},
         }) }}
