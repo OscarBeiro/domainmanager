@@ -194,7 +194,7 @@ class DomainState extends CommonDBTM
                 // Appended after sorting so it reads as a distinct,
                 // catch-all last choice rather than alphabetized among
                 // real provider names.
-                $choices[NsProviderRegistry::PROVIDER_UNKNOWN] = __('Unknown');
+                $choices[NsProviderRegistry::PROVIDER_UNKNOWN] = __('Unknown', 'domainmanager');
 
                 $options['value'] = $values[$field] ?? '';
                 return Dropdown::showFromArray($name, $choices, $options);
