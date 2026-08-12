@@ -259,7 +259,7 @@ class SupplierTab extends CommonGLPI
      * the same way ProjectTask's own task-list tab validates `$_GET['sort']`
      * before trusting it.
      */
-    private const DOMAINS_SORT_COLUMNS = ['name', 'registrar', 'dns', 'entity'];
+    private const DOMAINS_SORT_COLUMNS = ['name', 'registrar', 'registrar_status', 'dns', 'dns_status', 'entity'];
 
     /**
      * Builds the full `components/datatable.html.twig` param array for the
@@ -293,8 +293,9 @@ class SupplierTab extends CommonGLPI
         $order = $order === 'DESC' ? 'DESC' : 'ASC';
 
         $filters = is_array($_GET['filters'] ?? null) ? $_GET['filters'] : [];
-        $registrar_status_filter = array_values(array_filter((array) ($filters['registrar'] ?? [])));
-        $dns_kind_filter          = array_values(array_filter((array) ($filters['dns'] ?? [])));
+        $name_filter              = trim((string) ($filters['name'] ?? ''));
+        $registrar_status_filter = array_values(array_filter((array) ($filters['registrar_status'] ?? [])));
+        $dns_kind_filter          = array_values(array_filter((array) ($filters['dns_status'] ?? [])));
 
         $total_number = count($domains);
 
@@ -310,6 +311,12 @@ class SupplierTab extends CommonGLPI
             return $domain;
         }, $domains);
 
+        if ($name_filter !== '') {
+            $rows = array_values(array_filter(
+                $rows,
+                static fn(array $d): bool => stripos($d['name'], $name_filter) !== false,
+            ));
+        }
         if ($registrar_status_filter !== []) {
             $rows = array_values(array_filter(
                 $rows,
@@ -326,12 +333,16 @@ class SupplierTab extends CommonGLPI
         $filtered_number = count($rows);
 
         $entity_names = [];
-        $sort_key      = static function (array $domain) use ($sort, &$entity_names): string {
+        $sort_key      = static function (array $domain) use ($sort, $status_labels, $dns_kind_labels, &$entity_names): string {
             switch ($sort) {
                 case 'registrar':
                     return $domain['_registrar']['name'] ?? '';
+                case 'registrar_status':
+                    return $status_labels[$domain['registrar_status']] ?? $domain['registrar_status'];
                 case 'dns':
                     return $domain['_dns']['name'];
+                case 'dns_status':
+                    return $dns_kind_labels[$domain['_dns']['kind']] ?? $domain['_dns']['kind'];
                 case 'entity':
                     $entities_id = $domain['entities_id'];
                     if (!isset($entity_names[$entities_id])) {
@@ -356,10 +367,18 @@ class SupplierTab extends CommonGLPI
 
         $entries = array_map(static function (array $domain) use ($status_labels, $status_classes, $dns_kind_labels, $dns_kind_classes): array {
             return [
-                'name'      => self::renderDomainNameCell($domain),
-                'registrar' => self::renderRegistrarCell($domain, $status_labels, $status_classes),
-                'dns'       => self::renderDnsCell($domain, $dns_kind_labels, $dns_kind_classes),
-                'entity'    => self::describeEntity($domain['entities_id']),
+                'name'             => self::renderDomainNameCell($domain),
+                'registrar'        => self::renderRegistrarNameCell($domain),
+                'registrar_status' => self::renderStatusBadgeCell(
+                    $status_labels[$domain['registrar_status']] ?? $domain['registrar_status'],
+                    $status_classes[$domain['registrar_status']] ?? 'text-bg-secondary',
+                ),
+                'dns'              => self::renderDnsNameCell($domain),
+                'dns_status'       => self::renderStatusBadgeCell(
+                    $dns_kind_labels[$domain['_dns']['kind']] ?? $domain['_dns']['kind'],
+                    self::resolveDnsStatusClass($domain, $dns_kind_classes),
+                ),
+                'entity'           => self::describeEntity($domain['entities_id']),
             ];
         }, $page);
 
@@ -370,29 +389,39 @@ class SupplierTab extends CommonGLPI
             'order'           => $order,
             'filters'         => $filters,
             'columns'         => [
-                'name'      => ['label' => __('Domain', 'domainmanager')],
-                'registrar' => [
-                    'label'            => __('Registrar', 'domainmanager'),
+                'name'             => ['label' => __('Domain', 'domainmanager')],
+                'registrar'        => [
+                    'label'     => __('Registrar', 'domainmanager'),
+                    'no_filter' => true,
+                ],
+                'registrar_status' => [
+                    'label'            => __('Registrar status', 'domainmanager'),
                     'filter_formatter' => 'array',
                 ],
-                'dns'       => [
-                    'label'            => __('DNS Provider', 'domainmanager'),
+                'dns'              => [
+                    'label'     => __('DNS Provider', 'domainmanager'),
+                    'no_filter' => true,
+                ],
+                'dns_status'       => [
+                    'label'            => __('DNS status', 'domainmanager'),
                     'filter_formatter' => 'array',
                 ],
-                'entity'    => [
+                'entity'           => [
                     'label'     => _n('Entity', 'Entities', 1),
                     'no_filter' => true,
                 ],
             ],
             'columns_values'  => [
-                'registrar' => $status_labels,
-                'dns'       => $dns_kind_labels,
+                'registrar_status' => $status_labels,
+                'dns_status'       => $dns_kind_labels,
             ],
             'formatters'      => [
-                'name'      => 'raw_html',
-                'registrar' => 'raw_html',
-                'dns'       => 'raw_html',
-                'entity'    => 'raw_html',
+                'name'             => 'raw_html',
+                'registrar'        => 'raw_html',
+                'registrar_status' => 'raw_html',
+                'dns'              => 'raw_html',
+                'dns_status'       => 'raw_html',
+                'entity'           => 'raw_html',
             ],
             'entries'         => $entries,
             'total_number'    => $total_number,
@@ -417,55 +446,76 @@ class SupplierTab extends CommonGLPI
     }
 
     /**
-     * @param  array{registrar_status:string, _registrar:?array{name:string, url:string}} $domain
-     * @param  array<string, string> $status_labels
-     * @param  array<string, string> $status_classes
+     * Registrar column: the linked Supplier's name/link only — no status
+     * badge, so filtering this column's own "Registrar status" companion
+     * column isn't confused with filtering by which registrar it is
+     * (§ Phase 95 user-caught fix: the two used to be one combined cell,
+     * which read as "filter by registrar" while actually filtering by
+     * status).
+     *
+     * @param  array{_registrar:?array{name:string, url:string}} $domain
      * @return string
      */
-    private static function renderRegistrarCell(array $domain, array $status_labels, array $status_classes): string
+    private static function renderRegistrarNameCell(array $domain): string
     {
         if ($domain['_registrar'] === null) {
             return '<span class="text-muted">' . __('None', 'domainmanager') . '</span>';
         }
 
-        $status = $domain['registrar_status'];
-
         return sprintf(
-            '<a href="%s">%s</a> <span class="badge %s ms-1">%s</span>',
+            '<a href="%s">%s</a>',
             htmlspecialchars($domain['_registrar']['url'], ENT_QUOTES),
             htmlspecialchars($domain['_registrar']['name'], ENT_QUOTES),
-            htmlspecialchars($status_classes[$status] ?? 'text-bg-secondary', ENT_QUOTES),
-            htmlspecialchars($status_labels[$status] ?? $status, ENT_QUOTES),
         );
     }
 
     /**
-     * @param  array{dns_status:string, _dns:array{kind:string, name:string, url:?string}} $domain
-     * @param  array<string, string> $dns_kind_labels
-     * @param  array<string, string> $dns_kind_classes
+     * DNS Provider column: the resolved provider's name/link only — its own
+     * "DNS status" companion column carries the badge. See
+     * renderRegistrarNameCell()'s docblock for why these are separate.
+     *
+     * @param  array{_dns:array{kind:string, name:string, url:?string}} $domain
      * @return string
      */
-    private static function renderDnsCell(array $domain, array $dns_kind_labels, array $dns_kind_classes): string
+    private static function renderDnsNameCell(array $domain): string
     {
         $dns = $domain['_dns'];
 
-        $name_html = $dns['url'] !== null
+        return $dns['url'] !== null
             ? sprintf('<a href="%s">%s</a>', htmlspecialchars($dns['url'], ENT_QUOTES), htmlspecialchars($dns['name'], ENT_QUOTES))
             : htmlspecialchars($dns['name'], ENT_QUOTES);
+    }
 
-        // A plugin-managed DNS provider currently in error reads as more
-        // alarming than the neutral "Plugin managed" badge alone would
-        // suggest — same override the previous table markup applied.
-        $class = ($dns['kind'] === 'managed' && $domain['dns_status'] === DomainState::STATUS_ERROR)
-            ? 'text-bg-danger'
-            : ($dns_kind_classes[$dns['kind']] ?? 'text-bg-secondary');
-
+    /**
+     * @param  string $label
+     * @param  string $class
+     * @return string
+     */
+    private static function renderStatusBadgeCell(string $label, string $class): string
+    {
         return sprintf(
-            '%s <span class="badge %s ms-1">%s</span>',
-            $name_html,
+            '<span class="badge %s">%s</span>',
             htmlspecialchars($class, ENT_QUOTES),
-            htmlspecialchars($dns_kind_labels[$dns['kind']] ?? $dns['kind'], ENT_QUOTES),
+            htmlspecialchars($label, ENT_QUOTES),
         );
+    }
+
+    /**
+     * A plugin-managed DNS provider currently in error reads as more
+     * alarming than the neutral "Plugin managed" badge alone would suggest
+     * — same override the original hand-rolled table markup applied.
+     *
+     * @param  array{dns_status:string, _dns:array{kind:string}} $domain
+     * @param  array<string, string> $dns_kind_classes
+     * @return string
+     */
+    private static function resolveDnsStatusClass(array $domain, array $dns_kind_classes): string
+    {
+        if ($domain['_dns']['kind'] === 'managed' && $domain['dns_status'] === DomainState::STATUS_ERROR) {
+            return 'text-bg-danger';
+        }
+
+        return $dns_kind_classes[$domain['_dns']['kind']] ?? 'text-bg-secondary';
     }
 
     /**
