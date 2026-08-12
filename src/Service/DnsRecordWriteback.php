@@ -261,7 +261,7 @@ class DnsRecordWriteback
                 DomainState::recordWriteOutcome($domains_id, false, $message);
             }
             PluginLogger::error("Failed to push new DNS record for domain #$domains_id", $e::class . ': ' . $e->getMessage());
-            self::logWriteAttempt($domains_id, $type, $name, self::driverLabel(self::configuredDriverName($state)), __('create', 'domainmanager'), false, $message);
+            self::logWriteAttempt($domains_id, $type, $name, self::driverLabel(self::configuredDriverName($state)), __('Create'), false, $message);
             self::abort($item, sprintf(__('Could not create this record at %s: %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state)), $message));
         }
     }
@@ -540,7 +540,7 @@ class DnsRecordWriteback
                 DomainState::recordWriteOutcome($domains_id, false, $message);
             }
             PluginLogger::error("Failed to push updated DNS record #{$item->getID()} for domain #$domains_id", $e::class . ': ' . $e->getMessage());
-            self::logWriteAttempt($domains_id, $type, $name, self::driverLabel(self::configuredDriverName($state)), __('update', 'domainmanager'), false, $message);
+            self::logWriteAttempt($domains_id, $type, $name, self::driverLabel(self::configuredDriverName($state)), __('Update'), false, $message);
             self::abort($item, sprintf(__('Could not update this record at %s: %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state)), $message));
             return true;
         }
@@ -744,7 +744,7 @@ class DnsRecordWriteback
                 $type,
                 $item->fields['name'],
                 self::driverLabel(self::configuredDriverName($state)),
-                __('delete', 'domainmanager'),
+                __('Delete'),
                 true,
                 __('record removed', 'domainmanager'),
             );
@@ -756,7 +756,7 @@ class DnsRecordWriteback
                 DomainState::recordWriteOutcome($domains_id, false, $message);
             }
             PluginLogger::error("Failed to push deletion of DNS record #{$item->getID()} for domain #$domains_id", $e::class . ': ' . $e->getMessage());
-            self::logWriteAttempt($domains_id, $type, $item->fields['name'], self::driverLabel(self::configuredDriverName($state)), __('delete', 'domainmanager'), false, $message);
+            self::logWriteAttempt($domains_id, $type, $item->fields['name'], self::driverLabel(self::configuredDriverName($state)), __('Delete'), false, $message);
             self::abort($item, sprintf(__('Could not delete this record at %s: %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state)), $message));
             return true;
         }
@@ -881,7 +881,7 @@ class DnsRecordWriteback
                 $type,
                 $name,
                 self::driverLabel(self::configuredDriverName($state)),
-                __('restore', 'domainmanager'),
+                __('Restore'),
                 true,
                 sprintf(__('recreated → %s (TTL %d)', 'domainmanager'), $data, $ttl),
             );
@@ -893,7 +893,7 @@ class DnsRecordWriteback
                 DomainState::recordWriteOutcome($domains_id, false, $message);
             }
             PluginLogger::error("Failed to recreate restored DNS record #{$item->getID()} for domain #$domains_id", $e::class . ': ' . $e->getMessage());
-            self::logWriteAttempt($domains_id, $type, $name, self::driverLabel(self::configuredDriverName($state)), __('restore', 'domainmanager'), false, $message);
+            self::logWriteAttempt($domains_id, $type, $name, self::driverLabel(self::configuredDriverName($state)), __('Restore'), false, $message);
             self::abort($item, sprintf(__('Could not recreate this record at %s: %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state)), $message));
             return true;
         }
@@ -1202,7 +1202,7 @@ class DnsRecordWriteback
      * @param  string $type
      * @param  string $name
      * @param  string $provider
-     * @param  string $operation e.g. __('create')/__('update')/__('delete')
+     * @param  string $operation e.g. __('Create')/__('Update')/__('Delete')
      * @param  bool   $success
      * @param  string $detail    short outcome detail (new value, or error message)
      * @return void
@@ -1212,7 +1212,7 @@ class DnsRecordWriteback
         $outcome = $success ? __('succeeded', 'domainmanager') : __('failed', 'domainmanager');
         Log::history($domains_id, Domain::class, [0, '', '[Domain Manager] ' . sprintf(
             __('%1$s %2$s %3$s at %4$s %5$s: %6$s', 'domainmanager'),
-            ucfirst($operation),
+            $operation,
             $type,
             $name ?: '@',
             $provider,

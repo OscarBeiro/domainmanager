@@ -182,6 +182,8 @@ class SupplierTab extends CommonGLPI
             ? DomainState::getDomainsForSupplier((int) $supplier->getID())
             : [];
         $never_synced_count = self::countNeverSyncedRegistrarLinks($domains_raw);
+        $datatable_params    = self::buildDomainsDatatableParams($domains_raw, (int) $supplier->getID());
+        $rdap_registrar_info = DomainState::getRdapRegistrarInfo((int) $supplier->getID());
 
         TemplateRenderer::getInstance()->display('@domainmanager/supplier_tab.html.twig', [
             'suppliers_id'         => (int) $supplier->getID(),
@@ -196,6 +198,7 @@ class SupplierTab extends CommonGLPI
             'saved'                => $saved,
             'values'               => $values,
             'connection_test'      => $connection_test,
+            'rdap_registrar_info'  => $rdap_registrar_info,
             'testable_capabilities' => DriverRegistry::getTestableCapabilities($current_driver),
             'all_testable_capabilities' => array_combine(
                 DriverRegistry::getAvailableDrivers(),
@@ -206,11 +209,8 @@ class SupplierTab extends CommonGLPI
                 DriverRegistry::getAvailableDrivers(),
                 array_map([DriverRegistry::class, 'getPrimaryTestableCapability'], DriverRegistry::getAvailableDrivers()),
             ),
-            'domains'            => self::buildDomainsListRows($domains_raw),
-            'status_labels'      => DomainStatusResolver::getStatusLabels(),
-            'status_classes'     => DomainStatusResolver::getStatusClasses(),
+            'datatable_params'   => $datatable_params,
             'never_synced_count' => $never_synced_count,
-            'rdap_registrar_info' => DomainState::getRdapRegistrarInfo((int) $supplier->getID()),
             'domains_search_url' => self::getDomainsSearchUrl((int) $supplier->getID()),
             'discovery_supported'  => $discovery_supported,
             'import_modal_script'  => $import_modal_script,
@@ -255,37 +255,329 @@ class SupplierTab extends CommonGLPI
     }
 
     /**
-     * Presentation-layer enrichment of DomainState::getDomainsForSupplier()'s
-     * raw rows: itemtype hyperlinks, the Registrar column's badge (rendered
-     * straight from `registrar_status` in the Twig template, via the shared
-     * `DomainStatusResolver::getStatusLabels()`/`getStatusClasses()` maps, Phase 16),
-     * and the NS column's own managed/unmanaged/unknown/never classification
-     * (`describeDnsProvider()` — kept separate from the shared status maps,
-     * see its docblock for why).
+     * Sortable column keys for the Domains datatable — matches the
+     * `columns` keys returned by buildDomainsDatatableParams(), validated
+     * the same way ProjectTask's own task-list tab validates `$_GET['sort']`
+     * before trusting it.
+     */
+    private const DOMAINS_SORT_COLUMNS = ['name', 'registrar', 'registrar_status', 'dns', 'dns_status', 'entity'];
+
+    /**
+     * Builds the full `components/datatable.html.twig` param array for the
+     * Domains list (Phase 95): reads `$_GET['sort']`/`order`/`filters`/
+     * `start` (same validated-`$_GET` pattern as core's
+     * `ProjectTask`'s task-list tab and `Location::showItems()`), applies
+     * filtering/sorting/pagination on top of
+     * `DomainState::getDomainsForSupplier()`'s raw rows in PHP, and renders
+     * each visible row's cells as ready-made `raw_html` strings so the
+     * template needs zero branching (same approach as core's
+     * `Domain_Item::showForDomain()`).
+     *
+     * Sorting on `registrar`/`dns`/`entity` has to happen after resolving
+     * their display names, since those are FK lookups, not literal columns
+     * on the raw row.
      *
      * @param  array<int, array{domains_id:int, name:string, entities_id:int,
      *                registrar_suppliers_id:int, dns_suppliers_id:int,
      *                detected_provider:string, registrar_status:string,
      *                dns_status:string, registrar_verified:bool}> $domains
-     * @return array<int, array{domains_id:int, name:string, url:string,
-     *                entity_html:string, registrar:?array{name:string, url:string},
-     *                registrar_status:string, dns:array{kind:string, name:string,
-     *                url:?string}, dns_status:string}>
+     * @param  int $suppliers_id
+     * @return array<string, mixed>
      */
-    private static function buildDomainsListRows(array $domains): array
+    private static function buildDomainsDatatableParams(array $domains, int $suppliers_id): array
     {
-        return array_map(static function (array $domain): array {
-            return [
-                'domains_id'       => $domain['domains_id'],
-                'name'             => $domain['name'],
-                'url'              => Domain::getFormURLWithID($domain['domains_id']),
-                'entity_html'      => self::describeEntity($domain['entities_id']),
-                'registrar'        => self::describeSupplierRole($domain['registrar_suppliers_id']),
-                'registrar_status' => $domain['registrar_status'],
-                'dns'              => self::describeDnsProvider($domain),
-                'dns_status'       => $domain['dns_status'],
-            ];
+        $sort = (string) ($_GET['sort'] ?? '');
+        if (!in_array($sort, self::DOMAINS_SORT_COLUMNS, true)) {
+            $sort = 'name';
+        }
+        $order = strtoupper((string) ($_GET['order'] ?? ''));
+        $order = $order === 'DESC' ? 'DESC' : 'ASC';
+
+        $filters = is_array($_GET['filters'] ?? null) ? $_GET['filters'] : [];
+        $name_filter              = trim((string) ($filters['name'] ?? ''));
+        $registrar_filter         = array_values(array_filter((array) ($filters['registrar'] ?? [])));
+        $registrar_status_filter = array_values(array_filter((array) ($filters['registrar_status'] ?? [])));
+        $dns_filter               = array_values(array_filter((array) ($filters['dns'] ?? [])));
+        $dns_kind_filter          = array_values(array_filter((array) ($filters['dns_status'] ?? [])));
+
+        $total_number = count($domains);
+
+        $status_labels    = DomainStatusResolver::getStatusLabels();
+        $status_classes   = DomainStatusResolver::getStatusClasses();
+        $dns_kind_labels  = self::getDnsKindLabels();
+        $dns_kind_classes = self::getDnsKindClasses();
+
+        $rows = array_map(static function (array $domain): array {
+            $domain['_dns']       = self::describeDnsProvider($domain);
+            $domain['_registrar'] = self::describeSupplierRole($domain['registrar_suppliers_id']);
+
+            return $domain;
         }, $domains);
+
+        // Dropdown options are the actual registrar/DNS-provider identities
+        // present in *this* supplier's own domain list — small and bounded
+        // by construction, so a real "pick one of these" dropdown (same as
+        // the status columns) reads better than free text. Keyed by
+        // resolveRegistrarOptionKey()/resolveDnsOptionKey() rather than by
+        // display name, since two different providers could share a name
+        // and a Supplier link is the real identity.
+        $registrar_options = [];
+        $dns_options       = [];
+        foreach ($rows as $domain) {
+            if ($domain['_registrar'] !== null) {
+                $registrar_options[self::resolveRegistrarOptionKey($domain)] = $domain['_registrar']['name'];
+            }
+            $dns_options[self::resolveDnsOptionKey($domain)] = $domain['_dns']['name'];
+        }
+        asort($registrar_options);
+        asort($dns_options);
+
+        if ($name_filter !== '') {
+            $rows = array_values(array_filter(
+                $rows,
+                static fn(array $d): bool => stripos($d['name'], $name_filter) !== false,
+            ));
+        }
+        if ($registrar_filter !== []) {
+            $rows = array_values(array_filter(
+                $rows,
+                static fn(array $d): bool => $d['_registrar'] !== null
+                    && in_array(self::resolveRegistrarOptionKey($d), $registrar_filter, true),
+            ));
+        }
+        if ($registrar_status_filter !== []) {
+            $rows = array_values(array_filter(
+                $rows,
+                static fn(array $d): bool => in_array($d['registrar_status'], $registrar_status_filter, true),
+            ));
+        }
+        if ($dns_filter !== []) {
+            $rows = array_values(array_filter(
+                $rows,
+                static fn(array $d): bool => in_array(self::resolveDnsOptionKey($d), $dns_filter, true),
+            ));
+        }
+        if ($dns_kind_filter !== []) {
+            $rows = array_values(array_filter(
+                $rows,
+                static fn(array $d): bool => in_array($d['_dns']['kind'], $dns_kind_filter, true),
+            ));
+        }
+
+        $filtered_number = count($rows);
+
+        $entity_names = [];
+        $sort_key      = static function (array $domain) use ($sort, $status_labels, $dns_kind_labels, &$entity_names): string {
+            switch ($sort) {
+                case 'registrar':
+                    return $domain['_registrar']['name'] ?? '';
+                case 'registrar_status':
+                    return $status_labels[$domain['registrar_status']] ?? $domain['registrar_status'];
+                case 'dns':
+                    return $domain['_dns']['name'];
+                case 'dns_status':
+                    return $dns_kind_labels[$domain['_dns']['kind']] ?? $domain['_dns']['kind'];
+                case 'entity':
+                    $entities_id = $domain['entities_id'];
+                    if (!isset($entity_names[$entities_id])) {
+                        $entity_names[$entities_id] = Dropdown::getDropdownName(Entity::getTable(), $entities_id);
+                    }
+
+                    return $entity_names[$entities_id];
+                default:
+                    return $domain['name'];
+            }
+        };
+
+        usort($rows, static function (array $a, array $b) use ($sort_key, $order): int {
+            $cmp = strcasecmp($sort_key($a), $sort_key($b));
+
+            return $order === 'DESC' ? -$cmp : $cmp;
+        });
+
+        $start = max(0, (int) ($_GET['start'] ?? 0));
+        $limit = max(1, (int) ($_SESSION['glpilist_limit'] ?? 25));
+        $page  = array_slice($rows, $start, $limit);
+
+        $entries = array_map(static function (array $domain) use ($status_labels, $status_classes, $dns_kind_labels, $dns_kind_classes): array {
+            return [
+                'name'             => self::renderDomainNameCell($domain),
+                'registrar'        => self::renderRegistrarNameCell($domain),
+                'registrar_status' => self::renderStatusBadgeCell(
+                    $status_labels[$domain['registrar_status']] ?? $domain['registrar_status'],
+                    $status_classes[$domain['registrar_status']] ?? 'text-bg-secondary',
+                ),
+                'dns'              => self::renderDnsNameCell($domain),
+                'dns_status'       => self::renderStatusBadgeCell(
+                    $dns_kind_labels[$domain['_dns']['kind']] ?? $domain['_dns']['kind'],
+                    self::resolveDnsStatusClass($domain, $dns_kind_classes),
+                ),
+                'entity'           => self::describeEntity($domain['entities_id']),
+            ];
+        }, $page);
+
+        return [
+            'is_tab'          => true,
+            'items_id'        => $suppliers_id,
+            'sort'            => $sort,
+            'order'           => $order,
+            'filters'         => $filters,
+            'columns'         => [
+                'name'             => ['label' => _n('Domain', 'Domains', 1)],
+                'registrar'        => [
+                    'label'            => __('Registrar', 'domainmanager'),
+                    'filter_formatter' => 'array',
+                ],
+                'registrar_status' => [
+                    'label'            => __('Registrar status', 'domainmanager'),
+                    'filter_formatter' => 'array',
+                ],
+                'dns'              => [
+                    'label'            => __('DNS Provider', 'domainmanager'),
+                    'filter_formatter' => 'array',
+                ],
+                'dns_status'       => [
+                    'label'            => __('DNS status', 'domainmanager'),
+                    'filter_formatter' => 'array',
+                ],
+                'entity'           => [
+                    'label'     => _n('Entity', 'Entities', 1),
+                    'no_filter' => true,
+                ],
+            ],
+            'columns_values'  => [
+                'registrar'        => $registrar_options,
+                'registrar_status' => $status_labels,
+                'dns'              => $dns_options,
+                'dns_status'       => $dns_kind_labels,
+            ],
+            'formatters'      => [
+                'name'             => 'raw_html',
+                'registrar'        => 'raw_html',
+                'registrar_status' => 'raw_html',
+                'dns'              => 'raw_html',
+                'dns_status'       => 'raw_html',
+                'entity'           => 'raw_html',
+            ],
+            'entries'         => $entries,
+            'total_number'    => $total_number,
+            'filtered_number' => $filtered_number,
+            'start'           => $start,
+            'limit'           => $limit,
+            'showmassiveactions' => false,
+        ];
+    }
+
+    /**
+     * @param  array{domains_id:int, name:string} $domain
+     * @return string
+     */
+    private static function renderDomainNameCell(array $domain): string
+    {
+        return sprintf(
+            '<a href="%s">%s</a>',
+            htmlspecialchars(Domain::getFormURLWithID($domain['domains_id']), ENT_QUOTES),
+            htmlspecialchars($domain['name'], ENT_QUOTES),
+        );
+    }
+
+    /**
+     * Registrar column: the linked Supplier's name/link only — no status
+     * badge, so filtering this column's own "Registrar status" companion
+     * column isn't confused with filtering by which registrar it is
+     * (§ Phase 95 user-caught fix: the two used to be one combined cell,
+     * which read as "filter by registrar" while actually filtering by
+     * status).
+     *
+     * @param  array{_registrar:?array{name:string, url:string}} $domain
+     * @return string
+     */
+    private static function renderRegistrarNameCell(array $domain): string
+    {
+        if ($domain['_registrar'] === null) {
+            return '<span class="text-muted">' . __('None') . '</span>';
+        }
+
+        return sprintf(
+            '<a href="%s">%s</a>',
+            htmlspecialchars($domain['_registrar']['url'], ENT_QUOTES),
+            htmlspecialchars($domain['_registrar']['name'], ENT_QUOTES),
+        );
+    }
+
+    /**
+     * DNS Provider column: the resolved provider's name/link only — its own
+     * "DNS status" companion column carries the badge. See
+     * renderRegistrarNameCell()'s docblock for why these are separate.
+     *
+     * @param  array{_dns:array{kind:string, name:string, url:?string}} $domain
+     * @return string
+     */
+    private static function renderDnsNameCell(array $domain): string
+    {
+        $dns = $domain['_dns'];
+
+        return $dns['url'] !== null
+            ? sprintf('<a href="%s">%s</a>', htmlspecialchars($dns['url'], ENT_QUOTES), htmlspecialchars($dns['name'], ENT_QUOTES))
+            : htmlspecialchars($dns['name'], ENT_QUOTES);
+    }
+
+    /**
+     * @param  string $label
+     * @param  string $class
+     * @return string
+     */
+    private static function renderStatusBadgeCell(string $label, string $class): string
+    {
+        return sprintf(
+            '<span class="badge %s">%s</span>',
+            htmlspecialchars($class, ENT_QUOTES),
+            htmlspecialchars($label, ENT_QUOTES),
+        );
+    }
+
+    /**
+     * A plugin-managed DNS provider currently in error reads as more
+     * alarming than the neutral "Plugin managed" badge alone would suggest
+     * — same override the original hand-rolled table markup applied.
+     *
+     * @param  array{dns_status:string, _dns:array{kind:string}} $domain
+     * @param  array<string, string> $dns_kind_classes
+     * @return string
+     */
+    private static function resolveDnsStatusClass(array $domain, array $dns_kind_classes): string
+    {
+        if ($domain['_dns']['kind'] === 'managed' && $domain['dns_status'] === DomainState::STATUS_ERROR) {
+            return 'text-bg-danger';
+        }
+
+        return $dns_kind_classes[$domain['_dns']['kind']] ?? 'text-bg-secondary';
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private static function getDnsKindLabels(): array
+    {
+        return [
+            'managed'   => __('Plugin managed', 'domainmanager'),
+            'unmanaged' => __('Known, unmanaged (yet)', 'domainmanager'),
+            'unknown'   => __('Unknown'),
+            'never'     => __('Not yet checked', 'domainmanager'),
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private static function getDnsKindClasses(): array
+    {
+        return [
+            'managed'   => 'text-bg-success',
+            'unmanaged' => 'text-bg-warning',
+            'unknown'   => 'text-bg-secondary',
+            'never'     => 'text-bg-secondary',
+        ];
     }
 
     /**
@@ -414,9 +706,39 @@ class SupplierTab extends CommonGLPI
         }
 
         if ($domain['dns_status'] === DomainState::STATUS_UNKNOWN) {
-            return ['kind' => 'unknown', 'name' => __('Unknown', 'domainmanager'), 'url' => null];
+            return ['kind' => 'unknown', 'name' => __('Unknown'), 'url' => null];
         }
 
         return ['kind' => 'never', 'name' => __('Not yet checked', 'domainmanager'), 'url' => null];
+    }
+
+    /**
+     * Stable option/filter key for the Registrar column's dropdown: the
+     * linked Supplier's own id — a name-based key would silently merge two
+     * differently-configured Suppliers that happen to share a display name.
+     *
+     * @param  array{registrar_suppliers_id:int} $domain
+     * @return string
+     */
+    private static function resolveRegistrarOptionKey(array $domain): string
+    {
+        return (string) $domain['registrar_suppliers_id'];
+    }
+
+    /**
+     * Stable option/filter key for the DNS Provider column's dropdown: a
+     * plugin-managed provider is keyed by its Supplier id (same reasoning as
+     * resolveRegistrarOptionKey()); an unmanaged/unknown/never-checked one
+     * has no Supplier to key on, so falls back to its resolved display name
+     * (`detected_provider` or the generic "Unknown"/"Not yet checked" text).
+     *
+     * @param  array{dns_suppliers_id:int, _dns:array{name:string}} $domain
+     * @return string
+     */
+    private static function resolveDnsOptionKey(array $domain): string
+    {
+        return $domain['dns_suppliers_id'] > 0
+            ? 's' . $domain['dns_suppliers_id']
+            : 'n:' . strtolower($domain['_dns']['name']);
     }
 }

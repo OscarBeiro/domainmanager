@@ -66,6 +66,26 @@ test('Configuring a Supplier as a domain source', async ({ manual, page }) => {
     },
   );
 
+  manual.note(
+    '<a id="cloudflare"></a>**Cloudflare:** Requires an **Account API Token** (Manage ' +
+      'Account → API Tokens, not a personal/My Profile token) plus its Account ID. Grant ' +
+      '`Zone:Zone:Read` and `Zone:DNS:Read` — both are required just to import DNS records ' +
+      '— and add `Zone:DNS:Edit` if you also want this domain\'s records editable from GLPI ' +
+      '(write-back).',
+  );
+  manual.note(
+    '<a id="ionos"></a>**IONOS:** Requires an **API Key** and **API Secret** from the IONOS ' +
+      'Cloud panel (Management → API Keys). Both DNS zone sync/write-back and registrar ' +
+      'lifecycle data use the same key/secret pair — no separate scoping is available.',
+  );
+  manual.note(
+    '<a id="dinahosting"></a>**Dinahosting:** Requires the account\'s plain **username and ' +
+      'password** — Dinahosting has no scoped API token, so the credentials stored here are ' +
+      'the same ones used to log into the control panel. **The account must be the ' +
+      'super-admin account**: a sub-user or domain-limited account cannot authenticate ' +
+      'against the API at all.',
+  );
+
   await manual.step(
     'save',
     'Save the configuration',

@@ -90,15 +90,19 @@ class DriverRegistry
         switch ($driver) {
             case self::DRIVER_CLOUDFLARE:
                 return [
-                    // Required so the token is unambiguously scoped to one
-                    // Cloudflare Account rather than "whatever zones the
-                    // creating user happens to have access to" (§addendum
-                    // "Switch Cloudflare Driver to Account-Scoped API
-                    // Tokens") — used both to filter the zone lookup
-                    // (`account.id=` query param) and directly as the
-                    // registrar API's account path segment.
-                    'account_id' => ['label' => __('Account ID', 'domainmanager'), 'secret' => false, 'required' => true],
-                    'token'      => ['label' => __('API Token', 'domainmanager'), 'secret' => true],
+                    // Not marked required: a config saved before this field
+                    // existed has a token but no account_id, and the form
+                    // must allow saving that state (or editing any other
+                    // field on it) without forcing it to be backfilled on
+                    // the spot — that gap is already flagged via the
+                    // `cloudflare_missing_account_id` warning banner
+                    // (SupplierTab::showForSupplier()) instead. The driver
+                    // itself still hard-requires it at call time
+                    // (CloudflareDriver::requireAccountId() throws
+                    // DriverException if blank) — this only relaxes the
+                    // *form's* validation, not the runtime one.
+                    'account_id' => ['label' => __('Account ID', 'domainmanager'), 'secret' => false],
+                    'token'      => ['label' => __('API token'), 'secret' => true],
                 ];
             case self::DRIVER_IONOS:
                 return [
@@ -107,8 +111,8 @@ class DriverRegistry
                 ];
             case self::DRIVER_DINAHOSTING:
                 return [
-                    'user'     => ['label' => __('Username', 'domainmanager'), 'secret' => false],
-                    'password' => ['label' => __('Password', 'domainmanager'), 'secret' => true],
+                    'user'     => ['label' => __('Username'), 'secret' => false],
+                    'password' => ['label' => __('Password'), 'secret' => true],
                 ];
         }
 
