@@ -48,6 +48,24 @@
         </div>
     {% endif %}
     <div class="card-body p-0">
+        {# Registrar/DNS status only ever hold one short badge word — left to
+           the browser's own content-based sizing, they crowd out the
+           Registrar/DNS Provider name columns, which can hold a much longer
+           Supplier name. Table-layout: fixed + explicit widths give the
+           status columns just enough room and split the rest evenly across
+           the name-bearing columns instead. #}
+        <style>
+            #domainmanager-domains-list table {
+                table-layout: fixed;
+            }
+            #domainmanager-domains-list thead th:nth-child(1) { width: 20%; }
+            #domainmanager-domains-list thead th:nth-child(2) { width: 18%; }
+            #domainmanager-domains-list thead th:nth-child(3) { width: 10%; }
+            #domainmanager-domains-list thead th:nth-child(4) { width: 18%; }
+            #domainmanager-domains-list thead th:nth-child(5) { width: 10%; }
+            #domainmanager-domains-list thead th:nth-child(6) { width: 19%; }
+            #domainmanager-domains-list thead th:nth-child(7) { width: 5%; }
+        </style>
         {{ include('components/datatable.html.twig', datatable_params) }}
     </div>
 </div>
