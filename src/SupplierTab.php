@@ -294,7 +294,9 @@ class SupplierTab extends CommonGLPI
 
         $filters = is_array($_GET['filters'] ?? null) ? $_GET['filters'] : [];
         $name_filter              = trim((string) ($filters['name'] ?? ''));
+        $registrar_name_filter    = trim((string) ($filters['registrar'] ?? ''));
         $registrar_status_filter = array_values(array_filter((array) ($filters['registrar_status'] ?? [])));
+        $dns_name_filter          = trim((string) ($filters['dns'] ?? ''));
         $dns_kind_filter          = array_values(array_filter((array) ($filters['dns_status'] ?? [])));
 
         $total_number = count($domains);
@@ -317,10 +319,22 @@ class SupplierTab extends CommonGLPI
                 static fn(array $d): bool => stripos($d['name'], $name_filter) !== false,
             ));
         }
+        if ($registrar_name_filter !== '') {
+            $rows = array_values(array_filter(
+                $rows,
+                static fn(array $d): bool => stripos($d['_registrar']['name'] ?? '', $registrar_name_filter) !== false,
+            ));
+        }
         if ($registrar_status_filter !== []) {
             $rows = array_values(array_filter(
                 $rows,
                 static fn(array $d): bool => in_array($d['registrar_status'], $registrar_status_filter, true),
+            ));
+        }
+        if ($dns_name_filter !== '') {
+            $rows = array_values(array_filter(
+                $rows,
+                static fn(array $d): bool => stripos($d['_dns']['name'], $dns_name_filter) !== false,
             ));
         }
         if ($dns_kind_filter !== []) {
@@ -391,16 +405,14 @@ class SupplierTab extends CommonGLPI
             'columns'         => [
                 'name'             => ['label' => __('Domain', 'domainmanager')],
                 'registrar'        => [
-                    'label'     => __('Registrar', 'domainmanager'),
-                    'no_filter' => true,
+                    'label' => __('Registrar', 'domainmanager'),
                 ],
                 'registrar_status' => [
                     'label'            => __('Registrar status', 'domainmanager'),
                     'filter_formatter' => 'array',
                 ],
                 'dns'              => [
-                    'label'     => __('DNS Provider', 'domainmanager'),
-                    'no_filter' => true,
+                    'label' => __('DNS Provider', 'domainmanager'),
                 ],
                 'dns_status'       => [
                     'label'            => __('DNS status', 'domainmanager'),
