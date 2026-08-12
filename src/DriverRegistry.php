@@ -98,7 +98,7 @@ class DriverRegistry
                     // (`account.id=` query param) and directly as the
                     // registrar API's account path segment.
                     'account_id' => ['label' => __('Account ID', 'domainmanager'), 'secret' => false, 'required' => true],
-                    'token'      => ['label' => __('API Token', 'domainmanager'), 'secret' => true],
+                    'token'      => ['label' => __('API token'), 'secret' => true],
                 ];
             case self::DRIVER_IONOS:
                 return [
@@ -107,8 +107,8 @@ class DriverRegistry
                 ];
             case self::DRIVER_DINAHOSTING:
                 return [
-                    'user'     => ['label' => __('Username', 'domainmanager'), 'secret' => false],
-                    'password' => ['label' => __('Password', 'domainmanager'), 'secret' => true],
+                    'user'     => ['label' => __('Username'), 'secret' => false],
+                    'password' => ['label' => __('Password'), 'secret' => true],
                 ];
         }
 

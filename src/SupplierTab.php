@@ -422,7 +422,7 @@ class SupplierTab extends CommonGLPI
             'order'           => $order,
             'filters'         => $filters,
             'columns'         => [
-                'name'             => ['label' => __('Domain', 'domainmanager')],
+                'name'             => ['label' => _n('Domain', 'Domains', 1)],
                 'registrar'        => [
                     'label'            => __('Registrar', 'domainmanager'),
                     'filter_formatter' => 'array',
@@ -494,7 +494,7 @@ class SupplierTab extends CommonGLPI
     private static function renderRegistrarNameCell(array $domain): string
     {
         if ($domain['_registrar'] === null) {
-            return '<span class="text-muted">' . __('None', 'domainmanager') . '</span>';
+            return '<span class="text-muted">' . __('None') . '</span>';
         }
 
         return sprintf(
@@ -561,7 +561,7 @@ class SupplierTab extends CommonGLPI
         return [
             'managed'   => __('Plugin managed', 'domainmanager'),
             'unmanaged' => __('Known, unmanaged (yet)', 'domainmanager'),
-            'unknown'   => __('Unknown', 'domainmanager'),
+            'unknown'   => __('Unknown'),
             'never'     => __('Not yet checked', 'domainmanager'),
         ];
     }
@@ -705,7 +705,7 @@ class SupplierTab extends CommonGLPI
         }
 
         if ($domain['dns_status'] === DomainState::STATUS_UNKNOWN) {
-            return ['kind' => 'unknown', 'name' => __('Unknown', 'domainmanager'), 'url' => null];
+            return ['kind' => 'unknown', 'name' => __('Unknown'), 'url' => null];
         }
 
         return ['kind' => 'never', 'name' => __('Not yet checked', 'domainmanager'), 'url' => null];

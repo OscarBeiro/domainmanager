@@ -161,7 +161,7 @@
                     <div class="mb-3 col-12 col-sm-3">
                         <label class="form-label">{{ __('Reg/DNS last sync', 'domainmanager') }}</label>
                         <div id="domainmanager-lastsync">
-                            {{ state and state.last_sync_date ? state.last_sync_date : __('Never', 'domainmanager') }}
+                            {{ state and state.last_sync_date ? state.last_sync_date : __('Never') }}
                             {% if can_update and is_managed %}
                                 <i class="ti ti-refresh ms-1" id="domainmanager-sync-regdns" role="button"
                                    data-bs-toggle="tooltip" title="{{ __('Sync registrar/DNS now', 'domainmanager') }}"></i>
@@ -228,9 +228,9 @@
                                 {% if state.registrar_privacy_enabled is null %}
                                     <span class="text-muted" title="{{ __('Not reported by this driver', 'domainmanager') }}">&mdash;</span>
                                 {% elseif state.registrar_privacy_enabled %}
-                                    <span class="badge text-bg-success">{{ __('Yes', 'domainmanager') }}</span>
+                                    <span class="badge text-bg-success">{{ __('Yes') }}</span>
                                 {% else %}
-                                    <span class="badge text-bg-secondary">{{ __('No', 'domainmanager') }}</span>
+                                    <span class="badge text-bg-secondary">{{ __('No') }}</span>
                                 {% endif %}
                             </div>
                         </div>
@@ -246,9 +246,9 @@
                                     {% if state[field] is null %}
                                         <span class="text-muted" title="{{ __('Not reported', 'domainmanager') }}">&mdash;</span>
                                     {% elseif state[field] %}
-                                        <span class="badge text-bg-success">{{ __('Yes', 'domainmanager') }}</span>
+                                        <span class="badge text-bg-success">{{ __('Yes') }}</span>
                                     {% else %}
-                                        <span class="badge text-bg-secondary">{{ __('No', 'domainmanager') }}</span>
+                                        <span class="badge text-bg-secondary">{{ __('No') }}</span>
                                     {% endif %}
                                 </div>
                             </div>
@@ -266,9 +266,9 @@
                                     {% if state[field] is null %}
                                         <span class="text-muted" title="{{ __('Not yet checked', 'domainmanager') }}">&mdash;</span>
                                     {% elseif state[field] %}
-                                        <span class="badge text-bg-danger">{{ __('Yes', 'domainmanager') }}</span>
+                                        <span class="badge text-bg-danger">{{ __('Yes') }}</span>
                                     {% else %}
-                                        <span class="badge text-bg-secondary">{{ __('No', 'domainmanager') }}</span>
+                                        <span class="badge text-bg-secondary">{{ __('No') }}</span>
                                     {% endif %}
                                 </div>
                             </div>
