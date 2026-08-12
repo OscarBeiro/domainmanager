@@ -48,7 +48,7 @@
     {% if not is_new %}
         <div class="card-body p-0">
             {% set visit_target = punycode ?: domain_name %}
-            <div class="p-2 border-bottom d-flex align-items-baseline gap-2 flex-wrap">
+            <div class="p-2 d-flex align-items-baseline gap-2 flex-wrap">
                 <a href="https://{{ visit_target }}" target="_blank" rel="noopener noreferrer"
                    class="fs-4 fw-medium" title="{{ __('Visit this domain', 'domainmanager') }}">
                     {{ domain_name }}
@@ -84,6 +84,10 @@
                 </div>
             {% else %}
             <div class="p-3">
+                <div class="hr-text">
+                    <i class="ti ti-server"></i>
+                    <span>{{ __('Providers & key dates', 'domainmanager') }}</span>
+                </div>
                 <div class="row">
                     <div class="mb-3 col-12 col-sm-3">
                         <label class="form-label">{{ __('Registrar', 'domainmanager') }}</label>
@@ -112,6 +116,7 @@
                         <div>
                             <span class="badge {{ status_classes[rstatus]|default('text-bg-secondary') }}"
                                   id="domainmanager-badge-registrar"
+                                  data-bs-toggle="tooltip"
                                   title="{{ state ? state.registrar_message : '' }}">
                                 {{ status_labels[rstatus]|default(rstatus) }}
                             </span>
@@ -122,6 +127,7 @@
                         <div>
                             <span class="badge {{ status_classes[dstatus]|default('text-bg-secondary') }}"
                                   id="domainmanager-badge-dns"
+                                  data-bs-toggle="tooltip"
                                   title="{{ state ? state.dns_message : '' }}">
                                 {{ status_labels[dstatus]|default(dstatus) }}
                             </span>
@@ -183,12 +189,6 @@
                         <a href="{{ infocom_tab_url }}">{{ __('Set the Registrar via the Financial and administrative information tab', 'domainmanager') }}</a>
                     </div>
                 {% endif %}
-
-                <div class="text-muted small lh-sm mb-1 {{ (state and (state.registrar_message or state.dns_message)) ? '' : 'd-none' }}" id="domainmanager-sync-line">
-                    <span id="domainmanager-msg-registrar-wrap" class="{{ state and state.registrar_message ? '' : 'd-none' }}">{{ __('Registrar', 'domainmanager') }}: <span id="domainmanager-msg-registrar">{{ state ? state.registrar_message : '' }}</span></span>
-                    <span id="domainmanager-sync-sep" class="mx-1 {{ (state and state.registrar_message and state.dns_message) ? '' : 'd-none' }}">&middot;</span>
-                    <span id="domainmanager-msg-dns-wrap" class="{{ state and state.dns_message ? '' : 'd-none' }}">{{ __('DNS', 'domainmanager') }}: <span id="domainmanager-msg-dns">{{ state ? state.dns_message : '' }}</span></span>
-                </div>
 
                 <div class="alert alert-warning mt-2 mb-0 {{ dstatus in ['unsupported', 'unknown'] ? '' : 'd-none' }}"
                      id="domainmanager-provider-warning" role="alert">
@@ -481,6 +481,15 @@
         badge.className = 'badge ' + (classes[status] || 'text-bg-secondary');
         badge.textContent = labels[status] || status;
         badge.title = message || '';
+        // Bootstrap's Tooltip reads `data-bs-original-title`, not the plain
+        // `title` attribute, once it's already initialized (common.js's
+        // initTooltips() only wires up `[data-bs-toggle="tooltip"]` nodes
+        // once, on page load / jQuery ajaxComplete) — updating `title` alone
+        // would silently leave the tooltip showing this badge's very first
+        // message forever after a live sync.
+        if (badge.hasAttribute('data-bs-original-title')) {
+            badge.setAttribute('data-bs-original-title', message || '');
+        }
     }
 
     // Phase 92: both icons below disable permanently on first click (dimmed,
@@ -541,24 +550,6 @@
                     } else {
                         provider.textContent = data.detected_provider;
                     }
-                }
-
-                ['registrar', 'dns'].forEach(function (leg) {
-                    const span = document.getElementById('domainmanager-msg-' + leg);
-                    if (span) {
-                        span.textContent = data[leg + '_message'] || '';
-                        document.getElementById('domainmanager-msg-' + leg + '-wrap')
-                            .classList.toggle('d-none', !data[leg + '_message']);
-                    }
-                });
-
-                const syncLine = document.getElementById('domainmanager-sync-line');
-                if (syncLine) {
-                    syncLine.classList.toggle('d-none', !data.registrar_message && !data.dns_message);
-                }
-                const syncSep = document.getElementById('domainmanager-sync-sep');
-                if (syncSep) {
-                    syncSep.classList.toggle('d-none', !(data.registrar_message && data.dns_message));
                 }
 
                 const warning = document.getElementById('domainmanager-provider-warning');
