@@ -294,9 +294,9 @@ class SupplierTab extends CommonGLPI
 
         $filters = is_array($_GET['filters'] ?? null) ? $_GET['filters'] : [];
         $name_filter              = trim((string) ($filters['name'] ?? ''));
-        $registrar_name_filter    = trim((string) ($filters['registrar'] ?? ''));
+        $registrar_filter         = array_values(array_filter((array) ($filters['registrar'] ?? [])));
         $registrar_status_filter = array_values(array_filter((array) ($filters['registrar_status'] ?? [])));
-        $dns_name_filter          = trim((string) ($filters['dns'] ?? ''));
+        $dns_filter               = array_values(array_filter((array) ($filters['dns'] ?? [])));
         $dns_kind_filter          = array_values(array_filter((array) ($filters['dns_status'] ?? [])));
 
         $total_number = count($domains);
@@ -313,16 +313,35 @@ class SupplierTab extends CommonGLPI
             return $domain;
         }, $domains);
 
+        // Dropdown options are the actual registrar/DNS-provider identities
+        // present in *this* supplier's own domain list — small and bounded
+        // by construction, so a real "pick one of these" dropdown (same as
+        // the status columns) reads better than free text. Keyed by
+        // resolveRegistrarOptionKey()/resolveDnsOptionKey() rather than by
+        // display name, since two different providers could share a name
+        // and a Supplier link is the real identity.
+        $registrar_options = [];
+        $dns_options       = [];
+        foreach ($rows as $domain) {
+            if ($domain['_registrar'] !== null) {
+                $registrar_options[self::resolveRegistrarOptionKey($domain)] = $domain['_registrar']['name'];
+            }
+            $dns_options[self::resolveDnsOptionKey($domain)] = $domain['_dns']['name'];
+        }
+        asort($registrar_options);
+        asort($dns_options);
+
         if ($name_filter !== '') {
             $rows = array_values(array_filter(
                 $rows,
                 static fn(array $d): bool => stripos($d['name'], $name_filter) !== false,
             ));
         }
-        if ($registrar_name_filter !== '') {
+        if ($registrar_filter !== []) {
             $rows = array_values(array_filter(
                 $rows,
-                static fn(array $d): bool => stripos($d['_registrar']['name'] ?? '', $registrar_name_filter) !== false,
+                static fn(array $d): bool => $d['_registrar'] !== null
+                    && in_array(self::resolveRegistrarOptionKey($d), $registrar_filter, true),
             ));
         }
         if ($registrar_status_filter !== []) {
@@ -331,10 +350,10 @@ class SupplierTab extends CommonGLPI
                 static fn(array $d): bool => in_array($d['registrar_status'], $registrar_status_filter, true),
             ));
         }
-        if ($dns_name_filter !== '') {
+        if ($dns_filter !== []) {
             $rows = array_values(array_filter(
                 $rows,
-                static fn(array $d): bool => stripos($d['_dns']['name'], $dns_name_filter) !== false,
+                static fn(array $d): bool => in_array(self::resolveDnsOptionKey($d), $dns_filter, true),
             ));
         }
         if ($dns_kind_filter !== []) {
@@ -405,14 +424,16 @@ class SupplierTab extends CommonGLPI
             'columns'         => [
                 'name'             => ['label' => __('Domain', 'domainmanager')],
                 'registrar'        => [
-                    'label' => __('Registrar', 'domainmanager'),
+                    'label'            => __('Registrar', 'domainmanager'),
+                    'filter_formatter' => 'array',
                 ],
                 'registrar_status' => [
                     'label'            => __('Registrar status', 'domainmanager'),
                     'filter_formatter' => 'array',
                 ],
                 'dns'              => [
-                    'label' => __('DNS Provider', 'domainmanager'),
+                    'label'            => __('DNS Provider', 'domainmanager'),
+                    'filter_formatter' => 'array',
                 ],
                 'dns_status'       => [
                     'label'            => __('DNS status', 'domainmanager'),
@@ -424,7 +445,9 @@ class SupplierTab extends CommonGLPI
                 ],
             ],
             'columns_values'  => [
+                'registrar'        => $registrar_options,
                 'registrar_status' => $status_labels,
+                'dns'              => $dns_options,
                 'dns_status'       => $dns_kind_labels,
             ],
             'formatters'      => [
@@ -686,5 +709,35 @@ class SupplierTab extends CommonGLPI
         }
 
         return ['kind' => 'never', 'name' => __('Not yet checked', 'domainmanager'), 'url' => null];
+    }
+
+    /**
+     * Stable option/filter key for the Registrar column's dropdown: the
+     * linked Supplier's own id — a name-based key would silently merge two
+     * differently-configured Suppliers that happen to share a display name.
+     *
+     * @param  array{registrar_suppliers_id:int} $domain
+     * @return string
+     */
+    private static function resolveRegistrarOptionKey(array $domain): string
+    {
+        return (string) $domain['registrar_suppliers_id'];
+    }
+
+    /**
+     * Stable option/filter key for the DNS Provider column's dropdown: a
+     * plugin-managed provider is keyed by its Supplier id (same reasoning as
+     * resolveRegistrarOptionKey()); an unmanaged/unknown/never-checked one
+     * has no Supplier to key on, so falls back to its resolved display name
+     * (`detected_provider` or the generic "Unknown"/"Not yet checked" text).
+     *
+     * @param  array{dns_suppliers_id:int, _dns:array{name:string}} $domain
+     * @return string
+     */
+    private static function resolveDnsOptionKey(array $domain): string
+    {
+        return $domain['dns_suppliers_id'] > 0
+            ? 's' . $domain['dns_suppliers_id']
+            : 'n:' . strtolower($domain['_dns']['name']);
     }
 }
