@@ -143,10 +143,10 @@ class Profile extends CoreProfile
         // Phase 32's single flat right, so a profile can be granted (e.g.)
         // TXT write-back without also getting AAAA.
         $labels = [
-            'A'     => 'A',
-            'AAAA'  => 'AAAA',
-            'CNAME' => 'CNAME',
-            'TXT'   => 'TXT',
+            'A'     => __('Domain Record: A', 'domainmanager'),
+            'AAAA'  => __('Domain Record: AAAA', 'domainmanager'),
+            'CNAME' => __('Domain Record: CNAME', 'domainmanager'),
+            'TXT'   => __('Domain Record: TXT', 'domainmanager'),
         ];
         foreach (self::getDnsRecordRights() as $type => $field) {
             $rights[] = [

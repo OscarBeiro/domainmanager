@@ -54,8 +54,8 @@ class DomainStatusResolver
     {
         return [
             DomainState::STATUS_NEVER             => __('Never synchronized', 'domainmanager'),
-            DomainState::STATUS_OK                => __('OK'),
-            DomainState::STATUS_ERROR             => __('Error'),
+            DomainState::STATUS_OK                => __('OK', 'domainmanager'),
+            DomainState::STATUS_ERROR             => __('Error', 'domainmanager'),
             DomainState::STATUS_UNCONFIGURED      => __('Not configured', 'domainmanager'),
             DomainState::STATUS_UNSUPPORTED       => __('Provider not supported', 'domainmanager'),
             DomainState::STATUS_UNKNOWN           => __('Unknown provider', 'domainmanager'),

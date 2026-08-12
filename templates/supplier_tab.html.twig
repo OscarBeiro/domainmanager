@@ -27,10 +27,8 @@
  # -------------------------------------------------------------------------
  #}
 
-{% import 'components/form/fields_macros.html.twig' as fields %}
-
 <div class="row">
-<div class="col-12">
+<div class="col-12 col-xl-6">
 <div class="card m-2 border-0 shadow-none">
     <div class="card-header">
         <div class="ribbon ribbon-bookmark ribbon-top ribbon-start bg-blue s-1">
@@ -50,90 +48,81 @@
                         {{ __('This Cloudflare configuration is missing an Account ID. Add it below and reissue this token as an Account API Token to continue using Cloudflare sync.', 'domainmanager') }}
                     </div>
                 {% endif %}
-
-                {# Phase 79: same alert-warning shape as every other warning
-                 # banner (config.html.twig's reference), instead of a plain
-                 # Bootstrap form-text hint — these carry a real credential
-                 # requirement (Dinahosting's especially, a super-admin
-                 # account rather than a scoped token), not routine field
-                 # help. Shown above the "API driver" dropdown, driven by the
-                 # same per-driver show/hide toggle as the credential fields
-                 # below (kept in sync purely via matching data-driver / the
-                 # shared .domainmanager-driver-fields class — no separate
-                 # JS needed). #}
-                <div class="domainmanager-driver-fields" data-driver="cloudflare"
-                     {{ current_driver != 'cloudflare' ? 'hidden' : '' }}>
-                    <div class="alert alert-warning" role="alert">
-                        <i class="ti ti-alert-triangle me-1"></i>
-                        {{ __('Requires an Account API Token (not a personal token).', 'domainmanager') }}
-                        <a href="https://github.com/ticgal/domainmanager/blob/develop/docs/manual/en_GB/02-setup.md#cloudflare" target="_blank" rel="noopener">
-                            {{ __('Setup instructions', 'domainmanager') }}
-                        </a>
-                    </div>
-                </div>
-                <div class="domainmanager-driver-fields" data-driver="ionos"
-                     {{ current_driver != 'ionos' ? 'hidden' : '' }}>
-                    <div class="alert alert-warning" role="alert">
-                        <i class="ti ti-alert-triangle me-1"></i>
-                        {{ __('Requires an API Key and Secret from the IONOS Cloud panel.', 'domainmanager') }}
-                        <a href="https://github.com/ticgal/domainmanager/blob/develop/docs/manual/en_GB/02-setup.md#ionos" target="_blank" rel="noopener">
-                            {{ __('Setup instructions', 'domainmanager') }}
-                        </a>
-                    </div>
-                </div>
-                <div class="domainmanager-driver-fields" data-driver="dinahosting"
-                     {{ current_driver != 'dinahosting' ? 'hidden' : '' }}>
-                    <div class="alert alert-warning" role="alert">
-                        <i class="ti ti-alert-triangle me-1"></i>
-                        {{ __('Requires the super-admin account\'s username and password — no scoped API token exists.', 'domainmanager') }}
-                        <a href="https://github.com/ticgal/domainmanager/blob/develop/docs/manual/en_GB/02-setup.md#dinahosting" target="_blank" rel="noopener">
-                            {{ __('Setup instructions', 'domainmanager') }}
-                        </a>
-                    </div>
-                </div>
-
-                <div class="row">
-                    {{ fields.dropdownArrayField('api_driver', current_driver, driver_labels, __('API driver', 'domainmanager')) }}
-                </div>
-
-                {% for driver, cred_fields in credential_fields %}
-                    {% if cred_fields is not empty %}
-                        <div class="domainmanager-driver-fields row" data-driver="{{ driver }}"
-                             {{ driver != current_driver ? 'hidden' : '' }}>
-                            {% for name, meta in cred_fields %}
-                                {% set is_current = (driver == current_driver) %}
-                                {% set field_id = 'domainmanager-cred-' ~ driver ~ '-' ~ name %}
-                                {% set field_options = {
-                                    'id': field_id,
-                                    'required': meta.required|default(false),
-                                    'disabled': driver != current_driver,
-                                    'additional_attributes': {'autocomplete': 'new-password'},
-                                } %}
-                                {% if meta.secret %}
-                                    {% set placeholder = (is_current and saved[name]|default(false)) ? __('●●●●●●●● (saved, leave empty to keep)', 'domainmanager') : '' %}
-                                    {{ fields.passwordField(
-                                        '_credentials[' ~ name ~ ']',
-                                        '',
-                                        meta.label,
-                                        field_options|merge({
-                                            'additional_attributes': field_options.additional_attributes|merge(placeholder != '' ? {'placeholder': placeholder} : {}),
-                                        })
-                                    ) }}
-                                {% else %}
-                                    {{ fields.textField(
-                                        '_credentials[' ~ name ~ ']',
-                                        is_current ? values[name]|default('') : '',
-                                        meta.label,
-                                        field_options
-                                    ) }}
-                                {% endif %}
+                <div class="mb-3 row">
+                    <label class="col-4 col-form-label" for="domainmanager-driver">
+                        {{ __('API driver', 'domainmanager') }}
+                    </label>
+                    <div class="col-8">
+                        <select class="form-select" id="domainmanager-driver" name="api_driver">
+                            {% for driver, label in driver_labels %}
+                                <option value="{{ driver }}" {{ driver == current_driver ? 'selected' : '' }}>
+                                    {{ label }}
+                                </option>
                             {% endfor %}
+                        </select>
+                    </div>
+                </div>
+
+                {% for driver, fields in credential_fields %}
+                    {% if fields is not empty %}
+                        <div class="domainmanager-driver-fields" data-driver="{{ driver }}"
+                             {{ driver != current_driver ? 'hidden' : '' }}>
+                            {% for name, meta in fields %}
+                                <div class="mb-3 row">
+                                    <label class="col-4 col-form-label"
+                                           for="domainmanager-cred-{{ driver }}-{{ name }}">
+                                        {{ meta.label }}
+                                    </label>
+                                    <div class="col-8">
+                                        {% set is_current = (driver == current_driver) %}
+                                        <input type="{{ meta.secret ? 'password' : 'text' }}"
+                                               class="form-control"
+                                               id="domainmanager-cred-{{ driver }}-{{ name }}"
+                                               name="_credentials[{{ name }}]"
+                                               value="{{ is_current and not meta.secret ? values[name]|default('') : '' }}"
+                                               placeholder="{{ is_current and meta.secret and saved[name]|default(false) ? __('●●●●●●●● (saved, leave empty to keep)', 'domainmanager') : '' }}"
+                                               autocomplete="new-password"
+                                               {{ meta.required|default(false) ? 'required' : '' }}
+                                               {{ driver != current_driver ? 'disabled' : '' }} />
+                                    </div>
+                                </div>
+                            {% endfor %}
+                            {# Phase 79: same alert-warning shape as every
+                             # other warning banner (config.html.twig's
+                             # reference), instead of a plain Bootstrap
+                             # form-text hint — these carry a real credential
+                             # requirement (Dinahosting's especially, a
+                             # super-admin account rather than a scoped
+                             # token), not routine field help. #}
+                            {% if driver == 'cloudflare' %}
+                                <div class="alert alert-warning mb-3" role="alert">
+                                    <i class="ti ti-alert-triangle me-1"></i>
+                                    {{ __('Requires an Account API Token (not a personal token).', 'domainmanager') }}
+                                    <a href="https://github.com/ticgal/domainmanager#cloudflare" target="_blank" rel="noopener">
+                                        {{ __('Setup instructions', 'domainmanager') }}
+                                    </a>
+                                </div>
+                            {% elseif driver == 'ionos' %}
+                                <div class="alert alert-warning mb-3" role="alert">
+                                    <i class="ti ti-alert-triangle me-1"></i>
+                                    {{ __('Requires an API Key and Secret from the IONOS Cloud panel.', 'domainmanager') }}
+                                    <a href="https://github.com/ticgal/domainmanager#ionos" target="_blank" rel="noopener">
+                                        {{ __('Setup instructions', 'domainmanager') }}
+                                    </a>
+                                </div>
+                            {% elseif driver == 'dinahosting' %}
+                                <div class="alert alert-warning mb-3" role="alert">
+                                    <i class="ti ti-alert-triangle me-1"></i>
+                                    {{ __('Requires the super-admin account\'s username and password — no scoped API token exists.', 'domainmanager') }}
+                                    <a href="https://github.com/ticgal/domainmanager#dinahosting" target="_blank" rel="noopener">
+                                        {{ __('Setup instructions', 'domainmanager') }}
+                                    </a>
+                                </div>
+                            {% endif %}
                         </div>
                     {% endif %}
                 {% endfor %}
             </div>
-
-            {% include '@domainmanager/connection_test_panel.html.twig' %}
 
             <div class="card-footer text-end">
                 <input type="hidden" name="suppliers_id" value="{{ suppliers_id }}" />
@@ -146,7 +135,7 @@
                                 title="{{ __('This supplier is inactive. Activate it to test its Domain Manager credentials.', 'domainmanager') }}"
                             {% endif %}>
                         <i class="ti ti-plug-connected"></i>
-                        <span>{{ __('Test') }}</span>
+                        <span>{{ __('Test', 'domainmanager') }}</span>
                     </button>
                 {% endif %}
                 {% if discovery_supported|default(false) %}
@@ -158,7 +147,7 @@
                                 title="{{ __('This supplier is inactive. Activate it to import its domains.', 'domainmanager') }}"
                             {% endif %}>
                         <i class="ti ti-cloud-download"></i>
-                        <span>{{ __('Import') }}</span>
+                        <span>{{ __('Import', 'domainmanager') }}</span>
                     </button>
                 {% endif %}
                 {% if config_id > 0 %}
@@ -178,7 +167,7 @@
 
         <script>
             (function () {
-                const select = document.querySelector('select[name="api_driver"]');
+                const select = document.getElementById('domainmanager-driver');
                 const allCapabilities = {{ all_testable_capabilities|json_encode|raw }};
                 const allPrimaryCapabilities = {{ all_primary_capabilities|json_encode|raw }};
 
@@ -213,7 +202,7 @@
                     checkButton.addEventListener('click', function () {
                         const icon = checkButton.querySelector('i');
                         checkButton.disabled = true;
-                        icon.classList.add('icon-rotate', 'd-inline-block');
+                        icon.classList.add('icon-rotate');
 
                         const driver = select.value;
                         const body = new URLSearchParams();
@@ -300,20 +289,27 @@
                             }
                         }).finally(function () {
                             checkButton.disabled = false;
-                            icon.classList.remove('icon-rotate', 'd-inline-block');
+                            icon.classList.remove('icon-rotate');
                         });
                     });
                 }
             })();
         </script>
     {% else %}
-        <div class="card-body row">
-            {{ fields.readOnlyField('api_driver', driver_labels[current_driver], __('API driver', 'domainmanager')) }}
+        <div class="card-body">
+            <div class="mb-3 row">
+                <label class="col-4 col-form-label">{{ __('API driver', 'domainmanager') }}</label>
+                <div class="col-8">
+                    <span class="col-form-label">{{ driver_labels[current_driver] }}</span>
+                </div>
+            </div>
         </div>
-
-        {% include '@domainmanager/connection_test_panel.html.twig' %}
     {% endif %}
 </div>
+</div>
+
+<div class="col-12 col-xl-6">
+    {% include '@domainmanager/connection_test_panel.html.twig' %}
 </div>
 </div>
 

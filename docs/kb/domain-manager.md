@@ -88,10 +88,6 @@ Beyond these three, Domain Manager auto-detects a domain's DNS provider from its
 - Automatic actions (2 new cron tasks)
 - Dropdowns: Domain Type (1 type auto-seeded). Domain Record Type's 11 values (A, AAAA, ALIAS, CNAME, MX, NS, PTR, SOA, SRV, TXT, CAA) are native GLPI dropdown data, not injected by this plugin — it only re-creates one if an administrator deleted it.
 
-## Third-party services and trademarks
-
-Domain Manager integrates with third-party registrar/DNS provider APIs (Cloudflare, IONOS, Dinahosting) and the [rdap.org](https://rdap.org) public RDAP service (see "RDAP usage and etiquette" under Automatic Actions). The domain panel also links out to [who.is](https://who.is) for a manual WHOIS lookup. These are independent services operated by their respective owners; Domain Manager is not affiliated with, endorsed by, or sponsored by any of them, and their availability, rate limits, and terms of use are outside this plugin's control. All product names, logos, and brands referenced in this document — including provider names for auto-detected DNS providers listed under Supported providers — are the property of their respective owners and are used for identification purposes only.
-
 ## Interactions with other plugins
 
 None. Domain Manager has no dependency on, and no integration hooks for, other GLPI plugins.
@@ -118,12 +114,6 @@ None. Domain Manager has no dependency on, and no integration hooks for, other G
 |---|---|---|
 | DomainSync | Syncs registration lifecycle and DNS records for a batch of domains, oldest-synced first (default batch size: 2 domains/run, tunable from Setup > Automatic actions) | Every 30 minutes |
 | RdapEnrichment | Looks up missing RDAP data for one domain per run (max 1 lookup/domain/day) | Every 15 minutes |
-
-### RDAP usage and etiquette
-
-Domain Manager's RDAP enrichment queries [rdap.org](https://rdap.org), a free public service that resolves the correct registry RDAP server for each domain. It is a courtesy service run by [Gavin Brown](https://github.com/gbxyz), a third party not affiliated with Domain Manager or GLPI. Two hardcoded limits keep the plugin's traffic conservative by default: one lookup per domain per minute, and one RdapEnrichment run every 15 minutes processing at most one domain — so a single install cannot realistically exceed rdap.org's own rate limits.
-
-> **Note:** If you manage a very large number of domains and are likely to generate sustained RDAP traffic, consider querying the [IANA bootstrap registries](https://data.iana.org/rdap/) directly, or running your own local RDAP instance (rdap.org publishes one you can start with `docker compose up`). This keeps your traffic off the shared public service and avoids the risk of hitting its rate limits or those of the underlying registries. If rdap.org's service is useful to you, its maintainer also welcomes support via [ko-fi.com/rdaporg](https://ko-fi.com/rdaporg).
 
 ## Notifications
 

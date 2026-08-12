@@ -55,6 +55,11 @@
                     {{ __('Saving this form updates the record live at the DNS provider. There is no undo.', 'domainmanager') }}
                 {% endif %}
             </div>
+            {% if ttl_auto_note %}
+                <div class="text-muted small mt-1">
+                    <i class="ti ti-info-circle" title="{{ __('Setting TTL to 1 means "Automatic".', 'domainmanager') }}" data-bs-toggle="tooltip"></i>
+                </div>
+            {% endif %}
         </div>
     </div>
 {% endif %}
@@ -141,31 +146,6 @@
                 });
             }
         }
-
-        {% if ttl_auto_note %}
-        // Mirrors core's own field-helper markup (the "?" tooltip span
-        // used e.g. next to Ticket SLA TTO/TTR labels, built by
-        // components/form/basic_inputs_macros.html.twig via fields.field()'s
-        // `helper:` option) so this reads as a native helper, not a
-        // plugin-specific icon. `ttl` is a native DomainRecord field with no
-        // template slot this plugin can pass a `helper:` option into, so it
-        // has to be appended here instead.
-        var ttlInput = form ? form.querySelector('[name="ttl"]') : null;
-        if (ttlInput) {
-            var ttlLabel = form.querySelector('label[for="' + ttlInput.id + '"]')
-                || (ttlInput.closest('.form-field') ? ttlInput.closest('.form-field').querySelector('label') : null);
-            if (ttlLabel && !ttlLabel.querySelector('.domainmanager-ttl-note')) {
-                var ttlHelp = document.createElement('span');
-                ttlHelp.className = 'form-help ms-1 domainmanager-ttl-note';
-                ttlHelp.setAttribute('data-bs-toggle', 'tooltip');
-                ttlHelp.setAttribute('data-bs-placement', 'top');
-                ttlHelp.setAttribute('data-bs-html', 'true');
-                ttlHelp.setAttribute('data-bs-title', {{ __('Setting TTL to 1 means "Automatic".', 'domainmanager')|json_encode|raw }});
-                ttlHelp.textContent = '?';
-                ttlLabel.appendChild(ttlHelp);
-            }
-        }
-        {% endif %}
 
         {% if can_update %}
         // The "Managed by Domain Manager" banner is rendered by GLPI's
