@@ -125,6 +125,26 @@
         </div>
     {% endif %}
 </div>
+{% if rdap_registrar_info is not empty %}
+    <div class="col-12">
+        <div class="d-flex align-items-center my-3">
+            <hr class="flex-grow-1 my-0">
+            <span class="mx-2 text-muted small text-uppercase text-nowrap">
+                <i class="ti ti-certificate me-1"></i>
+                {{ __('RDAP cross-check', 'domainmanager') }}
+            </span>
+            <hr class="flex-grow-1 my-0">
+        </div>
+    </div>
+    <div class="row">
+        {{ fields.readOnlyField('domainmanager_rdap_registrar_name', rdap_registrar_info.name, __('RDAP registrar name', 'domainmanager'), {
+            'field_class': 'col-12 col-sm-6',
+        }) }}
+        {{ fields.readOnlyField('domainmanager_rdap_iana_id', rdap_registrar_info.iana_id ?: __('Unknown', 'domainmanager'), __('IANA number', 'domainmanager'), {
+            'field_class': 'col-12 col-sm-6',
+        }) }}
+    </div>
+{% endif %}
 
 <script>
     var domainmanagerStatusLabels  = {{ status_labels|json_encode|raw }};

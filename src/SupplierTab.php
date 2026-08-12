@@ -183,6 +183,7 @@ class SupplierTab extends CommonGLPI
             : [];
         $never_synced_count = self::countNeverSyncedRegistrarLinks($domains_raw);
         $datatable_params    = self::buildDomainsDatatableParams($domains_raw, (int) $supplier->getID());
+        $rdap_registrar_info = DomainState::getRdapRegistrarInfo((int) $supplier->getID());
 
         TemplateRenderer::getInstance()->display('@domainmanager/supplier_tab.html.twig', [
             'suppliers_id'         => (int) $supplier->getID(),
@@ -197,6 +198,7 @@ class SupplierTab extends CommonGLPI
             'saved'                => $saved,
             'values'               => $values,
             'connection_test'      => $connection_test,
+            'rdap_registrar_info'  => $rdap_registrar_info,
             'testable_capabilities' => DriverRegistry::getTestableCapabilities($current_driver),
             'all_testable_capabilities' => array_combine(
                 DriverRegistry::getAvailableDrivers(),
