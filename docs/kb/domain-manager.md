@@ -90,7 +90,7 @@ Beyond these three, Domain Manager auto-detects a domain's DNS provider from its
 
 ## Third-party services and trademarks
 
-Domain Manager integrates with third-party registrar/DNS provider APIs (Cloudflare, IONOS, Dinahosting) and the [rdap.org](https://rdap.org) public RDAP service (see "RDAP usage and etiquette" under Automatic Actions). These are independent services operated by their respective owners; Domain Manager is not affiliated with, endorsed by, or sponsored by any of them, and their availability, rate limits, and terms of use are outside this plugin's control. All product names, logos, and brands referenced in this document — including provider names for auto-detected DNS providers listed under Supported providers — are the property of their respective owners and are used for identification purposes only.
+Domain Manager integrates with third-party registrar/DNS provider APIs (Cloudflare, IONOS, Dinahosting) and the [rdap.org](https://rdap.org) public RDAP service (see "RDAP usage and etiquette" under Automatic Actions). The domain panel also links out to [who.is](https://who.is) for a manual WHOIS lookup. These are independent services operated by their respective owners; Domain Manager is not affiliated with, endorsed by, or sponsored by any of them, and their availability, rate limits, and terms of use are outside this plugin's control. All product names, logos, and brands referenced in this document — including provider names for auto-detected DNS providers listed under Supported providers — are the property of their respective owners and are used for identification purposes only.
 
 ## Interactions with other plugins
 
