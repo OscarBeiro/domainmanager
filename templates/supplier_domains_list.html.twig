@@ -27,19 +27,6 @@
  # -------------------------------------------------------------------------
  #}
 
-{% set dns_kind_labels = {
-    'managed': __('Plugin managed', 'domainmanager'),
-    'unmanaged': __('Known, unmanaged (yet)', 'domainmanager'),
-    'unknown': __('Unknown', 'domainmanager'),
-    'never': __('Not yet checked', 'domainmanager'),
-} %}
-{% set dns_kind_classes = {
-    'managed': 'text-bg-success',
-    'unmanaged': 'text-bg-warning',
-    'unknown': 'text-bg-secondary',
-    'never': 'text-bg-secondary',
-} %}
-
 <div class="card m-2 border-0 shadow-none" id="domainmanager-domains-list">
     <div class="card-header">
         <div class="ribbon ribbon-bookmark ribbon-top ribbon-start bg-blue s-1">
@@ -61,53 +48,6 @@
         </div>
     {% endif %}
     <div class="card-body p-0">
-        {% if domains is empty %}
-            <div class="text-muted small p-3">
-                {{ __('No domain currently references this supplier as its registrar or DNS provider.', 'domainmanager') }}
-            </div>
-        {% else %}
-            <table class="table table-sm mb-0">
-                <thead>
-                    <tr>
-                        <th>{{ __('Domain', 'domainmanager') }}</th>
-                        <th>{{ __('Registrar', 'domainmanager') }}</th>
-                        <th>{{ __('DNS Provider', 'domainmanager') }}</th>
-                        <th>{{ _n('Entity', 'Entities', 1) }}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for domain in domains %}
-                        <tr>
-                            <td>
-                                <a href="{{ domain.url }}">{{ domain.name }}</a>
-                            </td>
-                            <td>
-                                {% if domain.registrar %}
-                                    <a href="{{ domain.registrar.url }}">{{ domain.registrar.name }}</a>
-                                    <span class="badge {{ status_classes[domain.registrar_status]|default('text-bg-secondary') }} ms-1">
-                                        {{ status_labels[domain.registrar_status]|default(domain.registrar_status) }}
-                                    </span>
-                                {% else %}
-                                    <span class="text-muted">{{ __('None', 'domainmanager') }}</span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if domain.dns.url %}
-                                    <a href="{{ domain.dns.url }}">{{ domain.dns.name }}</a>
-                                {% else %}
-                                    {{ domain.dns.name }}
-                                {% endif %}
-                                <span class="badge {{ (domain.dns.kind == 'managed' and domain.dns_status == 'error') ? 'text-bg-danger' : dns_kind_classes[domain.dns.kind]|default('text-bg-secondary') }} ms-1">
-                                    {{ dns_kind_labels[domain.dns.kind]|default(domain.dns.kind) }}
-                                </span>
-                            </td>
-                            <td>
-                                {{ domain.entity_html|raw }}
-                            </td>
-                        </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        {% endif %}
+        {{ include('components/datatable.html.twig', datatable_params) }}
     </div>
 </div>

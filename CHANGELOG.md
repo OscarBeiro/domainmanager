@@ -12,6 +12,7 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 ## [Unreleased]
 ### Features
 - Reworked the Domain Manager panel on a Domain's form to match GLPI's own look: fields are now grouped by topic in a clean grid instead of two wide tables, the domain name itself is now the clickable link to visit the site, and the WHOIS/Unlink registrar buttons moved to a proper button row at the bottom of the panel.
+- The Domains list on a Supplier's Domain Manager tab now supports real sorting, filtering (by registrar status and DNS provider status), and pagination, matching GLPI's own list screens instead of a plain static table.
 
 ## [1.7.1]
 ### Features
