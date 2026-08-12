@@ -61,22 +61,17 @@
  # card. Uses core's own field macros (fields_macros.html.twig), same as
  # every native itemtype form (e.g. Supplier's own showForm(), confirmed
  # via generic_show_form.html.twig on a live GLPI 11.0.8 instance) —
- # fields.smallTitle() for the icon divider, fields.readOnlyField()/
- # htmlField() for the values, which lay out two per row via the macros'
- # own col-12 col-sm-6 field wrapper. #}
-{{ fields.smallTitle(__('Connection diagnostics', 'domainmanager'), 'ti ti-plug-connected') }}
+ # fields.readOnlyField()/htmlField() for the values, which lay out two
+ # per row via the macros' own col-12 col-sm-6 field wrapper. A plain
+ # text-muted divider, not fields.smallTitle()'s ribbon-bookmark badge —
+ # that's reserved for the top-level "Domain Manager API access" header. #}
+<div class="col-12">
+    <div class="text-muted small text-uppercase mb-2">
+        <i class="ti ti-plug-connected me-1"></i>
+        {{ __('Connection diagnostics', 'domainmanager') }}
+    </div>
+</div>
 <div id="domainmanager-test-panel" class="row">
-    {# §9 Phase 28: read-only reference value, not an editable field —
-       sourced from RDAP (rdap_registrar_name/iana_id on whichever of
-       this Supplier's domains was checked most recently), shown here
-       so an admin can confirm/record the real-world registrar identity
-       once per Supplier instead of re-discovering it on each individual
-       Domain form's own cross-check panel (§6.2). Purely informational,
-       same as that panel — never a source of truth for anything. #}
-    {% if rdap_registrar_info %}
-        {{ fields.readOnlyField('rdap_registrar_name', rdap_registrar_info.name, __('RDAP registrar of record', 'domainmanager')) }}
-        {{ fields.readOnlyField('rdap_iana_id', rdap_registrar_info.iana_id ?: '—', __('IANA number', 'domainmanager')) }}
-    {% endif %}
     {% if not supplier_active|default(true) %}
         <div class="col-12">
             <div class="alert alert-secondary mb-0">
