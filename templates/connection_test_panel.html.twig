@@ -60,11 +60,22 @@
  # Manager API access" card's body (supplier_tab.html.twig), not its own
  # card. Uses core's own field macros (fields_macros.html.twig), same as
  # every native itemtype form (e.g. Supplier's own showForm(), confirmed
- # via generic_show_form.html.twig on a live GLPI 11.0.8 instance) —
- # fields.smallTitle() for the icon divider, fields.readOnlyField()/
- # htmlField() for the values, which lay out two per row via the macros'
- # own col-12 col-sm-6 field wrapper. #}
-{{ fields.smallTitle(__('Connection diagnostics', 'domainmanager'), 'ti ti-plug-connected') }}
+ # via generic_show_form.html.twig on a live GLPI 11.0.8 instance) for
+ # fields.readOnlyField()/htmlField() (values lay out two per row via the
+ # macros' own col-12 col-sm-6 field wrapper). The section header itself
+ # is a plain horizontal-rule divider with the label centered on it, not
+ # fields.smallTitle()'s ribbon-bookmark badge — that stays reserved for
+ # the top-level "Domain Manager API access" card header. #}
+<div class="col-12">
+    <div class="d-flex align-items-center my-3">
+        <hr class="flex-grow-1 my-0">
+        <span class="mx-2 text-muted small text-uppercase text-nowrap">
+            <i class="ti ti-plug-connected me-1"></i>
+            {{ __('Connection diagnostics', 'domainmanager') }}
+        </span>
+        <hr class="flex-grow-1 my-0">
+    </div>
+</div>
 <div id="domainmanager-test-panel" class="row">
     {% if not supplier_active|default(true) %}
         <div class="col-12">
