@@ -61,16 +61,10 @@
  # card. Uses core's own field macros (fields_macros.html.twig), same as
  # every native itemtype form (e.g. Supplier's own showForm(), confirmed
  # via generic_show_form.html.twig on a live GLPI 11.0.8 instance) —
- # fields.readOnlyField()/htmlField() for the values, which lay out two
- # per row via the macros' own col-12 col-sm-6 field wrapper. A plain
- # text-muted divider, not fields.smallTitle()'s ribbon-bookmark badge —
- # that's reserved for the top-level "Domain Manager API access" header. #}
-<div class="col-12">
-    <div class="text-muted small text-uppercase mb-2">
-        <i class="ti ti-plug-connected me-1"></i>
-        {{ __('Connection diagnostics', 'domainmanager') }}
-    </div>
-</div>
+ # fields.smallTitle() for the icon divider, fields.readOnlyField()/
+ # htmlField() for the values, which lay out two per row via the macros'
+ # own col-12 col-sm-6 field wrapper. #}
+{{ fields.smallTitle(__('Connection diagnostics', 'domainmanager'), 'ti ti-plug-connected') }}
 <div id="domainmanager-test-panel" class="row">
     {% if not supplier_active|default(true) %}
         <div class="col-12">
