@@ -1,6 +1,6 @@
 # 1. Introduction
 
-> Generated for **domainmanager 1.7.1** on GLPI 11.0 — 2026-08-11. Screenshots are produced automatically; do not edit generated sections by hand.
+> Generated for **domainmanager 1.7.1** on GLPI 11.0 — 2026-08-11.
 
 *Part of the domainmanager manual — see also [2. Setup](02-setup.md), [3. Usage](03-usage.md), [4. Troubleshooting](04-troubleshooting.md).*
 
@@ -121,3 +121,7 @@ None — Domain Manager does not add criteria or actions to GLPI's Rules engine.
 - Standard `config` right
 
 See [2.3 Permissions](02-setup.md#23-permissions).
+
+## 1.6 Third-party services and trademarks
+
+Domain Manager integrates with third-party registrar/DNS provider APIs (Cloudflare, IONOS, Dinahosting) and the [rdap.org](https://rdap.org) public RDAP service (see [2.2.2 RDAP usage and etiquette](02-setup.md#222-rdap-usage-and-etiquette)). These are independent services operated by their respective owners; Domain Manager is not affiliated with, endorsed by, or sponsored by any of them, and their availability, rate limits, and terms of use are outside this plugin's control. All product names, logos, and brands referenced in this manual — including provider names for auto-detected DNS providers listed in [1.4](#14-supported-nameservers--drivers) — are the property of their respective owners and are used for identification purposes only.
