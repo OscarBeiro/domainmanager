@@ -48,37 +48,22 @@
     {% if not is_new %}
         <div class="card-body p-0">
             {% set visit_target = punycode ?: domain_name %}
-            <div class="p-2 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
-                <div>
-                    <div style="font-size: 19px; font-weight: 500;">
-                        {{ domain_name }}
-                    </div>
-                    {% if punycode %}
-                        <div class="text-muted small">
-                            <code>{{ punycode }}</code>
-                            <button type="button" class="btn btn-sm btn-link p-0 ms-1"
-                                    data-glpi-clipboard-text="{{ punycode }}"
-                                    title="{{ __('Copy Punycode form', 'domainmanager') }}">
-                                <i class="ti ti-copy"></i>
-                            </button>
-                        </div>
-                    {% endif %}
-                </div>
-                <div class="d-flex gap-2">
-                    <a href="https://{{ visit_target }}" target="_blank" rel="noopener noreferrer"
-                       title="{{ domain_name }}" class="btn btn-sm btn-outline-secondary">
-                        <i class="ti ti-external-link me-1"></i>{{ __('Visit', 'domainmanager') }}
-                    </a>
-                    <a href="https://who.is/whois/{{ visit_target }}" target="_blank" rel="noopener noreferrer"
-                       class="btn btn-sm btn-outline-secondary">
-                        <i class="ti ti-search me-1"></i>{{ __('WHOIS', 'domainmanager') }}
-                    </a>
-                    {% if registrar_supplier and can_update %}
-                        <button type="button" class="btn btn-sm btn-outline-secondary" id="domainmanager-unlink-registrar" title="{{ __('Unlink registrar', 'domainmanager') }}">
-                            <i class="ti ti-unlink me-1"></i>{{ __('Unlink registrar', 'domainmanager') }}
+            <div class="p-2 border-bottom d-flex align-items-baseline gap-2 flex-wrap">
+                <a href="https://{{ visit_target }}" target="_blank" rel="noopener noreferrer"
+                   class="fs-4 fw-medium" title="{{ __('Visit this domain', 'domainmanager') }}">
+                    {{ domain_name }}
+                    <i class="ti ti-external-link fs-6"></i>
+                </a>
+                {% if punycode %}
+                    <div class="text-muted small">
+                        <code>{{ punycode }}</code>
+                        <button type="button" class="btn btn-sm btn-link p-0 ms-1"
+                                data-glpi-clipboard-text="{{ punycode }}"
+                                title="{{ __('Copy Punycode form', 'domainmanager') }}">
+                            <i class="ti ti-copy"></i>
                         </button>
-                    {% endif %}
-                </div>
+                    </div>
+                {% endif %}
             </div>
             {% if not is_managed %}
                 {# §9 Phase 49 addendum, per user request: a domain with no
@@ -98,34 +83,21 @@
                     {% endif %}
                 </div>
             {% else %}
-            <table class="table table-sm mb-0">
-                <thead>
-                    <tr>
-                        <th>{{ __('Registrar', 'domainmanager') }}</th>
-                        <th>{{ __('DNS Provider', 'domainmanager') }}</th>
-                        <th>{{ __('Registrar sync', 'domainmanager') }}</th>
-                        <th>{{ __('DNS sync', 'domainmanager') }}</th>
-                        {# §9 Phase 25: RDAP-sourced, independent of driver sync outcome —
-                           shown whenever RDAP has reported a value, regardless of rstatus/dstatus.
-                           No "(RDAP)" in the visible header — the source doesn't matter to the
-                           viewer, only the data does (per explicit request); kept in the tooltip
-                           and in ARCHITECTURE.md/CHANGELOG.md instead. #}
-                        <th>{{ __('Last changed', 'domainmanager') }}</th>
-                        <th>{{ __('Last transfer', 'domainmanager') }}</th>
-                        <th>{{ __('Reg/DNS last sync', 'domainmanager') }}</th>
-                        <th>{{ __('RDAP last sync', 'domainmanager') }}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td>
+            <div class="p-3">
+                <div class="row">
+                    <div class="mb-3 col-12 col-sm-3">
+                        <label class="form-label">{{ __('Registrar', 'domainmanager') }}</label>
+                        <div>
                             {% if registrar_supplier %}
                                 <a href="{{ registrar_supplier.getLinkURL() ~ supplier_tab_forcetab }}">{{ registrar_supplier.getName() }}</a>
                             {% else %}
                                 <span class="text-muted">{{ __('No registrar supplier set', 'domainmanager') }}</span>
                             {% endif %}
-                        </td>
-                        <td id="domainmanager-provider">
+                        </div>
+                    </div>
+                    <div class="mb-3 col-12 col-sm-3">
+                        <label class="form-label">{{ __('DNS Provider', 'domainmanager') }}</label>
+                        <div id="domainmanager-provider">
                             {% if detected == '' %}
                                 <span class="text-muted">{{ __('Never synchronized', 'domainmanager') }}</span>
                             {% elseif dns_supplier %}
@@ -133,43 +105,66 @@
                             {% else %}
                                 {{ detected }}
                             {% endif %}
-                        </td>
-                        <td>
+                        </div>
+                    </div>
+                    <div class="mb-3 col-12 col-sm-3">
+                        <label class="form-label">{{ __('Registrar sync', 'domainmanager') }}</label>
+                        <div>
                             <span class="badge {{ status_classes[rstatus]|default('text-bg-secondary') }}"
                                   id="domainmanager-badge-registrar"
                                   title="{{ state ? state.registrar_message : '' }}">
                                 {{ status_labels[rstatus]|default(rstatus) }}
                             </span>
-                        </td>
-                        <td>
+                        </div>
+                    </div>
+                    <div class="mb-3 col-12 col-sm-3">
+                        <label class="form-label">{{ __('DNS sync', 'domainmanager') }}</label>
+                        <div>
                             <span class="badge {{ status_classes[dstatus]|default('text-bg-secondary') }}"
                                   id="domainmanager-badge-dns"
                                   title="{{ state ? state.dns_message : '' }}">
                                 {{ status_labels[dstatus]|default(dstatus) }}
                             </span>
-                        </td>
-                        <td>
+                        </div>
+                    </div>
+                    <div class="mb-3 col-12 col-sm-3">
+                        <label class="form-label">{{ __('Last changed', 'domainmanager') }}</label>
+                        <div>
                             {% if state and state.last_changed_date %}
                                 {{ state.last_changed_date }}
                             {% else %}
                                 <span class="text-muted" title="{{ __('Not yet checked', 'domainmanager') }}">&mdash;</span>
                             {% endif %}
-                        </td>
-                        <td>
+                        </div>
+                    </div>
+                    <div class="mb-3 col-12 col-sm-3">
+                        <label class="form-label">{{ __('Last transfer', 'domainmanager') }}</label>
+                        <div>
                             {% if state and state.transfer_date %}
                                 {{ state.transfer_date }}
                             {% else %}
                                 <span class="text-muted" title="{{ __('Not yet checked, or never transferred', 'domainmanager') }}">&mdash;</span>
                             {% endif %}
-                        </td>
-                        <td id="domainmanager-lastsync">
+                        </div>
+                    </div>
+                    {# §9 Phase 25: RDAP-sourced, independent of driver sync outcome —
+                       shown whenever RDAP has reported a value, regardless of rstatus/dstatus.
+                       No "(RDAP)" in the visible label — the source doesn't matter to the
+                       viewer, only the data does (per explicit request); kept in the tooltip
+                       and in ARCHITECTURE.md/CHANGELOG.md instead. #}
+                    <div class="mb-3 col-12 col-sm-3">
+                        <label class="form-label">{{ __('Reg/DNS last sync', 'domainmanager') }}</label>
+                        <div id="domainmanager-lastsync">
                             {{ state and state.last_sync_date ? state.last_sync_date : __('Never', 'domainmanager') }}
                             {% if can_update and is_managed %}
                                 <i class="ti ti-refresh ms-1" id="domainmanager-sync-regdns" role="button"
                                    data-bs-toggle="tooltip" title="{{ __('Sync registrar/DNS now', 'domainmanager') }}"></i>
                             {% endif %}
-                        </td>
-                        <td id="domainmanager-lastrdap">
+                        </div>
+                    </div>
+                    <div class="mb-3 col-12 col-sm-3">
+                        <label class="form-label">{{ __('RDAP last sync', 'domainmanager') }}</label>
+                        <div id="domainmanager-lastrdap">
                             {% if state and state.last_rdap_check_date %}
                                 {{ state.last_rdap_check_date }}
                             {% else %}
@@ -179,12 +174,10 @@
                                 <i class="ti ti-refresh ms-1" id="domainmanager-sync-rdap" role="button"
                                    data-bs-toggle="tooltip" title="{{ __('Run RDAP lookup now', 'domainmanager') }}"></i>
                             {% endif %}
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
+                        </div>
+                    </div>
+                </div>
 
-            <div class="p-3">
                 {% if not registrar_supplier %}
                     <div class="text-muted small lh-sm mb-1">
                         <a href="{{ infocom_tab_url }}">{{ __('Set the Registrar via the Financial and administrative information tab', 'domainmanager') }}</a>
@@ -219,25 +212,19 @@
                it" (§6.2 boolean/text fallback below) or "never synced",
                and gating the whole block on rstatus == 'ok' avoids
                presenting a bare wall of "—" for a domain that was never
-               synced at all. #}
+               synced at all. No RDAP-vs-driver distinction shown here — RDAP
+               fills the same fields the driver itself writes to (§9 Phase
+               27), so a single plain Yes/No/— reading is always accurate. #}
             {% if rstatus == 'ok' %}
-                <hr class="m-0">
-                <table class="table table-sm mb-0">
-                    <thead>
-                        <tr>
-                            <th>{{ __('WHOIS privacy', 'domainmanager') }}</th>
-                            <th>{{ __('Transfer lock', 'domainmanager') }}</th>
-                            <th>{{ __('Domain lock', 'domainmanager') }}</th>
-                            <th>{{ __('Auto-renew', 'domainmanager') }}</th>
-                            <th>{{ __('DNSSEC', 'domainmanager') }}</th>
-                            {# §9 Phase 23: RDAP-only fields, no driver ever reports these #}
-                            <th>{{ __('Pending delete', 'domainmanager') }}</th>
-                            <th>{{ __('Pending transfer', 'domainmanager') }}</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td>
+                <div class="p-3 pt-0">
+                    <div class="hr-text">
+                        <i class="ti ti-shield-lock"></i>
+                        <span>{{ __('Registrar security flags', 'domainmanager') }}</span>
+                    </div>
+                    <div class="row">
+                        <div class="mb-3 col-12 col-sm-3">
+                            <label class="form-label">{{ __('WHOIS privacy', 'domainmanager') }}</label>
+                            <div>
                                 {% if state.registrar_privacy_enabled is null %}
                                     <span class="text-muted" title="{{ __('Not reported by this driver', 'domainmanager') }}">&mdash;</span>
                                 {% elseif state.registrar_privacy_enabled %}
@@ -245,20 +232,17 @@
                                 {% else %}
                                     <span class="badge text-bg-secondary">{{ __('No', 'domainmanager') }}</span>
                                 {% endif %}
-                            </td>
-                            {# §9 Phase 27: Transfer lock/Domain lock/DNSSEC no longer
-                               distinguish "reported by driver" vs. "filled by RDAP" on
-                               screen — RDAP fills the same column the driver itself
-                               writes to (Cron::processRdapEnrichment(), SyncEngine's
-                               "only touch fields actually reported" fix), so a single
-                               plain Yes/No/— reading is always accurate here. #}
-                            {% for field in [
-                                'registrar_transfer_lock',
-                                'registrar_domain_lock',
-                                'registrar_auto_renew',
-                                'registrar_dnssec_enabled',
-                            ] %}
-                                <td>
+                            </div>
+                        </div>
+                        {% for field, label in {
+                            'registrar_transfer_lock': __('Transfer lock', 'domainmanager'),
+                            'registrar_domain_lock': __('Domain lock', 'domainmanager'),
+                            'registrar_auto_renew': __('Auto-renew', 'domainmanager'),
+                            'registrar_dnssec_enabled': __('DNSSEC', 'domainmanager'),
+                        } %}
+                            <div class="mb-3 col-12 col-sm-3">
+                                <label class="form-label">{{ label }}</label>
+                                <div>
                                     {% if state[field] is null %}
                                         <span class="text-muted" title="{{ __('Not reported', 'domainmanager') }}">&mdash;</span>
                                     {% elseif state[field] %}
@@ -266,13 +250,19 @@
                                     {% else %}
                                         <span class="badge text-bg-secondary">{{ __('No', 'domainmanager') }}</span>
                                     {% endif %}
-                                </td>
-                            {% endfor %}
-                            {# §9 Phase 23/27: no driver ever reports these, so they're
-                               always RDAP-only, but no longer named with an "rdap_"
-                               prefix (source doesn't belong in the field name). #}
-                            {% for field in ['pending_delete', 'pending_transfer'] %}
-                                <td>
+                                </div>
+                            </div>
+                        {% endfor %}
+                        {# §9 Phase 23/27: no driver ever reports these, so they're
+                           always RDAP-only, but no longer named with an "rdap_"
+                           prefix (source doesn't belong in the field name). #}
+                        {% for field, label in {
+                            'pending_delete': __('Pending delete', 'domainmanager'),
+                            'pending_transfer': __('Pending transfer', 'domainmanager'),
+                        } %}
+                            <div class="mb-3 col-12 col-sm-3">
+                                <label class="form-label">{{ label }}</label>
+                                <div>
                                     {% if state[field] is null %}
                                         <span class="text-muted" title="{{ __('Not yet checked', 'domainmanager') }}">&mdash;</span>
                                     {% elseif state[field] %}
@@ -280,11 +270,11 @@
                                     {% else %}
                                         <span class="badge text-bg-secondary">{{ __('No', 'domainmanager') }}</span>
                                     {% endif %}
-                                </td>
-                            {% endfor %}
-                        </tr>
-                    </tbody>
-                </table>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
             {% endif %}
 
             {# §9 Phase 23/28: registrar-of-record / nameserver cross-check —
@@ -299,10 +289,10 @@
                harmless differences (RDAP's legal-form registrar name,
                reordered nameserver lists) as false-positive mismatches. #}
             {% if registrar_mismatch or ns_mismatch %}
-                <hr class="m-0">
-                <div class="p-3">
-                    <div class="text-muted small lh-sm mb-2">
-                        <i class="ti ti-info-circle me-1"></i>{{ __('RDAP cross-check', 'domainmanager') }}
+                <div class="p-3 pt-0">
+                    <div class="hr-text">
+                        <i class="ti ti-info-circle"></i>
+                        <span>{{ __('RDAP cross-check', 'domainmanager') }}</span>
                     </div>
                     {% if registrar_mismatch %}
                         <div class="small mb-1">
@@ -324,6 +314,30 @@
                 </div>
             {% endif %}
             {% endif %}
+
+            {# §9 Phase 94: relocated into the Domain form's own native
+               Save/Put in trashbin button row (`.form-button-separator` in
+               `components/form/buttons.html.twig`) by the script below,
+               same DOM-relocation technique this plugin already used for
+               the earlier "Update Now" button (§9 Phase 9 addendum) — a
+               plugin has no way to render directly into that row (it's
+               generated by core's own `showFormButtons()` for `Domain`,
+               not reachable from a plugin hook). Rendered `d-none` here so
+               there's no flash of it in the wrong place before the script
+               runs. Styled `btn-outline-secondary`, the same class core's
+               own `addbuttons` mechanism defaults to for a plugin-contributed
+               button in this exact row. #}
+            <a href="https://who.is/whois/{{ visit_target }}" target="_blank" rel="noopener noreferrer"
+               id="domainmanager-whois" class="btn btn-outline-secondary me-2 d-none">
+                <i class="ti ti-search"></i>
+                <span>{{ __('WHOIS', 'domainmanager') }}</span>
+            </a>
+            {% if registrar_supplier and can_update %}
+                <button type="button" class="btn btn-outline-secondary me-2 d-none" id="domainmanager-unlink-registrar">
+                    <i class="ti ti-unlink"></i>
+                    <span>{{ __('Unlink registrar', 'domainmanager') }}</span>
+                </button>
+            {% endif %}
         </div>
     {% else %}
         <div class="card-body">
@@ -336,6 +350,39 @@
 
 <script>
 (function () {
+
+    // §9 Phase 94: relocate the WHOIS/Unlink registrar buttons into the
+    // Domain form's own native Save/Put in trashbin row, same technique
+    // already used for the earlier "Update Now" button (§9 Phase 9
+    // addendum). Runs immediately, not on DOMContentLoaded — this whole
+    // panel (this `<script>` included) is itself injected into the page
+    // later via AJAX (the Domain form's tab-loading mechanism), by which
+    // point `DOMContentLoaded` has long since fired for the outer page and
+    // would never fire again; the native button row is already present in
+    // the DOM by the time this script runs, so no deferral is needed.
+    // Inserted right after the native Save button when present (its own
+    // flex-row-reverse layout then places these visually just left of
+    // Save), else appended.
+    (function relocateButtons() {
+        const buttonRow = document.querySelector('.form-button-separator');
+        if (!buttonRow) {
+            return;
+        }
+        let anchor = buttonRow.querySelector('button[name="update"]');
+        ['domainmanager-whois', 'domainmanager-unlink-registrar'].forEach(function (id) {
+            const button = document.getElementById(id);
+            if (!button) {
+                return;
+            }
+            if (anchor) {
+                anchor.insertAdjacentElement('afterend', button);
+            } else {
+                buttonRow.appendChild(button);
+            }
+            button.classList.remove('d-none');
+            anchor = button;
+        });
+    })();
 
     // Cosmetic lock layer: disable synced fields for users without the
     // unlock right (server-side enforcement is authoritative)
@@ -456,7 +503,7 @@
     if (regDnsIcon) {
         function runSync(force) {
             const csrf = document.querySelector('meta[property="glpi:csrf_token"]');
-            regDnsIcon.classList.add('icon-rotate');
+            regDnsIcon.classList.add('icon-rotate', 'd-inline-block');
 
             return fetch({{ path('/plugins/domainmanager/sync/' ~ domains_id)|json_encode|raw }}, {
                 method: 'POST',
@@ -541,7 +588,7 @@
             }).catch(function (error) {
                 window.alert({{ __('Synchronization request failed:', 'domainmanager')|json_encode|raw }} + ' ' + error.message);
             }).finally(function () {
-                regDnsIcon.classList.remove('icon-rotate');
+                regDnsIcon.classList.remove('icon-rotate', 'd-inline-block');
                 disablePermanently(regDnsIcon);
             });
         }
@@ -557,7 +604,7 @@
         rdapIcon.addEventListener('click', function () {
             const csrf = document.querySelector('meta[property="glpi:csrf_token"]');
             lockIcon(rdapIcon);
-            rdapIcon.classList.add('icon-rotate');
+            rdapIcon.classList.add('icon-rotate', 'd-inline-block');
 
             fetch({{ path('/plugins/domainmanager/rdapsync/' ~ domains_id)|json_encode|raw }}, {
                 method: 'POST',
@@ -581,7 +628,7 @@
             }).catch(function (error) {
                 window.alert({{ __('RDAP lookup request failed:', 'domainmanager')|json_encode|raw }} + ' ' + error.message);
             }).finally(function () {
-                rdapIcon.classList.remove('icon-rotate');
+                rdapIcon.classList.remove('icon-rotate', 'd-inline-block');
                 disablePermanently(rdapIcon);
             });
         }, { once: true });

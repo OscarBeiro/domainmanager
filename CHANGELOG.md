@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Entries are grouped into **Features** and **Bugs**, one line each.
 
 ## [Unreleased]
+### Features
+- Reworked the Domain Manager panel on a Domain's form to match GLPI's own look: fields are now grouped by topic in a clean grid instead of two wide tables, the domain name itself is now the clickable link to visit the site, and the WHOIS/Unlink registrar buttons moved to a proper button row at the bottom of the panel.
 
 ## [1.7.1]
 ### Features
