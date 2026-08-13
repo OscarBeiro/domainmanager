@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Entries are grouped into **Features** and **Bugs**, one line each.
 
 ## [Unreleased]
+### Bugs
+- Cloudflare, IONOS, and Dinahosting connection errors now show the provider's own error code and message instead of a guessed cause, so a failed Check Connection no longer claims a specific permission is missing when that isn't actually why it failed.
 
 ## [1.7.1]
 ### Features
