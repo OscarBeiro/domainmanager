@@ -4603,3 +4603,49 @@ as if it covers RDAP too, when it only reflects the registrar/DNS driver sync
 
 Full file list and rationale also recorded in `CHANGELOG-dev.md`'s `[Unreleased] - 1.7.1-beta1`
 entry.
+
+## 23. Driver error messages: extract the provider's own cause, never guess one (2026-08-13)
+
+User-reported: with zero Cloudflare zones and DNS:Read actually granted, Check Connection still
+showed "This Cloudflare API token lacks DNS:Read permission for this zone." The message was
+wrong because it was a guess: `CloudflareDriver::describeForbidden()`'s fallback for a 403 with
+no recognized Cloudflare restriction code always returned that fixed sentence, regardless of
+what actually caused the 403. `IonosDriver` had the same shape in a cruder form — its 401/403
+branches returned a fixed "check the API key" without even inspecting the response body, even
+though its own `describeError()`/`describeDomainsApiError()` helpers already knew how to parse
+that body for the *generic* (non-auth) error branch a few lines below.
+
+This is also a translation-scaling concern: every supplier accumulating its own hand-written
+guess sentence per error case multiplies translator workload as suppliers are added — the
+opposite of what should happen as this plugin adds more of them.
+
+**The house convention going forward:** never write a supplier-specific sentence guessing at an
+unconfirmed cause. Instead:
+
+- A confirmed cause — one the provider's response actually names unambiguously (Cloudflare's
+  token-restriction codes `9109`/`9208`, §12.3's permission-specific write-failure message) —
+  may still get its own specific, translated sentence. That isn't a guess.
+- Everything else routes through one shared, parametrized formatter,
+  `ConnectionTestResult::formatApiError(string $supplierName, ?string $code, ?string $message, int $httpStatus): string`
+  (`src/Dto/ConnectionTestResult.php`), which builds `%1$s error %2$s: %3$s` (supplier name,
+  the provider's own error code or `HTTP <status>` if none, the provider's own message or
+  `HTTP <status>` if none). This is the *only* place that template is written.
+- Each driver owns only the unavoidable part: a small private extractor that pulls a plain
+  `(code, message)` pair out of that provider's own JSON error envelope shape, then hands it to
+  the shared formatter. `CloudflareDriver::describeForbidden()`/`describeAuthFailure()` reuse the
+  existing `errors[0].code`/`.message` walk; `IonosDriver::extractError()`/`extractDomainsApiError()`
+  (renamed from `describeError()`/`describeDomainsApiError()`, same parsing, now returning the
+  pair instead of a pre-formatted string) do the same for IONOS's two error envelope shapes;
+  `DinahostingDriver::request()`/`classifyEnvelope()` feed the same formatter with
+  `(responseCode, summarizeErrors()/message)`. Even though Dinahosting's `responseCode` is itself
+  a confirmed, unambiguous cause (unlike a bare Cloudflare/IONOS HTTP status), per explicit user
+  direction all three drivers behave identically on an auth/permission failure rather than leaving
+  Dinahosting as a documented exception. `DinahostingDriver`'s `(responseCode, message)` shape is
+  the template a *new* driver's extractor should match.
+
+A new supplier driver should follow this pattern from the start: write one small extractor for
+its provider's error envelope, feed `formatApiError()`, and reserve a bespoke translated sentence
+only for a cause distinct enough that collapsing it into the generic template would lose real
+information (Cloudflare's restriction codes, a 404 "domain not managed" case) — not merely because
+the cause happens to be confirmed. See also the `glpi-plugin-builder` skill's notes on this
+pattern for any plugin that wraps a third-party API, not just this one.

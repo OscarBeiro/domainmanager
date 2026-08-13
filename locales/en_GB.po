@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-10 22:39+0200\n"
-"PO-Revision-Date: 2026-08-10 22:39+0200\n"
+"POT-Creation-Date: 2026-08-13 15:07+0200\n"
+"PO-Revision-Date: 2026-08-13 15:07+0200\n"
 "Last-Translator: Automatically generated\n"
 "Language-Team: none\n"
 "Language: en_GB\n"
@@ -356,47 +356,30 @@ msgstr "The provider's API is currently unavailable (HTTP %d)."
 msgid "Unexpected response from the provider API."
 msgstr "Unexpected response from the provider API."
 
-#: src/Driver/DinahostingDriver.php:232 src/Dto/ConnectionTestResult.php:74
+#: src/Driver/DinahostingDriver.php:233 src/Dto/ConnectionTestResult.php:74
 msgid "Connection successful."
 msgstr "Connection successful."
 
-#: src/Driver/DinahostingDriver.php:244
-msgid "Authentication failed — the username or password was rejected."
-msgstr "Authentication failed — the username or password was rejected."
-
-#: src/Driver/DinahostingDriver.php:248 src/Dto/ConnectionTestResult.php:87
-msgid ""
-"Authentication succeeded but the credentials lack the required permission/"
-"scope."
-msgstr ""
-"Authentication succeeded but the credentials lack the required permission/"
-"scope."
-
-#: src/Driver/DinahostingDriver.php:252 src/Dto/ConnectionTestResult.php:147
+#: src/Driver/DinahostingDriver.php:253 src/Dto/ConnectionTestResult.php:147
 msgid "The connection to the provider API timed out."
 msgstr "The connection to the provider API timed out."
 
-#: src/Driver/DinahostingDriver.php:256
-#, php-format
-msgid "Unexpected response from the provider API (code %d)."
-msgstr "Unexpected response from the provider API (code %d)."
-
-#: src/Driver/DinahostingDriver.php:441
+#: src/Driver/DinahostingDriver.php:446
 msgid "Dinahosting no longer reports this record"
 msgstr "Dinahosting no longer reports this record"
 
-#: src/Driver/DinahostingDriver.php:473 src/Driver/DinahostingDriver.php:534
-#: src/Driver/DinahostingDriver.php:632 src/Driver/CloudflareDriver.php:613
+#: src/Driver/DinahostingDriver.php:478 src/Driver/DinahostingDriver.php:539
+#: src/Driver/DinahostingDriver.php:637 src/Driver/CloudflareDriver.php:610
 #: src/Driver/IonosDriver.php:596
 #, php-format
 msgid "Record type %s is not writable through Domain Manager"
 msgstr "Record type %s is not writable through Domain Manager"
 
-#: src/Driver/DinahostingDriver.php:499
+#: src/Driver/DinahostingDriver.php:504
 msgid "Dinahosting did not report the newly created record"
 msgstr "Dinahosting did not report the newly created record"
 
-#: src/Driver/DinahostingDriver.php:597
+#: src/Driver/DinahostingDriver.php:602
 #, php-format
 msgid ""
 "Domain Manager cannot safely edit this record: Dinahosting already has one "
@@ -407,55 +390,38 @@ msgstr ""
 "or more %s records at %s, and its API can only delete all of them at once, "
 "not a single one"
 
-#: src/Driver/DinahostingDriver.php:663
+#: src/Driver/DinahostingDriver.php:668
 msgid "This record reference is no longer valid"
 msgstr "This record reference is no longer valid"
 
-#: src/Driver/DinahostingDriver.php:723 src/Driver/CloudflareDriver.php:375
+#: src/Driver/DinahostingDriver.php:728 src/Driver/CloudflareDriver.php:372
 #, php-format
 msgid "Expires %s"
 msgstr "Expires %s"
 
-#: src/Driver/DinahostingDriver.php:856
+#: src/Driver/DinahostingDriver.php:861
 msgid "Dinahosting API is unreachable"
 msgstr "Dinahosting API is unreachable"
 
-#: src/Driver/DinahostingDriver.php:864
+#: src/Driver/DinahostingDriver.php:869
 #, php-format
 msgid "Dinahosting API unavailable (HTTP %d)"
 msgstr "Dinahosting API unavailable (HTTP %d)"
 
-#: src/Driver/DinahostingDriver.php:871
+#: src/Driver/DinahostingDriver.php:876
 msgid "Unexpected response from the Dinahosting API"
 msgstr "Unexpected response from the Dinahosting API"
 
-#: src/Driver/DinahostingDriver.php:878
-msgid "Dinahosting authentication failed, check the username/password"
-msgstr "Dinahosting authentication failed, check the username/password"
-
-#: src/Driver/DinahostingDriver.php:891
-msgid ""
-"Dinahosting authentication succeeded, but this account is not authorized to "
-"manage this domain"
-msgstr ""
-"Dinahosting authentication succeeded, but this account is not authorized to "
-"manage this domain"
-
-#: src/Driver/DinahostingDriver.php:896
+#: src/Driver/DinahostingDriver.php:883
 msgid "Domain is not managed by this Dinahosting account"
 msgstr "Domain is not managed by this Dinahosting account"
 
-#: src/Driver/DinahostingDriver.php:903
-#, php-format
-msgid "Dinahosting API error: %s"
-msgstr "Dinahosting API error: %s"
-
-#: src/Driver/DinahostingDriver.php:925
+#: src/Driver/DinahostingDriver.php:915
 msgid "Dinahosting username/password are not configured"
 msgstr "Dinahosting username/password are not configured"
 
-#: src/Driver/DinahostingDriver.php:994 src/Driver/CloudflareDriver.php:1015
-#: src/Driver/IonosDriver.php:900
+#: src/Driver/DinahostingDriver.php:984 src/Driver/CloudflareDriver.php:1004
+#: src/Driver/IonosDriver.php:905
 msgid "Domain name is not a valid FQDN"
 msgstr "Domain name is not a valid FQDN"
 
@@ -467,71 +433,59 @@ msgstr "Cloudflare Account ID"
 msgid "Cloudflare API token"
 msgstr "Cloudflare API token"
 
-#: src/Driver/CloudflareDriver.php:267 src/Driver/CloudflareDriver.php:923
-msgid "This Cloudflare API token lacks DNS:Read permission for this zone"
-msgstr "This Cloudflare API token lacks DNS:Read permission for this zone"
-
-#: src/Driver/CloudflareDriver.php:309
+#: src/Driver/CloudflareDriver.php:306
 msgid "Domain is not managed by Cloudflare Registrar on this account"
 msgstr "Domain is not managed by Cloudflare Registrar on this account"
 
-#: src/Driver/CloudflareDriver.php:505
+#: src/Driver/CloudflareDriver.php:502
 msgid "Cloudflare did not return the created record"
 msgstr "Cloudflare did not return the created record"
 
-#: src/Driver/CloudflareDriver.php:553 src/Driver/CloudflareDriver.php:712
+#: src/Driver/CloudflareDriver.php:550 src/Driver/CloudflareDriver.php:709
 msgid "Cloudflare did not return the updated record"
 msgstr "Cloudflare did not return the updated record"
 
-#: src/Driver/CloudflareDriver.php:597
+#: src/Driver/CloudflareDriver.php:594
 msgid "Cloudflare did not return this record"
 msgstr "Cloudflare did not return this record"
 
-#: src/Driver/CloudflareDriver.php:782
-msgid "This Cloudflare API token lacks DNS:Edit permission for this zone"
-msgstr "This Cloudflare API token lacks DNS:Edit permission for this zone"
-
-#: src/Driver/CloudflareDriver.php:797
+#: src/Driver/CloudflareDriver.php:791
 #, php-format
 msgid "Cloudflare %1$s failed: %2$s"
 msgstr "Cloudflare %1$s failed: %2$s"
 
-#: src/Driver/CloudflareDriver.php:824 src/Driver/CloudflareDriver.php:894
+#: src/Driver/CloudflareDriver.php:818 src/Driver/CloudflareDriver.php:888
 msgid "Cloudflare API is unreachable"
 msgstr "Cloudflare API is unreachable"
 
-#: src/Driver/CloudflareDriver.php:833 src/Driver/CloudflareDriver.php:936
+#: src/Driver/CloudflareDriver.php:827 src/Driver/CloudflareDriver.php:925
 msgid "Unexpected response from the Cloudflare API"
 msgstr "Unexpected response from the Cloudflare API"
 
-#: src/Driver/CloudflareDriver.php:871
+#: src/Driver/CloudflareDriver.php:865
 #, php-format
 msgid "No Cloudflare zone found for %s under this account"
 msgstr "No Cloudflare zone found for %s under this account"
 
-#: src/Driver/CloudflareDriver.php:913
-msgid "Cloudflare authentication failed, check the API token"
-msgstr "Cloudflare authentication failed, check the API token"
-
-#: src/Driver/CloudflareDriver.php:930
+#: src/Driver/CloudflareDriver.php:919
 #, php-format
 msgid "Cloudflare API unavailable (HTTP %d)"
 msgstr "Cloudflare API unavailable (HTTP %d)"
 
-#: src/Driver/CloudflareDriver.php:950
+#: src/Driver/CloudflareDriver.php:939
 #, php-format
 msgid "Cloudflare API error: %s"
 msgstr "Cloudflare API error: %s"
 
-#: src/Driver/CloudflareDriver.php:971
+#: src/Driver/CloudflareDriver.php:960
 msgid "Cloudflare API token is not configured"
 msgstr "Cloudflare API token is not configured"
 
-#: src/Driver/CloudflareDriver.php:995
+#: src/Driver/CloudflareDriver.php:984
 msgid "Cloudflare Account ID is not configured"
 msgstr "Cloudflare Account ID is not configured"
 
-#: src/Driver/CloudflareDriver.php:1109
+#: src/Driver/CloudflareDriver.php:1101
 #, php-format
 msgid "Cloudflare rejected this request due to a token restriction: %s"
 msgstr "Cloudflare rejected this request due to a token restriction: %s"
@@ -571,47 +525,33 @@ msgstr "No IONOS DNS zone found for %s with this key"
 msgid "IONOS API is unreachable"
 msgstr "IONOS API is unreachable"
 
-#: src/Driver/IonosDriver.php:693 src/Driver/IonosDriver.php:755
-msgid "IONOS authentication failed, check the API key"
-msgstr "IONOS authentication failed, check the API key"
-
-#: src/Driver/IonosDriver.php:698
+#: src/Driver/IonosDriver.php:700
 #, php-format
 msgid "IONOS API unavailable (HTTP %d)"
 msgstr "IONOS API unavailable (HTTP %d)"
 
-#: src/Driver/IonosDriver.php:707
-#, php-format
-msgid "IONOS API error: %s"
-msgstr "IONOS API error: %s"
-
-#: src/Driver/IonosDriver.php:721
+#: src/Driver/IonosDriver.php:718
 msgid "Unexpected response from the IONOS API"
 msgstr "Unexpected response from the IONOS API"
 
-#: src/Driver/IonosDriver.php:748
+#: src/Driver/IonosDriver.php:745
 msgid "IONOS Domains API is unreachable"
 msgstr "IONOS Domains API is unreachable"
 
-#: src/Driver/IonosDriver.php:759
+#: src/Driver/IonosDriver.php:760
 msgid "Domain is not managed by this IONOS account"
 msgstr "Domain is not managed by this IONOS account"
 
-#: src/Driver/IonosDriver.php:764
+#: src/Driver/IonosDriver.php:765
 #, php-format
 msgid "IONOS Domains API unavailable (HTTP %d)"
 msgstr "IONOS Domains API unavailable (HTTP %d)"
 
-#: src/Driver/IonosDriver.php:775
-#, php-format
-msgid "IONOS Domains API error: %s"
-msgstr "IONOS Domains API error: %s"
-
-#: src/Driver/IonosDriver.php:783
+#: src/Driver/IonosDriver.php:777
 msgid "Unexpected response from the IONOS Domains API"
 msgstr "Unexpected response from the IONOS Domains API"
 
-#: src/Driver/IonosDriver.php:829
+#: src/Driver/IonosDriver.php:823
 msgid "IONOS API key/secret are not configured"
 msgstr "IONOS API key/secret are not configured"
 
@@ -804,6 +744,14 @@ msgstr[1] "Imported field locks"
 msgid "Authentication failed — the API token or credentials were rejected."
 msgstr "Authentication failed — the API token or credentials were rejected."
 
+#: src/Dto/ConnectionTestResult.php:87
+msgid ""
+"Authentication succeeded but the credentials lack the required permission/"
+"scope."
+msgstr ""
+"Authentication succeeded but the credentials lack the required permission/"
+"scope."
+
 #: src/Dto/ConnectionTestResult.php:91
 msgid ""
 "The API endpoint was not found — check the account/zone identifier or base "
@@ -834,6 +782,11 @@ msgid ""
 "Unexpected error while testing the connection — see the plugin error log."
 msgstr ""
 "Unexpected error while testing the connection — see the plugin error log."
+
+#: src/Dto/ConnectionTestResult.php:191
+#, php-format
+msgid "%1$s error %2$s: %3$s"
+msgstr "%1$s error %2$s: %3$s"
 
 #: src/Service/DnsRecordWriteback.php:237
 #: src/Service/DnsRecordWriteback.php:487

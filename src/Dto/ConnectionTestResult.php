@@ -161,6 +161,37 @@ final class ConnectionTestResult
     }
 
     /**
+     * Turn a provider's own error code/message into one shared, generic
+     * sentence, instead of every driver writing its own guessed-cause
+     * string (found live: Cloudflare's "lacks DNS:Read permission" fallback
+     * fired for a 403 whose real cause wasn't scope at all). Drivers own
+     * only the extraction of `$code`/`$message` from their provider's own
+     * error envelope shape — this is the one place the resulting sentence
+     * is built, so a new supplier never needs a new bespoke sentence, only
+     * a small extractor feeding into this.
+     *
+     * @param  string      $supplierName literal driver name, not translated
+     *                                    (matches the existing "Cloudflare
+     *                                    %1$s failed" convention)
+     * @param  string|null $code         the provider's own error code, if any
+     * @param  string|null $message      the provider's own error message, if any
+     * @param  int         $httpStatus   used as the code fallback when the
+     *                                    provider gave neither
+     * @return string
+     */
+    public static function formatApiError(
+        string $supplierName,
+        ?string $code,
+        ?string $message,
+        int $httpStatus
+    ): string {
+        $code    = $code !== null && $code !== '' ? $code : sprintf('HTTP %d', $httpStatus);
+        $message = $message !== null && $message !== '' ? $message : sprintf('HTTP %d', $httpStatus);
+
+        return sprintf(__('%1$s error %2$s: %3$s', 'domainmanager'), $supplierName, $code, $message);
+    }
+
+    /**
      * Build a "driver not implemented yet" result (IONOS stub)
      *
      * @param  string $capability 'registrar' | 'dns'
