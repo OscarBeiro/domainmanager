@@ -215,15 +215,16 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
             );
         }
 
-        return $this->classifyEnvelope($decoded, 'System_GetRequestTypes');
+        return $this->classifyEnvelope($decoded, 'System_GetRequestTypes', $status);
     }
 
     /**
-     * @param  array  $decoded envelope: {responseCode, message, errors, ...}
-     * @param  string $command for the log-only raw detail
+     * @param  array  $decoded    envelope: {responseCode, message, errors, ...}
+     * @param  string $command    for the log-only raw detail
+     * @param  int    $httpStatus formatApiError()'s code/message fallback
      * @return array{registrar: ConnectionTestResult, dns: ConnectionTestResult}
      */
-    private function classifyEnvelope(array $decoded, string $command): array
+    private function classifyEnvelope(array $decoded, string $command, int $httpStatus): array
     {
         if (self::envelopeSucceeded($decoded)) {
             return $this->bothCapabilities(
@@ -238,24 +239,28 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
         $message      = (string) ($decoded['message'] ?? '');
         $errorDetail  = self::summarizeErrors($decoded);
 
-        [$status, $userMessage] = match ($responseCode) {
-            self::CODE_AUTH_ERROR_USER => [
-                ConnectionTestStatus::AuthFailed,
-                __('Authentication failed — the username or password was rejected.', 'domainmanager'),
-            ],
-            self::CODE_AUTH_ERROR_OBJECT => [
-                ConnectionTestStatus::Forbidden,
-                __('Authentication succeeded but the credentials lack the required permission/scope.', 'domainmanager'),
-            ],
+        // Same treatment as CloudflareDriver/IonosDriver's Check Connection
+        // paths: only a cause the envelope names as a hard protocol-level
+        // fact (a genuine timeout, no content to extract) gets its own
+        // sentence; AUTH_ERROR_USER/AUTH_ERROR_OBJECT (and everything else)
+        // surface Dinahosting's own responseCode/message via the shared
+        // formatter instead of a driver-specific guessed-cause sentence.
+        [$connectionStatus, $userMessage] = match ($responseCode) {
+            self::CODE_AUTH_ERROR_USER => [ConnectionTestStatus::AuthFailed, null],
+            self::CODE_AUTH_ERROR_OBJECT => [ConnectionTestStatus::Forbidden, null],
             self::CODE_COMMAND_TIMEOUT => [
                 ConnectionTestStatus::Timeout,
                 __('The connection to the provider API timed out.', 'domainmanager'),
             ],
-            default => [
-                ConnectionTestStatus::UnknownError,
-                sprintf(__('Unexpected response from the provider API (code %d).', 'domainmanager'), $responseCode),
-            ],
+            default => [ConnectionTestStatus::UnknownError, null],
         };
+
+        $userMessage ??= ConnectionTestResult::formatApiError(
+            'Dinahosting',
+            (string) $responseCode,
+            self::sanitizeMessage($errorDetail ?: $message),
+            $httpStatus,
+        );
 
         $rawDetail = sprintf(
             'Dinahosting %s responseCode=%d message="%s"%s',
@@ -265,7 +270,7 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
             $errorDetail !== '' ? " errors=[$errorDetail]" : '',
         );
 
-        return $this->bothCapabilities($status, null, $userMessage, $rawDetail);
+        return $this->bothCapabilities($connectionStatus, null, $userMessage, $rawDetail);
     }
 
     /**
@@ -874,35 +879,20 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
         if (!self::envelopeSucceeded($decoded)) {
             $responseCode = (int) ($decoded['responseCode'] ?? 0);
 
-            if ($responseCode === self::CODE_AUTH_ERROR_USER) {
-                throw new DriverException(__('Dinahosting authentication failed, check the username/password', 'domainmanager'));
-            }
-
-            // Distinct from CODE_AUTH_ERROR_USER (§addendum "Debug: Dinahosting
-            // Registrar Auth Failure"): the account-wide credentials are
-            // valid (proven by other domains/Check Connection succeeding
-            // under the same supplier) but THIS domain isn't authorized for
-            // them — e.g. registered under a different Dinahosting account.
-            // Collapsing this into "authentication failed, check the
-            // username/password" wrongly implied the credentials themselves
-            // were wrong, when they demonstrably weren't.
-            if ($responseCode === self::CODE_AUTH_ERROR_OBJECT) {
-                throw new DriverException(
-                    __('Dinahosting authentication succeeded, but this account is not authorized to manage this domain', 'domainmanager'),
-                );
-            }
-
             if ($responseCode === self::CODE_OBJECT_NOT_EXISTS) {
                 throw new DriverException(__('Domain is not managed by this Dinahosting account', 'domainmanager'));
             }
 
+            // Same treatment for every other code (including
+            // CODE_AUTH_ERROR_USER/CODE_AUTH_ERROR_OBJECT, previously two
+            // bespoke guessed-cause sentences) as CloudflareDriver/IonosDriver:
+            // surface Dinahosting's own responseCode/message through the
+            // shared formatter instead of a driver-specific sentence, so all
+            // three drivers behave the same way on an auth/permission failure.
             $summary = self::sanitizeMessage(self::summarizeErrors($decoded) ?: (string) ($decoded['message'] ?? ''));
             PluginLogger::error("Dinahosting API error on $command (code $responseCode): $summary");
             throw new DriverException(
-                sprintf(
-                    __('Dinahosting API error: %s', 'domainmanager'),
-                    $summary !== '' ? $summary : sprintf('code %d', $responseCode),
-                ),
+                ConnectionTestResult::formatApiError('Dinahosting', (string) $responseCode, $summary, $status),
             );
         }
 
