@@ -45,7 +45,7 @@ trait ValidatesCredentialsTrait
      * @param  array<string, string> $requiredFields map of credential key => human label
      * @return string|null null when all required fields are present and non-empty
      */
-    private static function missingConfigMessage(array $credentials, array $requiredFields): ?string
+    protected static function missingConfigMessage(array $credentials, array $requiredFields): ?string
     {
         foreach ($requiredFields as $key => $label) {
             if (trim((string) ($credentials[$key] ?? '')) === '') {
