@@ -31,7 +31,6 @@
 
 namespace GlpiPlugin\Domainmanager\Driver;
 
-use DateTimeImmutable;
 use GlpiPlugin\Domainmanager\Config\Config;
 use GlpiPlugin\Domainmanager\Contract\ConnectionTestableInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsPipelineInterface;
@@ -41,7 +40,6 @@ use GlpiPlugin\Domainmanager\Contract\DnsRecordTtlAutoInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsRecordWriterInterface;
 use GlpiPlugin\Domainmanager\Contract\DomainDiscoveryInterface;
 use GlpiPlugin\Domainmanager\Contract\RegistrarDriverInterface;
-use GlpiPlugin\Domainmanager\Driver\Concern\ValidatesCredentialsTrait;
 use GlpiPlugin\Domainmanager\Dto\ConnectionTestResult;
 use GlpiPlugin\Domainmanager\Dto\ConnectionTestStatus;
 use GlpiPlugin\Domainmanager\Dto\DiscoveredDomain;
@@ -49,13 +47,10 @@ use GlpiPlugin\Domainmanager\Dto\DomainLifecycle;
 use GlpiPlugin\Domainmanager\Dto\LifecycleStatus;
 use GlpiPlugin\Domainmanager\Dto\ZoneRecord;
 use GlpiPlugin\Domainmanager\Exception\DriverException;
-use GlpiPlugin\Domainmanager\IdnNormalizer;
 use GlpiPlugin\Domainmanager\Service\PluginLogger;
-use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use InvalidArgumentException;
 use Throwable;
-use Toolbox;
 
 /**
  * Cloudflare driver: Registrar API (lifecycle) + DNS records API (zone records)
@@ -87,10 +82,8 @@ use Toolbox;
  *   segment for the Registrar API, instead of the previous approach of
  *   reading `account.id` back out of the zone lookup's own response.
  */
-class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface, ConnectionTestableInterface, DomainDiscoveryInterface, DnsRecordWriterInterface, DnsRecordProxyToggleInterface, DnsRecordCommentSyncInterface, DnsRecordTtlAutoInterface
+class CloudflareDriver extends AbstractDriver implements RegistrarDriverInterface, DnsPipelineInterface, ConnectionTestableInterface, DomainDiscoveryInterface, DnsRecordWriterInterface, DnsRecordProxyToggleInterface, DnsRecordCommentSyncInterface, DnsRecordTtlAutoInterface
 {
-    use ValidatesCredentialsTrait;
-
     private const BASE_URI = 'https://api.cloudflare.com/client/v4/';
 
     private const REQUEST_TIMEOUT = 15;
@@ -105,15 +98,6 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
     private const REGISTRATIONS_PER_PAGE = 50;
 
     private const MAX_PAGES = 50;
-
-    private ?Client $client = null;
-
-    /**
-     * @param array<string, string> $credentials
-     */
-    public function __construct(private array $credentials)
-    {
-    }
 
     /**
      * Only the DNS/zone capability is reported: Cloudflare's registrar API
@@ -134,10 +118,7 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
         $this->client       = null;
 
         try {
-            $missing = self::missingConfigMessage($credentials, [
-                'account_id' => __('Cloudflare Account ID', 'domainmanager'),
-                'token'      => __('Cloudflare API token', 'domainmanager'),
-            ]);
+            $missing = self::missingConfigMessage($credentials, self::requiredCredentialFields());
             $result  = $missing !== null
                 ? ConnectionTestResult::notConfigured('dns', $missing)
                 : $this->probeTokenVerify();
@@ -946,31 +927,29 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
     }
 
     /**
-     * @return Client
-     * @throws DriverException
+     * {@inheritDoc}
      */
-    private function getClient(): Client
+    protected static function requiredCredentialFields(): array
     {
-        if ($this->client !== null) {
-            return $this->client;
-        }
+        return [
+            'account_id' => __('Cloudflare Account ID', 'domainmanager'),
+            'token'      => __('Cloudflare API token', 'domainmanager'),
+        ];
+    }
 
-        $token = trim((string) ($this->credentials['token'] ?? ''));
-        if ($token === '') {
-            throw new DriverException(__('Cloudflare API token is not configured', 'domainmanager'));
-        }
-
-        $this->client = Toolbox::getGuzzleClient([
+    /**
+     * {@inheritDoc}
+     */
+    protected function buildClientOptions(array $credentials): array
+    {
+        return [
             'base_uri'    => self::BASE_URI,
             'timeout'     => self::REQUEST_TIMEOUT,
-            'http_errors' => false,
             'headers'     => [
-                'Authorization' => 'Bearer ' . $token,
+                'Authorization' => 'Bearer ' . trim((string) ($credentials['token'] ?? '')),
                 'Accept'        => 'application/json',
             ],
-        ]);
-
-        return $this->client;
+        ];
     }
 
     /**
@@ -985,43 +964,6 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
         }
 
         return $accountId;
-    }
-
-    /**
-     * Converts a possibly-Unicode/IDN domain name (GLPI's stored `name`) to
-     * Punycode/ACE before it ever reaches the Cloudflare API (§9 Phase 10)
-     * — no documented Unicode-vs-Punycode requirement was found for this
-     * API, so Punycode is used as the safe universal outbound form.
-     *
-     * @param  string $domain
-     * @return string
-     * @throws DriverException
-     */
-    private static function normalizeDomain(string $domain): string
-    {
-        $domain = IdnNormalizer::toAscii(strtolower(rtrim(trim($domain), '.')));
-        if ($domain === '' || !preg_match('/^[a-z0-9.-]+\.[a-z0-9-]+$/i', $domain)) {
-            throw new DriverException(__('Domain name is not a valid FQDN', 'domainmanager'));
-        }
-
-        return $domain;
-    }
-
-    /**
-     * @param  mixed $value
-     * @return DateTimeImmutable|null
-     */
-    private static function parseDate(mixed $value): ?DateTimeImmutable
-    {
-        if (!is_string($value) || trim($value) === '') {
-            return null;
-        }
-
-        try {
-            return new DateTimeImmutable($value);
-        } catch (Throwable) {
-            return null;
-        }
     }
 
     /**
@@ -1128,16 +1070,5 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
         $message = is_array($first) && isset($first['message']) ? self::sanitizeMessage((string) $first['message']) : null;
 
         return ConnectionTestResult::formatApiError('Cloudflare', $code, $message, $httpStatus);
-    }
-
-    /**
-     * @param  string $message
-     * @return string
-     */
-    private static function sanitizeMessage(string $message): string
-    {
-        $message = preg_replace('/\s+/', ' ', $message) ?? '';
-
-        return mb_substr(trim($message), 0, 250);
     }
 }
