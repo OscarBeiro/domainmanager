@@ -111,7 +111,7 @@ use Toolbox;
  *   object; an application-level error from the Domains backend itself
  *   (confirmed via the spec's own `error` schema and response examples)
  *   returns a JSON **array** of `{"code": "...", "message": "..."}`
- *   objects instead. describeDomainsApiError() handles both.
+ *   objects instead. extractDomainsApiError() handles both.
  */
 class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, DnsRecordWriterInterface, ConnectionTestableInterface, DomainDiscoveryInterface
 {
@@ -205,7 +205,7 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Dns
         $body    = (string) $response->getBody();
         $success = $status >= 200 && $status < 300;
 
-        $raw_detail = $success ? '' : ('IONOS GET zones (HTTP ' . $status . '): ' . self::describeError($body));
+        $raw_detail = $success ? '' : ('IONOS GET zones (HTTP ' . $status . '): ' . (self::extractError($body)[1] ?? ''));
 
         return ConnectionTestResult::fromHttpResponse('dns', $status, $success, $raw_detail);
     }
@@ -690,7 +690,9 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Dns
         $body   = (string) $response->getBody();
 
         if (in_array($status, [401, 403], true)) {
-            throw new DriverException(__('IONOS authentication failed, check the API key', 'domainmanager'));
+            PluginLogger::error("IONOS authentication/authorization failed on $path (HTTP $status): " . self::sanitizeMessage($body));
+            [$code, $message] = self::extractError($body);
+            throw new DriverException(ConnectionTestResult::formatApiError('IONOS', $code, $message, $status));
         }
 
         if ($status >= 500) {
@@ -700,14 +702,9 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Dns
         }
 
         if ($status < 200 || $status >= 300) {
-            $summary = self::describeError($body);
-            PluginLogger::error("IONOS API error on $path (HTTP $status): $summary");
-            throw new DriverException(
-                sprintf(
-                    __('IONOS API error: %s', 'domainmanager'),
-                    $summary !== '' ? $summary : sprintf('HTTP %d', $status),
-                ),
-            );
+            [$code, $message] = self::extractError($body);
+            PluginLogger::error("IONOS API error on $path (HTTP $status): " . ($message ?? ''));
+            throw new DriverException(ConnectionTestResult::formatApiError('IONOS', $code, $message, $status));
         }
 
         if ($allowEmptyBody && trim($body) === '') {
@@ -751,8 +748,12 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Dns
         $status = $response->getStatusCode();
         $body   = (string) $response->getBody();
 
+        $decoded = json_decode($body, true);
+
         if (in_array($status, [401, 403], true)) {
-            throw new DriverException(__('IONOS authentication failed, check the API key', 'domainmanager'));
+            PluginLogger::error("IONOS Domains API authentication/authorization failed on $path (HTTP $status): " . self::sanitizeMessage($body));
+            [$code, $message] = self::extractDomainsApiError($decoded, $body);
+            throw new DriverException(ConnectionTestResult::formatApiError('IONOS', $code, $message, $status));
         }
 
         if ($status === 404) {
@@ -765,17 +766,10 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Dns
             );
         }
 
-        $decoded = json_decode($body, true);
-
         if ($status < 200 || $status >= 300) {
-            $summary = self::describeDomainsApiError($decoded, $body);
-            PluginLogger::error("IONOS Domains API error on $path (HTTP $status): $summary");
-            throw new DriverException(
-                sprintf(
-                    __('IONOS Domains API error: %s', 'domainmanager'),
-                    $summary !== '' ? $summary : sprintf('HTTP %d', $status),
-                ),
-            );
+            [$code, $message] = self::extractDomainsApiError($decoded, $body);
+            PluginLogger::error("IONOS Domains API error on $path (HTTP $status): " . ($message ?? ''));
+            throw new DriverException(ConnectionTestResult::formatApiError('IONOS', $code, $message, $status));
         }
 
         if (!is_array($decoded)) {
@@ -841,17 +835,24 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Dns
     }
 
     /**
+     * Pulls IONOS's own (code, message) pair out of its DNS API error
+     * envelope, for use with `ConnectionTestResult::formatApiError()`
+     * instead of a driver-specific guessed-cause sentence — IONOS's DNS
+     * API only ever returns a single `{message}` object, no error code.
+     *
      * @param  string $body
-     * @return string
+     * @return array{0: string|null, 1: string|null} [code, message]
      */
-    private static function describeError(string $body): string
+    private static function extractError(string $body): array
     {
         $decoded = json_decode($body, true);
         if (is_array($decoded) && isset($decoded['message'])) {
-            return self::sanitizeMessage((string) $decoded['message']);
+            return [null, self::sanitizeMessage((string) $decoded['message'])];
         }
 
-        return self::sanitizeMessage($body);
+        $fallback = self::sanitizeMessage($body);
+
+        return [null, $fallback !== '' ? $fallback : null];
     }
 
     /**
@@ -863,19 +864,23 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Dns
      *
      * @param  mixed  $decoded json_decode() result, may be non-array/null
      * @param  string $body    raw body, used when $decoded isn't usable
-     * @return string
+     * @return array{0: string|null, 1: string|null} [code, message]
      */
-    private static function describeDomainsApiError(mixed $decoded, string $body): string
+    private static function extractDomainsApiError(mixed $decoded, string $body): array
     {
         if (is_array($decoded) && isset($decoded[0]['message'])) {
-            return self::sanitizeMessage((string) $decoded[0]['message']);
+            $code = isset($decoded[0]['code']) ? (string) $decoded[0]['code'] : null;
+
+            return [$code, self::sanitizeMessage((string) $decoded[0]['message'])];
         }
 
         if (is_array($decoded) && isset($decoded['message'])) {
-            return self::sanitizeMessage((string) $decoded['message']);
+            return [null, self::sanitizeMessage((string) $decoded['message'])];
         }
 
-        return self::sanitizeMessage($body);
+        $fallback = self::sanitizeMessage($body);
+
+        return [null, $fallback !== '' ? $fallback : null];
     }
 
     /**
