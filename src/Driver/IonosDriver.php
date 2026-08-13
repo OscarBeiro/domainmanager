@@ -31,14 +31,12 @@
 
 namespace GlpiPlugin\Domainmanager\Driver;
 
-use DateTimeImmutable;
 use GlpiPlugin\Domainmanager\Config\Config;
 use GlpiPlugin\Domainmanager\Contract\ConnectionTestableInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsPipelineInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsRecordWriterInterface;
 use GlpiPlugin\Domainmanager\Contract\DomainDiscoveryInterface;
 use GlpiPlugin\Domainmanager\Contract\RegistrarDriverInterface;
-use GlpiPlugin\Domainmanager\Driver\Concern\ValidatesCredentialsTrait;
 use GlpiPlugin\Domainmanager\Dto\ConnectionTestResult;
 use GlpiPlugin\Domainmanager\Dto\DiscoveredDomain;
 use GlpiPlugin\Domainmanager\Dto\DomainLifecycle;
@@ -113,10 +111,8 @@ use Toolbox;
  *   returns a JSON **array** of `{"code": "...", "message": "..."}`
  *   objects instead. extractDomainsApiError() handles both.
  */
-class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, DnsRecordWriterInterface, ConnectionTestableInterface, DomainDiscoveryInterface
+class IonosDriver extends AbstractDriver implements RegistrarDriverInterface, DnsPipelineInterface, DnsRecordWriterInterface, ConnectionTestableInterface, DomainDiscoveryInterface
 {
-    use ValidatesCredentialsTrait;
-
     private const BASE_URI = 'https://api.hosting.ionos.com/dns/v1/';
 
     private const DOMAINS_BASE_URI = 'https://api.hosting.ionos.com/domains/v1/';
@@ -129,16 +125,7 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Dns
 
     private const DOMAINS_MAX_PAGES = 10;
 
-    private ?Client $client = null;
-
     private ?Client $domainsClient = null;
-
-    /**
-     * @param array<string, string> $credentials
-     */
-    public function __construct(private array $credentials)
-    {
-    }
 
     /**
      * Only 'dns' is really tested. `fetchLifecycle()` (RegistrarDriverInterface)
@@ -158,10 +145,7 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Dns
         $this->client       = null;
 
         try {
-            $missing = self::missingConfigMessage($credentials, [
-                'key'    => __('IONOS API key', 'domainmanager'),
-                'secret' => __('IONOS API secret', 'domainmanager'),
-            ]);
+            $missing = self::missingConfigMessage($credentials, self::requiredCredentialFields());
             $dns     = $missing !== null
                 ? ConnectionTestResult::notConfigured('dns', $missing)
                 : $this->probeZonesList();
@@ -781,57 +765,52 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Dns
     }
 
     /**
-     * @return Client
-     * @throws DriverException
+     * {@inheritDoc}
      */
-    private function getClient(): Client
+    protected static function requiredCredentialFields(): array
     {
-        if ($this->client === null) {
-            $this->client = $this->buildClient(self::BASE_URI);
-        }
-
-        return $this->client;
+        return [
+            'key'    => __('IONOS API key', 'domainmanager'),
+            'secret' => __('IONOS API secret', 'domainmanager'),
+        ];
     }
 
     /**
+     * {@inheritDoc}
+     */
+    protected function buildClientOptions(array $credentials): array
+    {
+        return [
+            'base_uri' => self::BASE_URI,
+            'timeout'  => self::REQUEST_TIMEOUT,
+            'headers'  => [
+                'X-API-Key' => trim((string) ($credentials['key'] ?? '')) . '.' . trim((string) ($credentials['secret'] ?? '')),
+                'Accept'    => 'application/json',
+            ],
+        ];
+    }
+
+    /**
+     * Second lazy client, same credentials/auth header as getClient()
+     * (inherited from AbstractDriver) but against the separate Domains API
+     * root — see class docblock.
+     *
      * @return Client
      * @throws DriverException
      */
     private function getDomainsClient(): Client
     {
         if ($this->domainsClient === null) {
-            $this->domainsClient = $this->buildClient(self::DOMAINS_BASE_URI);
+            $this->assertCredentialsPresent();
+
+            $options = $this->buildClientOptions($this->credentials);
+            $options['base_uri'] = self::DOMAINS_BASE_URI;
+            $options += ['timeout' => self::REQUEST_TIMEOUT, 'http_errors' => false];
+
+            $this->domainsClient = Toolbox::getGuzzleClient($options);
         }
 
         return $this->domainsClient;
-    }
-
-    /**
-     * Shared client builder for both the DNS and Domains API roots — same
-     * credentials, same `X-API-Key: <prefix>.<secret>` header format
-     * confirmed for both (see class docblock), different base URI.
-     *
-     * @param  string $baseUri
-     * @return Client
-     * @throws DriverException
-     */
-    private function buildClient(string $baseUri): Client
-    {
-        $key    = trim((string) ($this->credentials['key'] ?? ''));
-        $secret = trim((string) ($this->credentials['secret'] ?? ''));
-        if ($key === '' || $secret === '') {
-            throw new DriverException(__('IONOS API key/secret are not configured', 'domainmanager'));
-        }
-
-        return Toolbox::getGuzzleClient([
-            'base_uri'    => $baseUri,
-            'timeout'     => self::REQUEST_TIMEOUT,
-            'http_errors' => false,
-            'headers'     => [
-                'X-API-Key' => $key . '.' . $secret,
-                'Accept'    => 'application/json',
-            ],
-        ]);
     }
 
     /**
@@ -883,56 +862,4 @@ class IonosDriver implements RegistrarDriverInterface, DnsPipelineInterface, Dns
         return [null, $fallback !== '' ? $fallback : null];
     }
 
-    /**
-     * Converts a possibly-Unicode/IDN domain name (GLPI's stored `name`) to
-     * Punycode/ACE (§9 Phase 10) — the canonical form used throughout this
-     * driver for validation and comparison, and what's sent on the wire to
-     * the DNS zone API (findZoneId()/fetchZoneRecords()). The Domains
-     * (registrar) API's `name` filter doesn't reliably accept *either*
-     * form for an IDN domain (Punycode silently matches nothing; literal
-     * Unicode gets rejected outright by IONOS's own gateway) — see
-     * findDomainId()'s docblock — so that lookup skips the filter and
-     * matches client-side instead of relying on a converted query value.
-     *
-     * @param  string $domain
-     * @return string
-     * @throws DriverException
-     */
-    private static function normalizeDomain(string $domain): string
-    {
-        $domain = IdnNormalizer::toAscii(strtolower(rtrim(trim($domain), '.')));
-        if ($domain === '' || !preg_match('/^[a-z0-9.-]+\.[a-z0-9-]+$/i', $domain)) {
-            throw new DriverException(__('Domain name is not a valid FQDN', 'domainmanager'));
-        }
-
-        return $domain;
-    }
-
-    /**
-     * @param  string $message
-     * @return string
-     */
-    private static function sanitizeMessage(string $message): string
-    {
-        $message = preg_replace('/\s+/', ' ', $message) ?? '';
-
-        return mb_substr(trim($message), 0, 250);
-    }
-
-    /**
-     * @param  mixed $value
-     * @return DateTimeImmutable|null
-     */
-    private static function parseDate(mixed $value): ?DateTimeImmutable
-    {
-        if (!is_string($value) || trim($value) === '') {
-            return null;
-        }
-
-        try {
-            return new DateTimeImmutable($value);
-        } catch (Throwable) {
-            return null;
-        }
-    }
 }

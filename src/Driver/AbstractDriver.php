@@ -103,10 +103,7 @@ abstract class AbstractDriver
             return $this->client;
         }
 
-        $missing = self::missingConfigMessage($this->credentials, static::requiredCredentialFields());
-        if ($missing !== null) {
-            throw new DriverException($missing);
-        }
+        $this->assertCredentialsPresent();
 
         $options = $this->buildClientOptions($this->credentials);
         $options += ['timeout' => 15, 'http_errors' => false];
@@ -114,6 +111,22 @@ abstract class AbstractDriver
         $this->client = Toolbox::getGuzzleClient($options);
 
         return $this->client;
+    }
+
+    /**
+     * Exposed separately from getClient() for drivers needing more than one
+     * lazy client against the same credentials (e.g. IonosDriver's DNS +
+     * Domains API clients) — those build their extra client(s) directly but
+     * still share this one pre-flight check.
+     *
+     * @throws DriverException when a required credential field is missing
+     */
+    protected function assertCredentialsPresent(): void
+    {
+        $missing = self::missingConfigMessage($this->credentials, static::requiredCredentialFields());
+        if ($missing !== null) {
+            throw new DriverException($missing);
+        }
     }
 
     /**
