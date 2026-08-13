@@ -1587,14 +1587,19 @@ class DashboardCards
     /**
      * Idempotent: an admin-edited/deleted dashboard is never recreated on
      * upgrade (matches CloudInventory\Dashboard::install()'s own guard).
+     * Uses countElementsInTable() rather than Dashboard::getFromDBByCrit()
+     * for the existence check — Dashboard overrides getIndexName()/
+     * getFromDB() to key off `key` instead of `id`, which made the guard
+     * unreliable at runtime and let a new dashboard get created on every
+     * update.
      */
     public static function install(Migration $migration): void
     {
-        $dashboard = new Dashboard();
-        if ($dashboard->getFromDBByCrit(['key' => self::DASHBOARD_KEY]) !== false) {
+        if (countElementsInTable(Dashboard::getTable(), ['key' => self::DASHBOARD_KEY]) > 0) {
             return;
         }
 
+        $dashboard     = new Dashboard();
         $dashboards_id = $dashboard->add([
             'key'     => self::DASHBOARD_KEY,
             'name'    => 'Domain Manager',
@@ -1854,6 +1859,10 @@ class DashboardCards
 
     public static function uninstall(Migration $migration): void
     {
+        if (countElementsInTable(Dashboard::getTable(), ['key' => self::DASHBOARD_KEY]) === 0) {
+            return;
+        }
+
         $dashboard = new Dashboard();
         if ($dashboard->getFromDBByCrit(['key' => self::DASHBOARD_KEY]) !== false) {
             $dashboard->deleteFromDB(true);

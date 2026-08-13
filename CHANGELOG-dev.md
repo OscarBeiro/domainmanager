@@ -16,7 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Entries are grouped into **Features** (new capability, UI/UX change, refactor, doc/config
 change) and **Bugs** (something that was actually broken, fixed) — one line each.
 
-## [Unreleased]
+## [Unreleased] - 1.8.1-alpha
+### Bugs
+- **Fixed the "Domain Manager" dashboard being duplicated on every plugin update.** (`src/DashboardCards.php`). `DashboardCards::install()`/`uninstall()`'s existing-dashboard guard used `Dashboard::getFromDBByCrit(['key' => self::DASHBOARD_KEY])`, which relies on `Glpi\Dashboard\Dashboard`'s overridden `getIndexName()`/`getFromDB()` (keyed off `key` rather than `id`). Replaced with `countElementsInTable(Dashboard::getTable(), ['key' => self::DASHBOARD_KEY])`, the same idiom already used for idempotent seeding elsewhere in this codebase (`Installer::seedRecordProxyDisplayPreference()`). Verified live against the `glpi-65108-web` container via `bin/console glpi:plugin:install -f domainmanager` (the same code path `Setup > Plugins > Update` uses) run repeatedly — dashboard row count stays at 1 across updates.
 
 ## [1.8.0] - 2026-08-12
 ### Features

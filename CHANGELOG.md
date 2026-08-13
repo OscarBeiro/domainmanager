@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Entries are grouped into **Features** and **Bugs**, one line each.
 
 ## [Unreleased]
+### Bugs
+- The "Domain Manager" dashboard no longer gets re-created as a duplicate every time the plugin is updated.
 
 ## [1.8.0]
 ### Features
