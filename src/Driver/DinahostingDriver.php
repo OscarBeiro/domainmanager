@@ -38,7 +38,6 @@ use GlpiPlugin\Domainmanager\Contract\DnsPipelineInterface;
 use GlpiPlugin\Domainmanager\Contract\DnsRecordWriterInterface;
 use GlpiPlugin\Domainmanager\Contract\DomainDiscoveryInterface;
 use GlpiPlugin\Domainmanager\Contract\RegistrarDriverInterface;
-use GlpiPlugin\Domainmanager\Driver\Concern\ValidatesCredentialsTrait;
 use GlpiPlugin\Domainmanager\Dto\ConnectionTestResult;
 use GlpiPlugin\Domainmanager\Dto\ConnectionTestStatus;
 use GlpiPlugin\Domainmanager\Dto\DiscoveredDomain;
@@ -46,13 +45,10 @@ use GlpiPlugin\Domainmanager\Dto\DomainLifecycle;
 use GlpiPlugin\Domainmanager\Dto\LifecycleStatus;
 use GlpiPlugin\Domainmanager\Dto\ZoneRecord;
 use GlpiPlugin\Domainmanager\Exception\DriverException;
-use GlpiPlugin\Domainmanager\IdnNormalizer;
 use GlpiPlugin\Domainmanager\Service\PluginLogger;
-use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use InvalidArgumentException;
 use Throwable;
-use Toolbox;
 
 /**
  * Dinahosting driver: registrar API (lifecycle) + DNS zone records API
@@ -95,10 +91,8 @@ use Toolbox;
  * `count`/`limit`/`offset` fields present at all, unlike IONOS's discovery
  * endpoint). See listAccountDomains().
  */
-class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterface, ConnectionTestableInterface, DomainDiscoveryInterface, DnsRecordWriterInterface
+class DinahostingDriver extends AbstractDriver implements RegistrarDriverInterface, DnsPipelineInterface, ConnectionTestableInterface, DomainDiscoveryInterface, DnsRecordWriterInterface
 {
-    use ValidatesCredentialsTrait;
-
     private const BASE_URI = 'https://dinahosting.com/special/';
 
     private const REQUEST_TIMEOUT = 15;
@@ -113,15 +107,6 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
     private const CODE_AUTH_ERROR_OBJECT = 2201;
     private const CODE_OBJECT_NOT_EXISTS = 2303;
     private const CODE_COMMAND_TIMEOUT   = 2501;
-
-    private ?Client $client = null;
-
-    /**
-     * @param array<string, string> $credentials
-     */
-    public function __construct(private array $credentials)
-    {
-    }
 
     /**
      * Dinahosting auth is a single account-wide username/password, not
@@ -139,10 +124,7 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
         $this->client       = null;
 
         try {
-            $missing = self::missingConfigMessage($credentials, [
-                'user'     => __('Dinahosting username', 'domainmanager'),
-                'password' => __('Dinahosting password', 'domainmanager'),
-            ]);
+            $missing = self::missingConfigMessage($credentials, self::requiredCredentialFields());
             $results = $missing !== null
                 ? [
                     'registrar' => ConnectionTestResult::notConfigured('registrar', $missing),
@@ -900,34 +882,35 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
     }
 
     /**
-     * @return Client
-     * @throws DriverException
+     * {@inheritDoc}
      */
-    private function getClient(): Client
+    protected static function requiredCredentialFields(): array
     {
-        if ($this->client !== null) {
-            return $this->client;
-        }
+        return [
+            'user'     => __('Dinahosting username', 'domainmanager'),
+            'password' => __('Dinahosting password', 'domainmanager'),
+        ];
+    }
 
-        $user     = trim((string) ($this->credentials['user'] ?? ''));
-        $password = trim((string) ($this->credentials['password'] ?? ''));
-        if ($user === '' || $password === '') {
-            throw new DriverException(__('Dinahosting username/password are not configured', 'domainmanager'));
-        }
-
-        $this->client = Toolbox::getGuzzleClient([
-            'base_uri'    => self::BASE_URI,
-            'timeout'     => self::REQUEST_TIMEOUT,
-            'http_errors' => false,
-            // HTTP Basic Auth (documented as an alternative to the AUTH_USER/
-            // AUTH_PWD query parameters shown in Dinahosting's own examples)
-            // is used deliberately so credentials never appear in a request
-            // URI that could end up in a proxy/CDN access log.
-            'auth'        => [$user, $password],
-            'headers'     => ['Accept' => 'application/json'],
-        ]);
-
-        return $this->client;
+    /**
+     * {@inheritDoc}
+     *
+     * HTTP Basic Auth (documented as an alternative to the AUTH_USER/
+     * AUTH_PWD query parameters shown in Dinahosting's own examples) is
+     * used deliberately so credentials never appear in a request URI that
+     * could end up in a proxy/CDN access log.
+     */
+    protected function buildClientOptions(array $credentials): array
+    {
+        return [
+            'base_uri' => self::BASE_URI,
+            'timeout'  => self::REQUEST_TIMEOUT,
+            'auth'     => [
+                trim((string) ($credentials['user'] ?? '')),
+                trim((string) ($credentials['password'] ?? '')),
+            ],
+            'headers'  => ['Accept' => 'application/json'],
+        ];
     }
 
     /**
@@ -967,51 +950,4 @@ class DinahostingDriver implements RegistrarDriverInterface, DnsPipelineInterfac
         return implode('; ', $parts);
     }
 
-    /**
-     * Converts a possibly-Unicode/IDN domain name (GLPI's stored `name`) to
-     * Punycode/ACE before it ever reaches the Dinahosting API (§9 Phase 10)
-     * — no documented Unicode-vs-Punycode requirement was found for this
-     * API, so Punycode is used as the safe universal outbound form.
-     *
-     * @param  string $domain
-     * @return string
-     * @throws DriverException
-     */
-    private static function normalizeDomain(string $domain): string
-    {
-        $domain = IdnNormalizer::toAscii(strtolower(rtrim(trim($domain), '.')));
-        if ($domain === '' || !preg_match('/^[a-z0-9.-]+\.[a-z0-9-]+$/i', $domain)) {
-            throw new DriverException(__('Domain name is not a valid FQDN', 'domainmanager'));
-        }
-
-        return $domain;
-    }
-
-    /**
-     * @param  mixed $value
-     * @return DateTimeImmutable|null
-     */
-    private static function parseDate(mixed $value): ?DateTimeImmutable
-    {
-        if (!is_string($value) || trim($value) === '') {
-            return null;
-        }
-
-        try {
-            return new DateTimeImmutable($value);
-        } catch (Throwable) {
-            return null;
-        }
-    }
-
-    /**
-     * @param  string $message
-     * @return string
-     */
-    private static function sanitizeMessage(string $message): string
-    {
-        $message = preg_replace('/\s+/', ' ', $message) ?? '';
-
-        return mb_substr(trim($message), 0, 250);
-    }
 }
