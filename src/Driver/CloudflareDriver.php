@@ -262,10 +262,7 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
                 $result->status,
                 'dns',
                 $status,
-                self::describeForbidden(
-                    $body,
-                    __('This Cloudflare API token lacks DNS:Read permission for this zone', 'domainmanager'),
-                ),
+                self::describeForbidden($body, $status),
                 $raw_detail,
                 $result->checkedAt,
             );
@@ -777,10 +774,7 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
 
         if ($status === 403) {
             return new DriverException(
-                self::describeForbidden(
-                    json_encode($result['data'] ?? []),
-                    __('This Cloudflare API token lacks DNS:Edit permission for this zone', 'domainmanager'),
-                ),
+                self::describeForbidden(json_encode($result['data'] ?? []), $status),
                 true,
             );
         }
@@ -910,19 +904,14 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
             PluginLogger::error(
                 "Cloudflare authentication failed on $path (HTTP $status): " . self::sanitizeMessage($body),
             );
-            throw new DriverException(__('Cloudflare authentication failed, check the API token', 'domainmanager'));
+            throw new DriverException(self::describeAuthFailure($body, $status));
         }
 
         if ($status === 403) {
             PluginLogger::error(
                 "Cloudflare authorization failed on $path (HTTP $status): " . self::sanitizeMessage($body),
             );
-            throw new DriverException(
-                self::describeForbidden(
-                    $body,
-                    __('This Cloudflare API token lacks DNS:Read permission for this zone', 'domainmanager'),
-                ),
-            );
+            throw new DriverException(self::describeForbidden($body, $status));
         }
 
         if ($status >= 500) {
@@ -1069,11 +1058,14 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
      * of these into a generic "lacks DNS:Read/Edit permission" message, as
      * every 403 branch in this driver did until now, sends the user
      * hunting through token scopes for a problem that's actually a client
-     * IP restriction, wasting real troubleshooting time. Falls back to the
-     * generic scope-missing message only when Cloudflare's response carries
-     * no recognized restriction code — still the right default for an
-     * actual missing-scope 403, which has no distinguishing `code` of its
-     * own beyond the generic auth-error family.
+     * IP restriction (or, found live 2026-08-13: a 403 with no restriction
+     * code and a fully valid DNS:Read scope, e.g. a zero-zone account —
+     * the old fallback guessed a missing permission that was never
+     * missing). Restriction codes still get their own specific, confirmed
+     * message; everything else now surfaces Cloudflare's own `errors[0]`
+     * code/message verbatim through the shared
+     * `ConnectionTestResult::formatApiError()` template instead of a
+     * guessed cause.
      *
      * Cloudflare's advanced token-restriction codes (confirmed against its
      * current API error reference): `9109` client IP address filtering,
@@ -1081,17 +1073,17 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
      * `errors[0].message` already — reused verbatim (already user-safe,
      * Cloudflare's own text, no secret material) rather than re-worded.
      *
-     * @param  string $body           raw JSON response body
-     * @param  string $genericMessage already-translated fallback (the
-     *                                previous behavior) when no recognized
-     *                                restriction code is present
+     * @param  string $body       raw JSON response body
+     * @param  int    $httpStatus used as the formatApiError() code fallback
+     *                            when the body carries neither a code nor a
+     *                            message (e.g. non-JSON body)
      * @return string
      */
-    private static function describeForbidden(string $body, string $genericMessage): string
+    private static function describeForbidden(string $body, int $httpStatus): string
     {
         $data = json_decode($body, true);
         if (!is_array($data)) {
-            return $genericMessage;
+            return ConnectionTestResult::formatApiError('Cloudflare', null, null, $httpStatus);
         }
 
         $restrictionCodes = [9109, 9208];
@@ -1111,7 +1103,31 @@ class CloudflareDriver implements RegistrarDriverInterface, DnsPipelineInterface
             );
         }
 
-        return $genericMessage;
+        $first = $data['errors'][0] ?? null;
+        $code    = is_array($first) && isset($first['code']) ? (string) $first['code'] : null;
+        $message = is_array($first) && isset($first['message']) ? self::sanitizeMessage((string) $first['message']) : null;
+
+        return ConnectionTestResult::formatApiError('Cloudflare', $code, $message, $httpStatus);
+    }
+
+    /**
+     * Same reasoning as describeForbidden() applied to 401s: Cloudflare's
+     * own `errors[0]` already names why the token was rejected, so surface
+     * that instead of a fixed "check the API token" guess.
+     *
+     * @param  string $body       raw JSON response body
+     * @param  int    $httpStatus used as the formatApiError() code fallback
+     * @return string
+     */
+    private static function describeAuthFailure(string $body, int $httpStatus): string
+    {
+        $data  = json_decode($body, true);
+        $first = is_array($data) ? ($data['errors'][0] ?? null) : null;
+
+        $code    = is_array($first) && isset($first['code']) ? (string) $first['code'] : null;
+        $message = is_array($first) && isset($first['message']) ? self::sanitizeMessage((string) $first['message']) : null;
+
+        return ConnectionTestResult::formatApiError('Cloudflare', $code, $message, $httpStatus);
     }
 
     /**
