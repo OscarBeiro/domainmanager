@@ -1,6 +1,6 @@
 # 2. Setup
 
-> Generated for **domainmanager 1.7.1** on GLPI 11.0 — 2026-08-11. Screenshots are produced automatically; do not edit generated sections by hand.
+> Generated for **domainmanager 1.7.1** on GLPI 11.0 — 2026-08-11.
 
 *Part of the domainmanager manual — see also [1. Introduction](01-intro.md), [3. Usage](03-usage.md), [4. Troubleshooting](04-troubleshooting.md).*
 
@@ -34,6 +34,12 @@ Install and enable from the GLPI Marketplace like any other plugin (no extra ste
 |---|---|---|
 | DomainSync | Syncs registration lifecycle and DNS records for a batch of domains, oldest-synced first (default batch size: 2 domains/run, tunable from Setup > Automatic actions) | Every 30 minutes |
 | RdapEnrichment | Looks up missing RDAP data for one domain per run (max 1 lookup/domain/day) | Every 15 minutes |
+
+### 2.2.2 RDAP usage and etiquette
+
+Domain Manager's RDAP enrichment queries [rdap.org](https://rdap.org), a free public service that resolves the correct registry RDAP server for each domain. It is a courtesy service run by [Gavin Brown](https://github.com/gbxyz), a third party not affiliated with Domain Manager or GLPI. Two hardcoded limits keep the plugin's traffic conservative by default: one lookup per domain per minute, and one RdapEnrichment run every 15 minutes processing at most one domain — so a single install cannot realistically exceed rdap.org's own rate limits.
+
+> **Note:** If you manage a very large number of domains and are likely to generate sustained RDAP traffic, consider querying the [IANA bootstrap registries](https://data.iana.org/rdap/) directly, or running your own local RDAP instance (rdap.org publishes one you can start with `docker compose up`). This keeps your traffic off the shared public service and avoids the risk of hitting its rate limits or those of the underlying registries. If rdap.org's service is useful to you, its maintainer also welcomes support via [ko-fi.com/rdaporg](https://ko-fi.com/rdaporg).
 
 ## 2.3 Permissions
 
@@ -100,6 +106,12 @@ Choose the **API driver** that matches this Supplier — Domain Manager currentl
 ![Credential fields for the Cloudflare driver](assets/02-supplier-setup/02-driver-fields.png)
 
 *Credential fields for the Cloudflare driver*
+
+> **Note:** <a id="cloudflare"></a>**Cloudflare:** Requires an **Account API Token** (Manage Account → API Tokens, not a personal/My Profile token) plus its Account ID. Grant `Zone:Zone:Read` and `Zone:DNS:Read` — both are required just to import DNS records — and add `Zone:DNS:Edit` if you also want this domain's records editable from GLPI (write-back).
+
+> **Note:** <a id="ionos"></a>**IONOS:** Requires an **API Key** and **API Secret** from the IONOS Cloud panel (Management → API Keys). Both DNS zone sync/write-back and registrar lifecycle data use the same key/secret pair — no separate scoping is available.
+
+> **Note:** <a id="dinahosting"></a>**Dinahosting:** Requires the account's plain **username and password** — Dinahosting has no scoped API token, so the credentials stored here are the same ones used to log into the control panel. **The account must be the super-admin account**: a sub-user or domain-limited account cannot authenticate against the API at all.
 
 ### 2.5.3 Save the configuration
 

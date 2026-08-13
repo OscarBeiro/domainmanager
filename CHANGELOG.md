@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Entries are grouped into **Features** and **Bugs**, one line each.
 
 ## [Unreleased]
+### Features
+- Reworked the Domain Manager panel on a Domain's form to match GLPI's own look: fields are now grouped by topic in a clean grid instead of two wide tables, the domain name itself is now the clickable link to visit the site, and the WHOIS/Unlink registrar buttons moved to a proper button row at the bottom of the panel.
+- The Domains list on a Supplier's Domain Manager tab now supports real sorting, filtering (by domain name, registrar status, and DNS status — each now its own clearly labeled column, separate from the Registrar/DNS Provider name), and pagination, matching GLPI's own list screens instead of a plain static table.
+- The Supplier's Domain Manager tab now shows the RDAP-reported registrar name and IANA number again, in their own "RDAP cross-check" section below the connection diagnostics.
 ### Bugs
 - Cloudflare, IONOS, and Dinahosting connection errors now show the provider's own error code and message instead of a guessed cause, so a failed Check Connection no longer claims a specific permission is missing when that isn't actually why it failed.
 - The "Domain Manager" dashboard no longer gets re-created as a duplicate every time the plugin is updated.
