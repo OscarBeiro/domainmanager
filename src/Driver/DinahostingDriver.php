@@ -457,7 +457,7 @@ class DinahostingDriver extends AbstractDriver implements RegistrarDriverInterfa
             'AAAA'  => 'Domain_Zone_AddTypeAAAA',
             'CNAME' => 'Domain_Zone_AddTypeCname',
             'TXT'   => 'Domain_Zone_AddTypeTXT',
-            default => throw new DriverException(sprintf(__('Record type %s is not writable through Domain Manager', 'domainmanager'), $type)),
+            default => throw self::notWritableRecordTypeException($type),
         };
 
         // No `default` throw here: the match above already narrowed $type to
@@ -518,7 +518,7 @@ class DinahostingDriver extends AbstractDriver implements RegistrarDriverInterfa
             'AAAA'  => 'Domain_Zone_DeleteTypeAAAA',
             'CNAME' => 'Domain_Zone_DeleteTypeCname',
             'TXT'   => 'Domain_Zone_DeleteTypeTXT',
-            default => throw new DriverException(sprintf(__('Record type %s is not writable through Domain Manager', 'domainmanager'), $type)),
+            default => throw self::notWritableRecordTypeException($type),
         };
 
         // Confirmed live against a real account, 2026-08-03: every
@@ -615,9 +615,7 @@ class DinahostingDriver extends AbstractDriver implements RegistrarDriverInterfa
     {
         $type = strtoupper(trim($type));
         if (!in_array($type, self::WRITABLE_TYPES, true)) {
-            throw new DriverException(
-                sprintf(__('Record type %s is not writable through Domain Manager', 'domainmanager'), $type),
-            );
+            throw self::notWritableRecordTypeException($type);
         }
 
         return $type;

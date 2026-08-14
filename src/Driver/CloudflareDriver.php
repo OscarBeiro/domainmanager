@@ -587,9 +587,7 @@ class CloudflareDriver extends AbstractDriver implements RegistrarDriverInterfac
     {
         $type = strtoupper(trim($type));
         if (!in_array($type, self::WRITABLE_TYPES, true)) {
-            throw new DriverException(
-                sprintf(__('Record type %s is not writable through Domain Manager', 'domainmanager'), $type),
-            );
+            throw self::notWritableRecordTypeException($type);
         }
 
         return $type;
@@ -958,7 +956,9 @@ class CloudflareDriver extends AbstractDriver implements RegistrarDriverInterfac
     {
         $accountId = trim((string) ($this->credentials['account_id'] ?? ''));
         if ($accountId === '') {
-            throw new DriverException(__('Cloudflare Account ID is not configured', 'domainmanager'));
+            throw new DriverException(
+                (string) self::missingConfigMessage(['account_id' => ''], self::requiredCredentialFields()),
+            );
         }
 
         return $accountId;

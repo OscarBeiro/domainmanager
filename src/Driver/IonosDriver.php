@@ -576,9 +576,7 @@ class IonosDriver extends AbstractDriver implements RegistrarDriverInterface, Dn
     {
         $type = strtoupper(trim($type));
         if (!in_array($type, self::WRITABLE_TYPES, true)) {
-            throw new DriverException(
-                sprintf(__('Record type %s is not writable through Domain Manager', 'domainmanager'), $type),
-            );
+            throw self::notWritableRecordTypeException($type);
         }
 
         return $type;
