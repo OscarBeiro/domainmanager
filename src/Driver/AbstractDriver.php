@@ -141,7 +141,7 @@ abstract class AbstractDriver
     {
         $domain = IdnNormalizer::toAscii(strtolower(rtrim(trim($domain), '.')));
         if ($domain === '' || !preg_match('/^[a-z0-9.-]+\.[a-z0-9-]+$/i', $domain)) {
-            throw new DriverException(__('Domain name is not a valid FQDN', 'domainmanager'));
+            throw new DriverException(__('FQDN is not valid'));
         }
 
         return $domain;
@@ -173,5 +173,55 @@ abstract class AbstractDriver
         } catch (Throwable) {
             return null;
         }
+    }
+
+    /**
+     * Shared wording for `request()`'s `GuzzleException` catch clause,
+     * previously duplicated verbatim (only the provider label differing)
+     * across CloudflareDriver/IonosDriver/DinahostingDriver.
+     *
+     * @param  string $label human-readable driver/API name, e.g. "IONOS"
+     * @return DriverException
+     */
+    protected static function apiUnreachableException(string $label): DriverException
+    {
+        return new DriverException(sprintf(__('%s API is unreachable', 'domainmanager'), $label));
+    }
+
+    /**
+     * Shared wording for `request()`'s `status >= 500` branch.
+     *
+     * @param  string $label  human-readable driver/API name, e.g. "IONOS"
+     * @param  int    $status HTTP status code
+     * @return DriverException
+     */
+    protected static function apiUnavailableException(string $label, int $status): DriverException
+    {
+        return new DriverException(sprintf(__('%s API unavailable (HTTP %d)', 'domainmanager'), $label, $status));
+    }
+
+    /**
+     * Shared wording for `request()`'s non-JSON/undecodable body branch.
+     *
+     * @param  string $label human-readable driver/API name, e.g. "IONOS"
+     * @return DriverException
+     */
+    protected static function unexpectedResponseException(string $label): DriverException
+    {
+        return new DriverException(sprintf(__('Unexpected response from the %s API', 'domainmanager'), $label));
+    }
+
+    /**
+     * Shared wording for an unsupported DNS record type; identical across
+     * every driver, so no label parameter is needed.
+     *
+     * @param  string $type
+     * @return DriverException
+     */
+    protected static function notWritableRecordTypeException(string $type): DriverException
+    {
+        return new DriverException(
+            sprintf(__('Record type %s is not writable through Domain Manager', 'domainmanager'), $type),
+        );
     }
 }
