@@ -312,32 +312,24 @@ msgstr ""
 msgid "Sync failed unexpectedly for %s — see the plugin error log"
 msgstr ""
 
-#: src/Driver/DinahostingDriver.php:183 src/Dto/ConnectionTestResult.php:99
+#: src/Driver/DinahostingDriver.php:184 src/Dto/ConnectionTestResult.php:99
 #, php-format
 msgid "The provider's API is currently unavailable (HTTP %d)."
 msgstr ""
 
-#: src/Driver/DinahostingDriver.php:195
+#: src/Driver/DinahostingDriver.php:196
 msgid "Unexpected response from the provider API."
 msgstr ""
 
-#: src/Driver/DinahostingDriver.php:215 src/Dto/ConnectionTestResult.php:74
+#: src/Driver/DinahostingDriver.php:216 src/Dto/ConnectionTestResult.php:74
 msgid "Connection successful."
 msgstr ""
 
-#: src/Driver/DinahostingDriver.php:235 src/Dto/ConnectionTestResult.php:147
+#: src/Driver/DinahostingDriver.php:236 src/Dto/ConnectionTestResult.php:147
 msgid "The connection to the provider API timed out."
 msgstr ""
 
-#: src/Driver/DinahostingDriver.php:428
-msgid "Dinahosting no longer reports this record"
-msgstr ""
-
-#: src/Driver/DinahostingDriver.php:486
-msgid "Dinahosting did not report the newly created record"
-msgstr ""
-
-#: src/Driver/DinahostingDriver.php:584
+#: src/Driver/DinahostingDriver.php:585
 #, php-format
 msgid ""
 "Domain Manager cannot safely edit this record: Dinahosting already has one "
@@ -345,24 +337,20 @@ msgid ""
 "not a single one"
 msgstr ""
 
-#: src/Driver/DinahostingDriver.php:648
+#: src/Driver/DinahostingDriver.php:649
 msgid "This record reference is no longer valid"
 msgstr ""
 
-#: src/Driver/DinahostingDriver.php:708 src/Driver/CloudflareDriver.php:352
+#: src/Driver/DinahostingDriver.php:709 src/Driver/CloudflareDriver.php:352
 #, php-format
 msgid "Expires %s"
 msgstr ""
 
-#: src/Driver/DinahostingDriver.php:861
-msgid "Domain is not managed by this Dinahosting account"
-msgstr ""
-
-#: src/Driver/DinahostingDriver.php:886
+#: src/Driver/DinahostingDriver.php:887
 msgid "Dinahosting username"
 msgstr ""
 
-#: src/Driver/DinahostingDriver.php:887
+#: src/Driver/DinahostingDriver.php:888
 msgid "Dinahosting password"
 msgstr ""
 
@@ -414,33 +402,15 @@ msgstr ""
 msgid "Record type %s is not writable through Domain Manager"
 msgstr ""
 
-#: src/Driver/IonosDriver.php:162
+#: src/Driver/IonosDriver.php:163
 msgid "Not yet implemented for this driver"
 msgstr ""
 
-#: src/Driver/IonosDriver.php:300
-#, php-format
-msgid "No IONOS domain item found for %s with this account"
-msgstr ""
-
-#: src/Driver/IonosDriver.php:506
-msgid "IONOS did not return the created record"
-msgstr ""
-
-#: src/Driver/IonosDriver.php:646
-#, php-format
-msgid "No IONOS DNS zone found for %s with this key"
-msgstr ""
-
-#: src/Driver/IonosDriver.php:740
-msgid "Domain is not managed by this IONOS account"
-msgstr ""
-
-#: src/Driver/IonosDriver.php:767
+#: src/Driver/IonosDriver.php:764
 msgid "IONOS API key"
 msgstr ""
 
-#: src/Driver/IonosDriver.php:768
+#: src/Driver/IonosDriver.php:765
 msgid "IONOS API secret"
 msgstr ""
 

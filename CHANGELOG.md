@@ -16,7 +16,7 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 - The Supplier's Domain Manager tab now shows the RDAP-reported registrar name and IANA number again, in their own "RDAP cross-check" section below the connection diagnostics.
 ### Bugs
 - Cloudflare, IONOS, and Dinahosting connection errors now show the provider's own error code and message instead of a guessed cause, so a failed Check Connection no longer claims a specific permission is missing when that isn't actually why it failed.
-- Cloudflare sync errors (record not found, write not confirmed, domain not managed by this account) are now worded consistently instead of each having its own one-off message.
+- Cloudflare, IONOS, and Dinahosting sync errors (record not found, write not confirmed, domain not managed by this account) are now worded consistently instead of each having its own one-off message.
 - The "Domain Manager" dashboard no longer gets re-created as a duplicate every time the plugin is updated.
 
 ## [1.7.1]
