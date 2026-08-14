@@ -3646,15 +3646,25 @@ live here. Re-verified against current code before recording, rather than truste
   types sees "Update Now" reject types the same profile's own scheduled cron sync would happily
   pull in — surprising the first time it's hit, intentional once understood (cron is unrestricted
   by design; "Update Now" respects the acting user's own role).
-- **The three DNS drivers (`CloudflareDriver`, `IonosDriver`, `DinahostingDriver`) share no base
-  class and compose no common service** — each independently implements its own HTTP client
-  construction, request wrapping/retry, pagination (cursor-based for Cloudflare, offset-based for
-  IONOS/Dinahosting), and HTTP/API error-code mapping. A real duplication cost, not a design flaw
-  in itself (§12.6's own "keep provider-specific concerns out of shared layers" principle cuts the
-  other way — a shared base class risks reintroducing exactly the coupling that section warns
-  against, e.g. one provider's error-code meaning leaking into a shared mapper). **Deferred, not
-  rejected**: worth an `AbstractDriver` extraction if a fourth driver is ever added and the
-  duplication cost compounds again, not speculatively now for three.
+- **(Phase 98, superseding the note below) A fourth driver became imminent, crossing the threshold
+  this entry itself set — `src/Driver/AbstractDriver.php` was extracted, and `CloudflareDriver`/
+  `DinahostingDriver`/`IonosDriver` now extend it.** Moved (verbatim, no behavior change): the
+  byte-identical `normalizeDomain()`/`sanitizeMessage()`/`parseDate()` helpers, and a shared lazy
+  Guzzle client bootstrap (`getClient()`) that also fixed a real bug found while extracting it —
+  each driver's `getClient()` re-checked required credential fields with its own hardcoded
+  message, bypassing `ValidatesCredentialsTrait::missingConfigMessage()` (which was, until now,
+  only reached via `testConnection()`). Each driver implements two small hooks instead:
+  `requiredCredentialFields(): array` (key => label) and
+  `buildClientOptions(array $credentials): array` (base_uri/headers/auth, whatever that driver's
+  auth shape needs). `IonosDriver`'s second Domains-API client reuses the new
+  `assertCredentialsPresent()` (split out of `getClient()` for exactly this case) plus
+  `buildClientOptions()` with the base_uri swapped, rather than a third hook.
+  **Deliberately NOT unified**, per the "keep provider-specific concerns out of shared layers"
+  reasoning this entry originally raised: each driver's `request()`/response error classification
+  (401 vs 403 handling, envelope shape, per-status wording) — those still differ enough per API
+  that unifying them speculatively risked silently changing three drivers' already-relied-on
+  wording. A concrete new (fourth) driver, once written against `AbstractDriver`, is the signal to
+  revisit whether anything there is actually shared — not guessed ahead of it.
 - **Domain discovery's empty-modal-with-no-message symptom was already a non-issue by design, not
   a latent bug**: `DomainDiscoveryController` throws and returns the exception message as a plain
   HTTP 400 body on any `listAccountDomains()` failure (missing scope, network error, etc.) — the
