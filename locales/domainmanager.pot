@@ -349,7 +349,7 @@ msgstr ""
 msgid "This record reference is no longer valid"
 msgstr ""
 
-#: src/Driver/DinahostingDriver.php:708 src/Driver/CloudflareDriver.php:353
+#: src/Driver/DinahostingDriver.php:708 src/Driver/CloudflareDriver.php:352
 #, php-format
 msgid "Expires %s"
 msgstr ""
@@ -366,46 +366,25 @@ msgstr ""
 msgid "Dinahosting password"
 msgstr ""
 
-#: src/Driver/CloudflareDriver.php:287
-msgid "Domain is not managed by Cloudflare Registrar on this account"
-msgstr ""
-
-#: src/Driver/CloudflareDriver.php:483
-msgid "Cloudflare did not return the created record"
-msgstr ""
-
-#: src/Driver/CloudflareDriver.php:531 src/Driver/CloudflareDriver.php:688
-msgid "Cloudflare did not return the updated record"
-msgstr ""
-
-#: src/Driver/CloudflareDriver.php:575
-msgid "Cloudflare did not return this record"
-msgstr ""
-
-#: src/Driver/CloudflareDriver.php:770
+#: src/Driver/CloudflareDriver.php:769
 #, php-format
 msgid "Cloudflare %1$s failed: %2$s"
 msgstr ""
 
-#: src/Driver/CloudflareDriver.php:844
-#, php-format
-msgid "No Cloudflare zone found for %s under this account"
-msgstr ""
-
-#: src/Driver/CloudflareDriver.php:916
+#: src/Driver/CloudflareDriver.php:913
 #, php-format
 msgid "Cloudflare API error: %s"
 msgstr ""
 
-#: src/Driver/CloudflareDriver.php:931
+#: src/Driver/CloudflareDriver.php:928
 msgid "Cloudflare Account ID"
 msgstr ""
 
-#: src/Driver/CloudflareDriver.php:932
+#: src/Driver/CloudflareDriver.php:929
 msgid "Cloudflare API token"
 msgstr ""
 
-#: src/Driver/CloudflareDriver.php:1041
+#: src/Driver/CloudflareDriver.php:1038
 #, php-format
 msgid "Cloudflare rejected this request due to a token restriction: %s"
 msgstr ""
@@ -1058,6 +1037,52 @@ msgstr ""
 
 #: src/Profile.php:137
 msgid "Unlock imported domain data"
+msgstr ""
+
+#: src/Exception/DriverException.php:83
+#, php-format
+msgid "%1$s: %2$s"
+msgstr ""
+
+#: src/Exception/DriverException.php:86
+#, php-format
+msgid "%1$s: %2$s (%3$s)"
+msgstr ""
+
+#: src/Exception/ErrorCategory.php:62
+msgid "unreachable"
+msgstr ""
+
+#: src/Exception/ErrorCategory.php:63
+msgid "wrong credentials"
+msgstr ""
+
+#: src/Exception/ErrorCategory.php:64
+msgid "insufficient permissions"
+msgstr ""
+
+#: src/Exception/ErrorCategory.php:65
+msgid "domain not managed by this account"
+msgstr ""
+
+#: src/Exception/ErrorCategory.php:66
+msgid "record not found"
+msgstr ""
+
+#: src/Exception/ErrorCategory.php:67
+msgid "configuration error"
+msgstr ""
+
+#: src/Exception/ErrorCategory.php:68
+msgid "validation failed"
+msgstr ""
+
+#: src/Exception/ErrorCategory.php:69
+msgid "write not confirmed"
+msgstr ""
+
+#: src/Exception/ErrorCategory.php:70
+msgid "not supported"
 msgstr ""
 
 #: src/SupplierConfig.php:64

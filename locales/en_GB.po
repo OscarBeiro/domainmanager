@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-14 15:27+0200\n"
-"PO-Revision-Date: 2026-08-14 15:27+0200\n"
+"POT-Creation-Date: 2026-08-14 21:58+0200\n"
+"PO-Revision-Date: 2026-08-14 21:58+0200\n"
 "Last-Translator: Automatically generated\n"
 "Language-Team: none\n"
 "Language: en_GB\n"
@@ -361,7 +361,7 @@ msgstr ""
 msgid "This record reference is no longer valid"
 msgstr "This record reference is no longer valid"
 
-#: src/Driver/DinahostingDriver.php:708 src/Driver/CloudflareDriver.php:353
+#: src/Driver/DinahostingDriver.php:708 src/Driver/CloudflareDriver.php:352
 #, php-format
 msgid "Expires %s"
 msgstr "Expires %s"
@@ -378,46 +378,25 @@ msgstr "Dinahosting username"
 msgid "Dinahosting password"
 msgstr "Dinahosting password"
 
-#: src/Driver/CloudflareDriver.php:287
-msgid "Domain is not managed by Cloudflare Registrar on this account"
-msgstr "Domain is not managed by Cloudflare Registrar on this account"
-
-#: src/Driver/CloudflareDriver.php:483
-msgid "Cloudflare did not return the created record"
-msgstr "Cloudflare did not return the created record"
-
-#: src/Driver/CloudflareDriver.php:531 src/Driver/CloudflareDriver.php:688
-msgid "Cloudflare did not return the updated record"
-msgstr "Cloudflare did not return the updated record"
-
-#: src/Driver/CloudflareDriver.php:575
-msgid "Cloudflare did not return this record"
-msgstr "Cloudflare did not return this record"
-
-#: src/Driver/CloudflareDriver.php:770
+#: src/Driver/CloudflareDriver.php:769
 #, php-format
 msgid "Cloudflare %1$s failed: %2$s"
 msgstr "Cloudflare %1$s failed: %2$s"
 
-#: src/Driver/CloudflareDriver.php:844
-#, php-format
-msgid "No Cloudflare zone found for %s under this account"
-msgstr "No Cloudflare zone found for %s under this account"
-
-#: src/Driver/CloudflareDriver.php:916
+#: src/Driver/CloudflareDriver.php:913
 #, php-format
 msgid "Cloudflare API error: %s"
 msgstr "Cloudflare API error: %s"
 
-#: src/Driver/CloudflareDriver.php:931
+#: src/Driver/CloudflareDriver.php:928
 msgid "Cloudflare Account ID"
 msgstr "Cloudflare Account ID"
 
-#: src/Driver/CloudflareDriver.php:932
+#: src/Driver/CloudflareDriver.php:929
 msgid "Cloudflare API token"
 msgstr "Cloudflare API token"
 
-#: src/Driver/CloudflareDriver.php:1041
+#: src/Driver/CloudflareDriver.php:1038
 #, php-format
 msgid "Cloudflare rejected this request due to a token restriction: %s"
 msgstr "Cloudflare rejected this request due to a token restriction: %s"
@@ -1109,6 +1088,52 @@ msgstr "Edit fields and records imported by synchronization"
 #: src/Profile.php:137
 msgid "Unlock imported domain data"
 msgstr "Unlock imported domain data"
+
+#: src/Exception/DriverException.php:83
+#, php-format
+msgid "%1$s: %2$s"
+msgstr "%1$s: %2$s"
+
+#: src/Exception/DriverException.php:86
+#, php-format
+msgid "%1$s: %2$s (%3$s)"
+msgstr "%1$s: %2$s (%3$s)"
+
+#: src/Exception/ErrorCategory.php:62
+msgid "unreachable"
+msgstr "unreachable"
+
+#: src/Exception/ErrorCategory.php:63
+msgid "wrong credentials"
+msgstr "wrong credentials"
+
+#: src/Exception/ErrorCategory.php:64
+msgid "insufficient permissions"
+msgstr "insufficient permissions"
+
+#: src/Exception/ErrorCategory.php:65
+msgid "domain not managed by this account"
+msgstr "domain not managed by this account"
+
+#: src/Exception/ErrorCategory.php:66
+msgid "record not found"
+msgstr "record not found"
+
+#: src/Exception/ErrorCategory.php:67
+msgid "configuration error"
+msgstr "configuration error"
+
+#: src/Exception/ErrorCategory.php:68
+msgid "validation failed"
+msgstr "validation failed"
+
+#: src/Exception/ErrorCategory.php:69
+msgid "write not confirmed"
+msgstr "write not confirmed"
+
+#: src/Exception/ErrorCategory.php:70
+msgid "not supported"
+msgstr "not supported"
 
 #: src/SupplierConfig.php:64
 msgid "Domain Manager supplier configuration"
