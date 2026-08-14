@@ -840,22 +840,20 @@ class DinahostingDriver extends AbstractDriver implements RegistrarDriverInterfa
             ]);
         } catch (GuzzleException $e) {
             PluginLogger::error("Dinahosting HTTP failure on $command", $e->getMessage());
-            throw new DriverException(__('Dinahosting API is unreachable', 'domainmanager'));
+            throw self::apiUnreachableException('Dinahosting');
         }
 
         $status = $response->getStatusCode();
         $body   = (string) $response->getBody();
 
         if ($status >= 500) {
-            throw new DriverException(
-                sprintf(__('Dinahosting API unavailable (HTTP %d)', 'domainmanager'), $status),
-            );
+            throw self::apiUnavailableException('Dinahosting', $status);
         }
 
         $decoded = json_decode($body, true);
         if (!is_array($decoded)) {
             PluginLogger::error("Dinahosting non-JSON response on $command (HTTP $status)");
-            throw new DriverException(__('Unexpected response from the Dinahosting API', 'domainmanager'));
+            throw self::unexpectedResponseException('Dinahosting');
         }
 
         if (!self::envelopeSucceeded($decoded)) {

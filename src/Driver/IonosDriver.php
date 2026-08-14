@@ -667,7 +667,7 @@ class IonosDriver extends AbstractDriver implements RegistrarDriverInterface, Dn
             $response = $this->getClient()->request($method, $path, $options);
         } catch (GuzzleException $e) {
             PluginLogger::error("IONOS HTTP failure on $path", $e->getMessage());
-            throw new DriverException(__('IONOS API is unreachable', 'domainmanager'));
+            throw self::apiUnreachableException('IONOS');
         }
 
         $status = $response->getStatusCode();
@@ -680,9 +680,7 @@ class IonosDriver extends AbstractDriver implements RegistrarDriverInterface, Dn
         }
 
         if ($status >= 500) {
-            throw new DriverException(
-                sprintf(__('IONOS API unavailable (HTTP %d)', 'domainmanager'), $status),
-            );
+            throw self::apiUnavailableException('IONOS', $status);
         }
 
         if ($status < 200 || $status >= 300) {
@@ -699,7 +697,7 @@ class IonosDriver extends AbstractDriver implements RegistrarDriverInterface, Dn
 
         if (!is_array($decoded)) {
             PluginLogger::error("IONOS non-JSON response on $path (HTTP $status)");
-            throw new DriverException(__('Unexpected response from the IONOS API', 'domainmanager'));
+            throw self::unexpectedResponseException('IONOS');
         }
 
         return $decoded;
@@ -726,7 +724,7 @@ class IonosDriver extends AbstractDriver implements RegistrarDriverInterface, Dn
             $response = $this->getDomainsClient()->request($method, $path, ['query' => $query]);
         } catch (GuzzleException $e) {
             PluginLogger::error("IONOS Domains API HTTP failure on $path", $e->getMessage());
-            throw new DriverException(__('IONOS Domains API is unreachable', 'domainmanager'));
+            throw self::apiUnreachableException('IONOS Domains');
         }
 
         $status = $response->getStatusCode();
@@ -745,9 +743,7 @@ class IonosDriver extends AbstractDriver implements RegistrarDriverInterface, Dn
         }
 
         if ($status >= 500) {
-            throw new DriverException(
-                sprintf(__('IONOS Domains API unavailable (HTTP %d)', 'domainmanager'), $status),
-            );
+            throw self::apiUnavailableException('IONOS Domains', $status);
         }
 
         if ($status < 200 || $status >= 300) {
@@ -758,7 +754,7 @@ class IonosDriver extends AbstractDriver implements RegistrarDriverInterface, Dn
 
         if (!is_array($decoded)) {
             PluginLogger::error("IONOS Domains API non-JSON response on $path (HTTP $status)");
-            throw new DriverException(__('Unexpected response from the IONOS Domains API', 'domainmanager'));
+            throw self::unexpectedResponseException('IONOS Domains');
         }
 
         return $decoded;

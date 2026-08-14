@@ -796,7 +796,7 @@ class CloudflareDriver extends AbstractDriver implements RegistrarDriverInterfac
             $response = $this->getClient()->request($method, $path, $options);
         } catch (GuzzleException $e) {
             PluginLogger::error("Cloudflare HTTP failure on $path", $e->getMessage());
-            throw new DriverException(__('Cloudflare API is unreachable', 'domainmanager'));
+            throw self::apiUnreachableException('Cloudflare');
         }
 
         $status = $response->getStatusCode();
@@ -805,7 +805,7 @@ class CloudflareDriver extends AbstractDriver implements RegistrarDriverInterfac
 
         if (!is_array($data)) {
             PluginLogger::error("Cloudflare non-JSON response on $path (HTTP $status)");
-            throw new DriverException(__('Unexpected response from the Cloudflare API', 'domainmanager'));
+            throw self::unexpectedResponseException('Cloudflare');
         }
 
         if (($data['success'] ?? false) !== true && !in_array($status, [403, 404], true)) {
@@ -866,7 +866,7 @@ class CloudflareDriver extends AbstractDriver implements RegistrarDriverInterfac
             $response = $this->getClient()->request($method, $path, ['query' => $query]);
         } catch (GuzzleException $e) {
             PluginLogger::error("Cloudflare HTTP failure on $path", $e->getMessage());
-            throw new DriverException(__('Cloudflare API is unreachable', 'domainmanager'));
+            throw self::apiUnreachableException('Cloudflare');
         }
 
         $status = $response->getStatusCode();
@@ -896,14 +896,12 @@ class CloudflareDriver extends AbstractDriver implements RegistrarDriverInterfac
         }
 
         if ($status >= 500) {
-            throw new DriverException(
-                sprintf(__('Cloudflare API unavailable (HTTP %d)', 'domainmanager'), $status),
-            );
+            throw self::apiUnavailableException('Cloudflare', $status);
         }
 
         if (!is_array($data)) {
             PluginLogger::error("Cloudflare non-JSON response on $path (HTTP $status)");
-            throw new DriverException(__('Unexpected response from the Cloudflare API', 'domainmanager'));
+            throw self::unexpectedResponseException('Cloudflare');
         }
 
         if (($data['success'] ?? false) !== true) {
