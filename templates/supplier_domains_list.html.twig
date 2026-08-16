@@ -48,22 +48,27 @@
         </div>
     {% endif %}
     <div class="card-body p-0">
-        {# Registrar/DNS status only ever hold one short badge word — left to
-           the browser's own content-based sizing, they crowd out the
-           Registrar/DNS Provider name columns, which can hold a much longer
-           Supplier name. Table-layout: fixed + explicit widths give the
-           status columns just enough room and split the rest evenly across
-           the name-bearing columns instead. #}
+        {# Registrar/DNS status only ever hold one short badge word, but the
+           first pass at these widths (18%/10%) still left them cramped in
+           this tab's narrower column (it shares the row with the Domain
+           form's other tabs) while Registrar/DNS Provider/Entity — each
+           holding at most one Supplier/entity name — sat needlessly wide.
+           Rebalanced so every name-bearing column (Registrar, DNS Provider,
+           Entity) gets the same share, and both status columns get enough
+           room for their longest real label ("Never synchronized") without
+           wrapping. Column order: Domain, Registrar, Registrar status, DNS
+           Provider, DNS status, Entity, then the datatable's own always-on
+           filter-icon column. #}
         <style>
             #domainmanager-domains-list table {
                 table-layout: fixed;
             }
-            #domainmanager-domains-list thead th:nth-child(1) { width: 20%; }
-            #domainmanager-domains-list thead th:nth-child(2) { width: 18%; }
-            #domainmanager-domains-list thead th:nth-child(3) { width: 10%; }
-            #domainmanager-domains-list thead th:nth-child(4) { width: 18%; }
-            #domainmanager-domains-list thead th:nth-child(5) { width: 10%; }
-            #domainmanager-domains-list thead th:nth-child(6) { width: 19%; }
+            #domainmanager-domains-list thead th:nth-child(1) { width: 22%; }
+            #domainmanager-domains-list thead th:nth-child(2) { width: 15%; }
+            #domainmanager-domains-list thead th:nth-child(3) { width: 14%; }
+            #domainmanager-domains-list thead th:nth-child(4) { width: 15%; }
+            #domainmanager-domains-list thead th:nth-child(5) { width: 14%; }
+            #domainmanager-domains-list thead th:nth-child(6) { width: 15%; }
             #domainmanager-domains-list thead th:nth-child(7) { width: 5%; }
         </style>
         {{ include('components/datatable.html.twig', datatable_params) }}

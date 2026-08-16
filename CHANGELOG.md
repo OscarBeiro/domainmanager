@@ -17,6 +17,7 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 ### Bugs
 - Cloudflare, IONOS, and Dinahosting connection errors now show the provider's own error code and message instead of a guessed cause, so a failed Check Connection no longer claims a specific permission is missing when that isn't actually why it failed.
 - The "Domain Manager" dashboard no longer gets re-created as a duplicate every time the plugin is updated.
+- Fixed the Registrar status and DNS status columns on a Supplier's Domains list being too narrow to show their text, while the Registrar/DNS Provider/Entity columns sat needlessly wide.
 
 ## [1.7.1]
 ### Features
