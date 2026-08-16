@@ -3934,3 +3934,33 @@ don't rely on the "click date" UI in this GLPI version.
 - **Static analysis clean:** `phpcs`/`php -l` on every touched file.
   - [x] Pass — verified live: `tools/codesniffer.sh` reports no violations; `php -l` clean on
     all 8 touched PHP files.
+
+## Phase 102: domain import no longer crashes on the `DomainState` row it shares with `domainSaved()`
+
+- **Import a brand-new domain (one with a resolvable TLD) from a supplier's "Import Domains"
+  modal.** Expected: no uncaught exception, a clean redirect back to the Supplier tab with a
+  "N domain imported" success message; the new domain's `DomainState` row has
+  `is_glpi_created = 0` (not left at the `domainSaved()` hook's own default) and an `Infocom`
+  row exists with `suppliers_id` set to the importing supplier.
+  - [x] Pass — verified live against `glpi-65108-web` (GLPI 11.0.8) with a real Dinahosting
+    account: imported `zzz.gal`, confirmed via direct DB query
+    (`glpi_plugin_domainmanager_states`/`glpi_infocoms`) both fields are correct, no exception
+    in `domainmanager-errors.log` or the GLPI error log.
+- **Before the fix: reproduce the crash.** Expected: `RuntimeException: Duplicate entry ... for
+  key 'domains_id'` in the GLPI error log, thrown from
+  `DomainImportController.php`'s explicit `(new DomainState())->add()` call colliding with the
+  row `HookHandler::domainSaved()` (registered on `Hooks::ITEM_ADD`) already created
+  synchronously inside `$domain->add()`.
+  - [x] Pass (root cause confirmed) — reproduced live by re-submitting an already-imported
+    domain a second time (hit the same collision since a state row for that `domains_id` already
+    existed); confirmed via `git log -S"domainSaved"`/`-S"ITEM_ADD"` this predates the current
+    work (not a new regression, broken since the hook was added in Phase 17).
+- **Import a batch containing more than one new domain.** Expected: every domain in the batch
+  gets created and assigned, not just the first one before a crash aborts the rest.
+  - [ ] Not yet verified live (single-domain import confirmed above; multi-domain batch not
+    separately exercised this session)
+- **Restore-from-trash import path (a previously-imported-then-trashed domain re-appearing in
+  discovery) is unaffected.** Expected: unchanged — that branch already calls `$domain->update()`
+  and never touches `DomainState` directly, so it was never affected by this bug.
+  - [ ] Not yet verified live (reasoned from code: the `isset($trashed[$normalized])` branch at
+    `DomainImportController.php` has no `DomainState` insert at all)
