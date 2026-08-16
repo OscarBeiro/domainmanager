@@ -3934,3 +3934,35 @@ don't rely on the "click date" UI in this GLPI version.
 - **Static analysis clean:** `phpcs`/`php -l` on every touched file.
   - [x] Pass — verified live: `tools/codesniffer.sh` reports no violations; `php -l` clean on
     all 8 touched PHP files.
+
+## Phase 101: drivers no longer misreport "API is unreachable" on slow DNS/connect latency
+
+- **Reproduce the bug: on a network with elevated DNS resolution latency, Check Connection
+  succeeds (fast enough this once) but a heavier call (e.g. "Import Domains") intermittently
+  fails with "\<Provider\> API is unreachable".** Expected root cause: `cURL error 28:
+  Resolving timed out after 5000 milliseconds` in `domainmanager-errors.log`, well under the
+  driver's own configured `REQUEST_TIMEOUT`/`TEST_TIMEOUT` (15s/9s).
+  - [x] Pass — reproduced live against `glpi-65108-web` (GLPI 11.0.8) with a real Dinahosting
+    account configured (Check Connection reporting `success` in
+    `glpi_plugin_domainmanager_supplierconfigs`): `domainmanager-errors.log` showed exactly this
+    — `Dinahosting HTTP failure on Services_GetDomains — cURL error 28: Resolving timed out
+    after 5000 milliseconds`/`Connection timed out after 5008 milliseconds`, confirming
+    `connect_timeout` (Guzzle's separate DNS/TCP/TLS-establishment bound) was silently capped at
+    `Toolbox::getGuzzleClient()`'s 5s default the whole time, independent of the driver's own
+    15s/9s request-level timeouts. Direct `curl` to the same host from inside the same container
+    intermittently timed out on one attempt and succeeded on the next, confirming the network
+    itself (not the plugin) has the underlying latency — the bug is the too-tight default
+    swallowing that latency instead of tolerating it.
+- **After the fix, the same environment should tolerate that latency: raise `connect_timeout`
+  from the fetch and confirm it clears.** Expected: `AbstractDriver::getClient()` and
+  `IonosDriver::getDomainsClient()` now pass `connect_timeout => 10` explicitly.
+  - [x] Pass — confirmed via code review (`git log -S"connect_timeout"` shows this was never set
+    anywhere in this codebase, including each driver's pre-`AbstractDriver` `getClient()` — not
+    a regression from Phase 98's extraction) and via `php -l`/`vendor/bin/phpunit` (54 tests, 114
+    assertions, all green) after the change. Not independently re-confirmed by forcing the exact
+    same intermittent live network condition to recur and pass end-to-end (the underlying latency
+    is itself intermittent/environmental, not reproducible on demand).
+- **Confirm this is a fixed default, not a new user-facing setting** (per explicit user
+  direction — a network-latency edge case doesn't need per-provider config surface).
+  - [x] Pass — no new plugin setting/config field added; `connect_timeout => 10` is a plain
+    array literal in both call sites.

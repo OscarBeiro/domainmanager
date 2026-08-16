@@ -17,6 +17,7 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 ### Bugs
 - Cloudflare, IONOS, and Dinahosting connection errors now show the provider's own error code and message instead of a guessed cause, so a failed Check Connection no longer claims a specific permission is missing when that isn't actually why it failed.
 - The "Domain Manager" dashboard no longer gets re-created as a duplicate every time the plugin is updated.
+- Cloudflare, IONOS, and Dinahosting calls no longer wrongly report "API is unreachable" on a slower network connection — they now allow enough time to actually connect before giving up.
 
 ## [1.7.1]
 ### Features

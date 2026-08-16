@@ -799,7 +799,10 @@ class IonosDriver extends AbstractDriver implements RegistrarDriverInterface, Dn
 
             $options = $this->buildClientOptions($this->credentials);
             $options['base_uri'] = self::DOMAINS_BASE_URI;
-            $options += ['timeout' => self::REQUEST_TIMEOUT, 'http_errors' => false];
+            // Same `connect_timeout` gap as AbstractDriver::getClient() —
+            // this second client bypasses that shared bootstrap entirely,
+            // see its docblock comment for the full rationale.
+            $options += ['timeout' => self::REQUEST_TIMEOUT, 'connect_timeout' => 10, 'http_errors' => false];
 
             $this->domainsClient = Toolbox::getGuzzleClient($options);
         }
