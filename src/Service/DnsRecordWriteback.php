@@ -739,16 +739,13 @@ class DnsRecordWriteback
             $driver->deleteRecord($domain->fields['name'], $imported->fields['remote_id']);
             DomainState::recordWriteOutcome($domains_id, true);
 
-            self::logWriteAttempt(
-                $domains_id,
-                $type,
-                $item->fields['name'],
-                self::driverLabel(self::configuredDriverName($state)),
-                __('Delete'),
-                true,
-                __('record removed', 'domainmanager'),
-            );
-
+            // No logWriteAttempt() here for the success case — same
+            // reasoning as onPostAdd()/onPreUpdate() above: this hook runs
+            // pre-commit and, since abort() wasn't called, the native
+            // soft-delete that follows already logs its own
+            // HISTORY_DELETE_ITEM entry. The failure path below has no such
+            // native equivalent (the delete never committed) and keeps its
+            // own logWriteAttempt call.
             return true;
         } catch (Throwable $e) {
             $message = $e instanceof DriverException ? $e->getMessage() : __('An error occurred while deleting the record at the provider', 'domainmanager');

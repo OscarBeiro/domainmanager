@@ -3638,9 +3638,9 @@ blocked IP — every 403 branch in `CloudflareDriver` previously discarded that 
   "[Domain Manager] Create/Update ... at \<provider\>: failed: ..." Historical-tab line — the
   failure-path logging is unchanged.
   - [ ] Not yet verified live
-- **Trash a write-back-managed record, then restore it.** Expected: unchanged from before this
-  phase — a "[Domain Manager] Delete ... succeeded"/"Restore ... succeeded" line for each, since
-  native soft-delete/restore logging doesn't fire for non-dynamic items.
+- **Trash a write-back-managed record, then restore it.** Expected (superseded by Phase 100 for
+  the trash/delete half — see below): a "[Domain Manager] Restore ... succeeded" line still
+  appears on restore, since native restore logging doesn't fire for non-dynamic items.
   - [ ] Not yet verified live
 - **Toggle a Cloudflare record's proxy status.** Expected: unchanged — a
   "[Domain Manager] Proxy toggle ... succeeded" line still appears (this path never had a native
@@ -3934,3 +3934,22 @@ don't rely on the "click date" UI in this GLPI version.
 - **Static analysis clean:** `phpcs`/`php -l` on every touched file.
   - [x] Pass — verified live: `tools/codesniffer.sh` reports no violations; `php -l` clean on
     all 8 touched PHP files.
+
+## Phase 100: no duplicate history entry on write-back record delete
+
+- **On a write-back-managed domain (Cloudflare/IONOS/Dinahosting driver configured and
+  write-eligible), trash a writable-type record (A/AAAA/CNAME/TXT) via the native "Put in
+  trashbin" action.** Expected: the Domain's Historical tab shows exactly one entry for the
+  deletion (the native "Deleted" line) — no second "[Domain Manager] Delete ... at \<provider\>:
+  succeeded" line alongside it.
+  - [ ] Not yet verified live
+- **Force a delete failure** (e.g. temporarily break the driver's credentials or otherwise make
+  the upstream `deleteRecord()` call throw). Expected: still see the plugin's own
+  "[Domain Manager] Delete ... at \<provider\>: failed: ..." Historical-tab line — the
+  failure-path logging is unchanged.
+  - [ ] Not yet verified live
+- **Restore that record.** Expected: unchanged — the "[Domain Manager] Restore ... succeeded"
+  line still appears on restore, since native restore logging doesn't fire for non-dynamic items
+  (this half of the delete/restore pair was intentionally left alone — see the open ticket about
+  giving restore its own history verb).
+  - [ ] Not yet verified live
