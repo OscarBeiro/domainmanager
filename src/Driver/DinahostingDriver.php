@@ -541,7 +541,7 @@ class DinahostingDriver extends AbstractDriver implements RegistrarDriverInterfa
             $params += match ($type) {
                 'A', 'AAAA' => ['ip' => $existing->data],
                 'CNAME'     => ['destinationHostname' => $existing->data],
-                default     => ['value' => $existing->data],
+                default     => ['text' => $existing->data],
             };
         }
 

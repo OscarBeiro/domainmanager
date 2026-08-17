@@ -592,9 +592,17 @@ class DnsRecordWriteback
             }
 
             $updated = $driver->setProxied($domain->fields['name'], $imported->fields['remote_id'], $desired);
+
+            $proxy_addresses = null;
+            if ($updated->isProxied === true) {
+                $addresses = (new PublicIpResolver())->resolve($item->fields['name'], $type === 'AAAA' ? 'AAAA' : 'A');
+                $proxy_addresses = $addresses !== [] ? json_encode($addresses) : null;
+            }
+
             $imported->update([
-                'id'         => $imported->getID(),
-                'is_proxied' => $updated->isProxied !== null ? (int) $updated->isProxied : null,
+                'id'              => $imported->getID(),
+                'is_proxied'      => $updated->isProxied !== null ? (int) $updated->isProxied : null,
+                'proxy_addresses' => $proxy_addresses,
             ]);
 
             self::logWriteAttempt(
