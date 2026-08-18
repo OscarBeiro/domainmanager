@@ -16,7 +16,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Entries are grouped into **Features** (new capability, UI/UX change, refactor, doc/config
 change) and **Bugs** (something that was actually broken, fixed) — one line each.
 
-## [Unreleased] - 1.8.0-beta1
+## [Unreleased]
+
+## [1.8.0] - 2026-08-18
+
+Released after an extensive non-destructive regression pass against a live, real-inventory
+GLPI 11.0.8 instance (`glpi-65108-web`/`glpi-65108-db`, 13 real domains, 3 real
+credentialed suppliers across Cloudflare/Dinahosting/IONOS). All pre-existing data confirmed
+intact before/after (13 domains, 3 suppliers, 3 supplierconfigs unchanged; domain-record count
+only grew from new synced imports, never shrank). One environmental false alarm was found and
+ruled out: intermittent `ParseError: unexpected character 0x00` on domains #7/#10/#12 turned
+out to be corrupted compiled-Twig cache files from concurrent requests during testing, not a
+plugin defect — resolved by `bin/console cache:clear` and confirmed by a clean re-sync of
+domain #7 (`ok`/`ok`). One real, narrow limitation was found and filed as
+[#30](https://github.com/TICGAL-Dev/domainmanager/issues/30): Dinahosting write-back
+(edit/delete) of an **apex** TXT/MX record still fails with API code 2303 — the driver's
+`relativeHostname()` already documents that all four plausible hostname formats have been
+tried live against Dinahosting and rejected identically, so this is a vendor-support escalation,
+not a code fix available today. Non-apex Dinahosting TXT/MX write-back is unaffected. Not
+release-blocking.
 ### Features
 - **Split `TESTING.md` into a developer regression record and a human acceptance checklist.** (`TESTING-dev.md`, `TESTING.md`, `ARCHITECTURE.md`, `README.md`, `tests/bootstrap.php`, `tests/Service/NsResolverTest.php`, `tests/Service/PublicIpResolverTest.php`, `tests/DriverFactoryTest.php`, `tests/Service/DomainStatusResolverTest.php`). The old `TESTING.md` (~4,026 lines, ~150+ phase-numbered dev-facing regression cases) is now `TESTING-dev.md`, moved verbatim with no content changes. `TESTING.md` is a new, short, plain-language release checklist built from a fresh code inventory of every controller, template control, CronTask, right, config field, driver capability, `DomainState` status and user-facing error path — not lifted from `ARCHITECTURE.md`, which has accreted stale/aspirational content. Structured per the user's own follow-up correction: 17 generic sections (~50 items) run by every tester regardless of provider, followed by three fully-skippable per-provider appendices (Cloudflare/Dinahosting/IONOS) so a tester without a given provider's account skips its whole appendix rather than filtering item-by-item, plus a closing known-limitations list; every item is a strict pass/fail check on one key action (no smoke/full tiering — the user explicitly rejected a partial-credit tiered approach) and carries a blast-radius marker (`read-only`/`live write`/`destructive`), with destructive items grouped into their own section. Corrected one real finding surfaced during research: IONOS's Check Connection has two legs — the DNS leg is a genuine live probe, only its registrar leg is an unimplemented stub (`IonosDriver.php:131-167`); registrar sync itself works normally. Also documented three testability gaps as known limitations rather than checklist items: RDAP-sourced fields (`rdap_registrar_name`/`rdap_registrar_iana_id`/`rdap_nameservers`, DNS write-editability status/message) have no visible Domain-form representation; `Log::history()` never records which user triggered a sync/RDAP/write; and the `DomainSync`/`RdapEnrichment` cron tasks run with no entity filter by design. Every `TESTING.md`-meaning-the-dev-suite cross-reference in `ARCHITECTURE.md`, `README.md`, and five `tests/*.php` docblocks now points at `TESTING-dev.md`; `CHANGELOG-dev.md`'s own historical entries are left untouched since they're accurate statements about what existed at the time.
 

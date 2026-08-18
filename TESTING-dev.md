@@ -15,6 +15,52 @@ podman exec glpi_db_1 mariadb -uglpi -pglpi glpi -e "<SQL>"
 
 ---
 
+## Non-destructive testing directive (applies to any pre-populated instance, e.g. `glpi-65108-web`)
+
+When running regression passes against an instance that already holds real
+domains/suppliers/records (not a throwaway install):
+
+- **Never delete, purge, or destructively edit any pre-existing domain, record,
+  or supplier that was present before the testing session started.** Read-only
+  inspection of existing data is fine.
+- New records/domains/suppliers created for the purpose of a test may be
+  freely created, edited, and removed again within the same session.
+- Prefer scratch domains/records clearly named for testing (e.g.
+  `dm-test-<phase>.example.invalid`) so they're unambiguous to clean up and
+  can't be mistaken for real inventory.
+- If a test step's *only* way to exercise a code path requires touching an
+  existing record (e.g. a real supplier's real domain for a live-API check),
+  skip it and note it as **not run (would require touching live data)**
+  rather than improvising a destructive substitute.
+
+---
+
+## 2026-08-18 — Non-destructive regression pass against `glpi-65108-web` (pre-1.8.0 release)
+
+Ran an extensive pass against the live, real-inventory instance under the directive above
+(13 pre-existing domains, 3 credentialed suppliers — Cloudflare/Dinahosting/IONOS — 228
+pre-existing domain records). DB-state/CLI-level checks covered Phase 1 (foundation), Phase 2
+(supplier tab/credentials), Phase 3 (sync/reconciliation), and Phase 5 (NS detection); UI-only
+items needing a live browser session were not exercised in this pass (no Playwright available)
+and remain unchecked below — a future pass should cover those.
+
+- **Data integrity confirmed:** 13/13 domains, 3/3 suppliers, 3/3 supplierconfigs unchanged
+  before/after; domain-record count only grew (228 → 232) from legitimate new imports during
+  live syncs, never shrank or lost a pre-existing row.
+- **False alarm ruled out:** intermittent `ParseError: unexpected character 0x00` on domains
+  #7/#10/#12 was corrupted compiled-Twig cache from concurrent requests during the test session,
+  not a plugin bug — `bin/console cache:clear` fixed it; confirmed via a clean re-sync of
+  domain #7 (`registrar_status=ok`, `dns_status=ok`).
+- **Real (narrow, pre-existing) limitation found and filed:** Dinahosting write-back of an
+  **apex** TXT/MX record fails with API code 2303 —
+  [#30](https://github.com/TICGAL-Dev/domainmanager/issues/30). The driver's own
+  `relativeHostname()` docblock already documents all four plausible hostname formats having
+  been tried live and rejected identically; this needs Dinahosting support escalation, not a
+  further code guess. Non-apex Dinahosting TXT/MX write-back is unaffected. Not release-blocking
+  for 1.8.0.
+
+---
+
 ## Phase 1 — Foundation (setup, installer, right, cron shell)
 
 ### 1.1 Clean install from CLI (§7, §9-P1)
