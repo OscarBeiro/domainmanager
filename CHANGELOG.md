@@ -22,6 +22,13 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 - Cloudflare, IONOS, and Dinahosting calls no longer wrongly report "API is unreachable" on a slower network connection — they now allow enough time to actually connect before giving up.
 - Importing domains from a supplier no longer fails partway through, leaving the first imported domain without its registrar assigned.
 - Deleting a DNS record no longer creates two entries in the domain's history for the same deletion.
+- Fixed importing domains from a supplier (Dinahosting, Cloudflare, IONOS) failing with a database error.
+- Fixed DNS records being duplicated on each synchronization when the provider returns inconsistent TTL values.
+- Fixed deleting a Dinahosting TXT record always failing with "Domain is not managed by this Dinahosting account".
+- Fixed editing a Dinahosting TXT record sometimes silently changing or deleting a different TXT record at the same name (e.g. an SPF record instead of the DKIM one you meant to edit).
+- Editing a Dinahosting TXT record now allows more time for a slow response before giving up, reducing the risk of the record being removed without its updated version being saved.
+- Creating, editing, deleting, or restoring a DNS record (any supplier) now refreshes that domain's records right away, so the list you see always reflects what's actually live at the provider instead of stale local data.
+- Fixed a proxied record's Cloudflare IP address not showing right after enabling the proxy toggle, requiring a sync to appear.
 
 ## [1.7.1]
 ### Features

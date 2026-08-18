@@ -88,6 +88,7 @@ class Installer
         self::dropRecordConflictsTable($migration);
         self::backfillManagedFieldLocks();
         self::renormalizeDinahostingRemoteIds();
+        self::renormalizeDinahostingContentHashes();
         self::renormalizeMxTrailingDot();
         self::clearRdapEnrichmentComment();
         self::clearDomainSyncComment();
@@ -1238,6 +1239,104 @@ class Installer
             $renormalized = DinahostingDriver::renormalizeRemoteId((string) $row['remote_id'], $domains[$domains_id]);
 
             if ($renormalized !== null && $renormalized !== $row['remote_id']) {
+                $DB->update(
+                    'glpi_plugin_domainmanager_records',
+                    ['remote_id' => $renormalized],
+                    ['id' => (int) $row['id']],
+                );
+            }
+        }
+    }
+
+    /**
+     * §101-dinahosting: re-encodes every Dinahosting-managed TXT/MX
+     * `ImportedRecord.remote_id` through `DinahostingDriver::renormalizeContentHash()`
+     * so it carries a content hash — fixes the collision where two distinct
+     * TXT records at one name (e.g. an apex's SPF and DKIM records) shared
+     * an identical `type|name`-only remote id, so editing one could resolve
+     * to and silently delete the other instead (live-caught 2026-08-17 on
+     * `dev.gal`). Deliberately only touches the `remote_id` column on the
+     * plugin's own ownership row, reading each record's current content
+     * from the linked `glpi_domainrecords.data` — the DomainRecord/Domain
+     * rows themselves are never written.
+     *
+     * Idempotent (safe to run on every install/upgrade, no version guard
+     * needed): `renormalizeContentHash()` itself is a no-op once the hash
+     * already matches.
+     *
+     * @return void
+     */
+    private static function renormalizeDinahostingContentHashes(): void
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $suppliers_ids = [];
+        foreach (
+            $DB->request([
+                'SELECT' => ['suppliers_id'],
+                'FROM'   => 'glpi_plugin_domainmanager_supplierconfigs',
+                'WHERE'  => ['api_driver' => DriverRegistry::DRIVER_DINAHOSTING],
+            ]) as $row
+        ) {
+            $suppliers_ids[] = (int) $row['suppliers_id'];
+        }
+
+        if ($suppliers_ids === []) {
+            return;
+        }
+
+        $domains_ids = [];
+        foreach (
+            $DB->request([
+                'SELECT' => ['glpi_domains.id'],
+                'FROM'   => 'glpi_domains',
+                'INNER JOIN' => [
+                    'glpi_plugin_domainmanager_states' => [
+                        'ON' => [
+                            'glpi_plugin_domainmanager_states' => 'domains_id',
+                            'glpi_domains'                      => 'id',
+                        ],
+                    ],
+                ],
+                'WHERE' => [
+                    'glpi_domains.is_deleted'                             => 0,
+                    'glpi_plugin_domainmanager_states.dns_suppliers_id'   => $suppliers_ids,
+                ],
+            ]) as $row
+        ) {
+            $domains_ids[] = (int) $row['id'];
+        }
+
+        if ($domains_ids === []) {
+            return;
+        }
+
+        $iterator = $DB->request([
+            'SELECT' => [
+                'glpi_plugin_domainmanager_records.id',
+                'glpi_plugin_domainmanager_records.remote_id',
+                'glpi_domainrecords.data',
+            ],
+            'FROM'   => 'glpi_plugin_domainmanager_records',
+            'INNER JOIN' => [
+                'glpi_domainrecords' => [
+                    'ON' => [
+                        'glpi_domainrecords'                => 'id',
+                        'glpi_plugin_domainmanager_records' => 'domainrecords_id',
+                    ],
+                ],
+            ],
+            'WHERE' => [
+                'glpi_plugin_domainmanager_records.domains_id' => $domains_ids,
+                'glpi_plugin_domainmanager_records.remote_id'  => ['<>', ''],
+            ],
+        ]);
+
+        foreach ($iterator as $row) {
+            $renormalized = DinahostingDriver::renormalizeContentHash((string) $row['remote_id'], (string) $row['data']);
+
+            if ($renormalized !== null) {
                 $DB->update(
                     'glpi_plugin_domainmanager_records',
                     ['remote_id' => $renormalized],

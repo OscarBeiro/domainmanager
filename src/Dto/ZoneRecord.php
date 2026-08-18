@@ -114,13 +114,18 @@ final class ZoneRecord
     }
 
     /**
-     * Identity when the provider exposes no stable record id
+     * Identity when the provider exposes no stable record id.
      *
-     * @return string sha256 of type|name|data|ttl
+     * TTL is deliberately excluded, same reasoning as $isProxied/$comment
+     * above: providers report inconsistent or "auto" (0) TTLs across syncs
+     * for the same record, which produced duplicate rows instead of updates.
+     * TTL is still applied on update once a match is found by this hash.
+     *
+     * @return string sha256 of type|name|data
      */
     public function getHash(): string
     {
-        return hash('sha256', $this->type . '|' . $this->name . '|' . $this->data . '|' . $this->ttl);
+        return hash('sha256', $this->type . '|' . $this->name . '|' . $this->data);
     }
 
     /**

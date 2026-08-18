@@ -263,6 +263,16 @@ class DnsRecordWriteback
             PluginLogger::error("Failed to push new DNS record for domain #$domains_id", $e::class . ': ' . $e->getMessage());
             self::logWriteAttempt($domains_id, $type, $name, self::driverLabel(self::configuredDriverName($state)), __('Create'), false, $message);
             self::abort($item, sprintf(__('Could not create this record at %s: %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state)), $message));
+
+            // Safe to resync here even though the local row doesn't exist
+            // yet: abort() above blanks $item->input, so the native add()
+            // that follows never commits a local row at all — nothing for
+            // RecordReconciler to collide with. The success path is handled
+            // by onPostAdd() instead, once the local row genuinely exists
+            // (§ resyncAfterWrite()'s own docblock) — calling it here too
+            // would let the reconciler race the not-yet-committed local add
+            // and create a duplicate for the same provider record.
+            self::resyncAfterWrite($domains_id);
         }
     }
 
@@ -314,6 +324,12 @@ class DnsRecordWriteback
         // failure path above (onPreAdd(), before any local row exists) has
         // no such native equivalent and keeps its own logWriteAttempt call.
         self::pushInitialComment($item, $created->remoteId, $domains_id);
+
+        // Safe here (unlike inside onPreAdd()'s own try block above): the
+        // local row and its ImportedRecord ownership row both already exist
+        // by this point, so RecordReconciler has a real local match to
+        // reconcile against instead of racing the not-yet-committed add.
+        self::resyncAfterWrite($domains_id);
     }
 
     /**
@@ -543,6 +559,8 @@ class DnsRecordWriteback
             self::logWriteAttempt($domains_id, $type, $name, self::driverLabel(self::configuredDriverName($state)), __('Update'), false, $message);
             self::abort($item, sprintf(__('Could not update this record at %s: %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state)), $message));
             return true;
+        } finally {
+            self::resyncAfterWrite($domains_id);
         }
     }
 
@@ -592,9 +610,17 @@ class DnsRecordWriteback
             }
 
             $updated = $driver->setProxied($domain->fields['name'], $imported->fields['remote_id'], $desired);
+
+            $proxy_addresses = null;
+            if ($updated->isProxied === true) {
+                $addresses = (new PublicIpResolver())->resolve($item->fields['name'], $type === 'AAAA' ? 'AAAA' : 'A');
+                $proxy_addresses = $addresses !== [] ? json_encode($addresses) : null;
+            }
+
             $imported->update([
-                'id'         => $imported->getID(),
-                'is_proxied' => $updated->isProxied !== null ? (int) $updated->isProxied : null,
+                'id'              => $imported->getID(),
+                'is_proxied'      => $updated->isProxied !== null ? (int) $updated->isProxied : null,
+                'proxy_addresses' => $proxy_addresses,
             ]);
 
             self::logWriteAttempt(
@@ -623,6 +649,8 @@ class DnsRecordWriteback
                 false,
                 WARNING,
             );
+        } finally {
+            self::resyncAfterWrite((int) $item->fields['domains_id']);
         }
     }
 
@@ -675,6 +703,8 @@ class DnsRecordWriteback
                 false,
                 WARNING,
             );
+        } finally {
+            self::resyncAfterWrite((int) $item->fields['domains_id']);
         }
     }
 
@@ -756,6 +786,8 @@ class DnsRecordWriteback
             self::logWriteAttempt($domains_id, $type, $item->fields['name'], self::driverLabel(self::configuredDriverName($state)), __('Delete'), false, $message);
             self::abort($item, sprintf(__('Could not delete this record at %s: %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state)), $message));
             return true;
+        } finally {
+            self::resyncAfterWrite($domains_id);
         }
     }
 
@@ -893,6 +925,8 @@ class DnsRecordWriteback
             self::logWriteAttempt($domains_id, $type, $name, self::driverLabel(self::configuredDriverName($state)), __('Restore'), false, $message);
             self::abort($item, sprintf(__('Could not recreate this record at %s: %s', 'domainmanager'), self::driverLabel(self::configuredDriverName($state)), $message));
             return true;
+        } finally {
+            self::resyncAfterWrite($domains_id);
         }
     }
 
@@ -1231,6 +1265,46 @@ class DnsRecordWriteback
     {
         $item->input = false;
         Session::addMessageAfterRedirect('[Domain Manager] ' . $reason, false, ERROR);
+    }
+
+    /**
+     * Common, driver-independent post-write safety net (§101-dinahosting
+     * fallout, 2026-08-18): a live client-side timeout on a Dinahosting
+     * delete call left two real records deleted upstream while GLPI kept
+     * showing their stale pre-edit content, since nothing re-checked reality
+     * after the failed push — the mismatch only surfaced later, on an
+     * unrelated edit attempt against a record that no longer existed. Any
+     * driver write call can leave GLPI's local view diverged from the
+     * provider's real state for reasons outside this plugin's control (a
+     * slow/timed-out response, a provider-side partial failure, a delete
+     * that succeeds server-side despite an error reaching the client) — that
+     * risk is identical across Cloudflare, IONOS, and Dinahosting, so this
+     * lives once here rather than being reimplemented per driver. Called
+     * after every create/update/delete/restore/proxy-toggle push attempt,
+     * success or failure, to reconcile this domain's DNS records against
+     * the provider's real current state immediately, instead of waiting for
+     * the next scheduled sync.
+     *
+     * Best-effort only: a resync failure here must never mask the original
+     * push's own outcome/exception, so it's caught and logged, not
+     * rethrown — every call site places this in a `finally` block for
+     * exactly that reason.
+     *
+     * @param  int $domains_id
+     * @return void
+     */
+    private static function resyncAfterWrite(int $domains_id): void
+    {
+        try {
+            $domain = new Domain();
+            if (!$domain->getFromDB($domains_id)) {
+                return;
+            }
+
+            (new SyncEngine())->sync($domain, false, true);
+        } catch (Throwable $e) {
+            PluginLogger::error("Post-write resync failed for domain #$domains_id", $e::class . ': ' . $e->getMessage());
+        }
     }
 
     /**
