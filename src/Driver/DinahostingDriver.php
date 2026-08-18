@@ -1142,5 +1142,4 @@ class DinahostingDriver extends AbstractDriver implements RegistrarDriverInterfa
 
         return implode('; ', $parts);
     }
-
 }
