@@ -43,6 +43,7 @@ use GlpiPlugin\Domainmanager\Dto\DomainLifecycle;
 use GlpiPlugin\Domainmanager\Dto\LifecycleStatus;
 use GlpiPlugin\Domainmanager\Dto\ZoneRecord;
 use GlpiPlugin\Domainmanager\Exception\DriverException;
+use GlpiPlugin\Domainmanager\Exception\ErrorCategory;
 use GlpiPlugin\Domainmanager\IdnNormalizer;
 use GlpiPlugin\Domainmanager\Service\PluginLogger;
 use GuzzleHttp\Client;
@@ -296,9 +297,7 @@ class IonosDriver extends AbstractDriver implements RegistrarDriverInterface, Dn
             }
         }
 
-        throw new DriverException(
-            sprintf(__('No IONOS domain item found for %s with this account', 'domainmanager'), $domain),
-        );
+        throw DriverException::buildFromProvider('IONOS', ErrorCategory::DomainNotFound, null, $domain);
     }
 
     /**
@@ -503,7 +502,7 @@ class IonosDriver extends AbstractDriver implements RegistrarDriverInterface, Dn
 
         $row = $response[0] ?? null;
         if (!is_array($row)) {
-            throw new DriverException(__('IONOS did not return the created record', 'domainmanager'));
+            throw DriverException::buildFromProvider('IONOS', ErrorCategory::WriteVerification, null, null);
         }
 
         return self::toZoneRecord($type, $row);
@@ -642,9 +641,7 @@ class IonosDriver extends AbstractDriver implements RegistrarDriverInterface, Dn
             }
         }
 
-        throw new DriverException(
-            sprintf(__('No IONOS DNS zone found for %s with this key', 'domainmanager'), $domain),
-        );
+        throw DriverException::buildFromProvider('IONOS', ErrorCategory::DomainNotFound, null, $domain);
     }
 
     /**
@@ -737,7 +734,7 @@ class IonosDriver extends AbstractDriver implements RegistrarDriverInterface, Dn
         }
 
         if ($status === 404) {
-            throw new DriverException(__('Domain is not managed by this IONOS account', 'domainmanager'));
+            throw DriverException::buildFromProvider('IONOS', ErrorCategory::DomainNotFound, null, null);
         }
 
         if ($status >= 500) {
@@ -799,7 +796,10 @@ class IonosDriver extends AbstractDriver implements RegistrarDriverInterface, Dn
 
             $options = $this->buildClientOptions($this->credentials);
             $options['base_uri'] = self::DOMAINS_BASE_URI;
-            $options += ['timeout' => self::REQUEST_TIMEOUT, 'http_errors' => false];
+            // Same `connect_timeout` gap as AbstractDriver::getClient() —
+            // this second client bypasses that shared bootstrap entirely,
+            // see its docblock comment for the full rationale.
+            $options += ['timeout' => self::REQUEST_TIMEOUT, 'connect_timeout' => 10, 'http_errors' => false];
 
             $this->domainsClient = Toolbox::getGuzzleClient($options);
         }

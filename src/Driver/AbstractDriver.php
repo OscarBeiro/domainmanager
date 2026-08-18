@@ -106,7 +106,16 @@ abstract class AbstractDriver
         $this->assertCredentialsPresent();
 
         $options = $this->buildClientOptions($this->credentials);
-        $options += ['timeout' => 15, 'http_errors' => false];
+        // `Toolbox::getGuzzleClient()` defaults `connect_timeout` to 5s when
+        // the caller doesn't set one (src/Toolbox.php) — that only bounds
+        // DNS/TCP/TLS connection establishment, not the overall request
+        // (that's `timeout`, already set per-driver above at 15s/REQUEST_TIMEOUT).
+        // On a network with elevated DNS latency, a driver call can fail
+        // with cURL error 28 well before its own configured timeout,
+        // misreporting a slow-but-reachable API as "unreachable". Every
+        // driver already sets its own `timeout`; none set `connect_timeout`,
+        // so they all silently inherited that too-tight 5s default.
+        $options += ['timeout' => 15, 'connect_timeout' => 10, 'http_errors' => false];
 
         $this->client = Toolbox::getGuzzleClient($options);
 

@@ -176,10 +176,25 @@ class DomainImportController extends AbstractController
                 // no sync runs inline; leaving `last_sync_date` unset means
                 // `Cron::cronDomainSync`'s existing oldest-first ordering
                 // (NULL sorts first) picks this domain up on its next tick.
-                (new DomainState())->add([
-                    'domains_id'      => $domains_id,
-                    'is_glpi_created' => 0,
-                ]);
+                // `$domain->add()` above already fired `HookHandler::
+                // domainSaved()` (registered on ITEM_ADD, synchronously,
+                // before add() returns) — which itself creates a bare state
+                // row whenever the domain has a resolvable name_ascii/tld
+                // (true for virtually every real domain), defaulting
+                // `is_glpi_created` to its schema default (1, "native").
+                // Blindly add()ing a second row here collided with that one
+                // on domains_id's unique key, aborting the whole import
+                // mid-loop before any Infocom/supplier assignment ran —
+                // update the hook's row instead of inserting a duplicate.
+                $state = DomainState::getForDomain($domains_id);
+                if ($state !== null) {
+                    $state->update(['id' => $state->getID(), 'is_glpi_created' => 0]);
+                } else {
+                    (new DomainState())->add([
+                        'domains_id'      => $domains_id,
+                        'is_glpi_created' => 0,
+                    ]);
+                }
             }
 
             $infocom = new Infocom();

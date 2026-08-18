@@ -47,6 +47,7 @@ use GlpiPlugin\Domainmanager\Dto\DomainLifecycle;
 use GlpiPlugin\Domainmanager\Dto\LifecycleStatus;
 use GlpiPlugin\Domainmanager\Dto\ZoneRecord;
 use GlpiPlugin\Domainmanager\Exception\DriverException;
+use GlpiPlugin\Domainmanager\Exception\ErrorCategory;
 use GlpiPlugin\Domainmanager\Service\PluginLogger;
 use GuzzleHttp\Exception\GuzzleException;
 use InvalidArgumentException;
@@ -283,9 +284,7 @@ class CloudflareDriver extends AbstractDriver implements RegistrarDriverInterfac
 
         $result = $data['result'] ?? null;
         if (!is_array($result)) {
-            throw new DriverException(
-                __('Domain is not managed by Cloudflare Registrar on this account', 'domainmanager'),
-            );
+            throw DriverException::buildFromProvider('Cloudflare', ErrorCategory::DomainNotFound, null, null);
         }
 
         $registration = self::parseDate($result['created_at'] ?? null);
@@ -480,7 +479,7 @@ class CloudflareDriver extends AbstractDriver implements RegistrarDriverInterfac
         if ($result['status'] === 200 || $result['status'] === 201) {
             $row = $result['data']['result'] ?? null;
             if (!is_array($row)) {
-                throw new DriverException(__('Cloudflare did not return the created record', 'domainmanager'));
+                throw DriverException::buildFromProvider('Cloudflare', ErrorCategory::WriteVerification, null, null);
             }
 
             return self::rowToZoneRecord($type, $row);
@@ -528,7 +527,7 @@ class CloudflareDriver extends AbstractDriver implements RegistrarDriverInterfac
         if ($result['status'] === 200) {
             $row = $result['data']['result'] ?? null;
             if (!is_array($row)) {
-                throw new DriverException(__('Cloudflare did not return the updated record', 'domainmanager'));
+                throw DriverException::buildFromProvider('Cloudflare', ErrorCategory::WriteVerification, null, null);
             }
 
             return self::rowToZoneRecord($type, $row);
@@ -572,7 +571,7 @@ class CloudflareDriver extends AbstractDriver implements RegistrarDriverInterfac
         $data = $this->request('GET', 'zones/' . rawurlencode($zoneId) . '/dns_records/' . rawurlencode($remoteId));
         $row  = $data['result'] ?? null;
         if (!is_array($row)) {
-            throw new DriverException(__('Cloudflare did not return this record', 'domainmanager'));
+            throw DriverException::buildFromProvider('Cloudflare', ErrorCategory::RecordNotFound, null, null);
         }
 
         return self::rowToZoneRecord(strtoupper((string) ($row['type'] ?? '')), $row);
@@ -685,7 +684,7 @@ class CloudflareDriver extends AbstractDriver implements RegistrarDriverInterfac
         if ($result['status'] === 200) {
             $row = $result['data']['result'] ?? null;
             if (!is_array($row)) {
-                throw new DriverException(__('Cloudflare did not return the updated record', 'domainmanager'));
+                throw DriverException::buildFromProvider('Cloudflare', ErrorCategory::WriteVerification, null, null);
             }
 
             return self::rowToZoneRecord(strtoupper((string) ($row['type'] ?? '')), $row);
@@ -840,9 +839,7 @@ class CloudflareDriver extends AbstractDriver implements RegistrarDriverInterfac
 
         $zone = $data['result'][0] ?? null;
         if (!is_array($zone) || empty($zone['id'])) {
-            throw new DriverException(
-                sprintf(__('No Cloudflare zone found for %s under this account', 'domainmanager'), $domain),
-            );
+            throw DriverException::buildFromProvider('Cloudflare', ErrorCategory::DomainNotFound, null, $domain);
         }
 
         return (string) $zone['id'];
