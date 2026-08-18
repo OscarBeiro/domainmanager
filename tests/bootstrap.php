@@ -33,7 +33,7 @@
 // slice of GLPI the tested units actually touch (a translation function,
 // the base itemtype class one DTO's constants live behind) is stubbed in
 // glpi-stubs.php, not booted from a real GLPI checkout — see this repo's
-// TESTING.md for the live-container regression suite that covers
+// TESTING-dev.md for the live-container regression suite that covers
 // everything this deliberately doesn't (drivers, sync, itemtype CRUD).
 
 require __DIR__ . '/../vendor/autoload.php';

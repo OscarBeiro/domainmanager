@@ -42,7 +42,7 @@ use PHPUnit\Framework\TestCase;
 /**
  * Only DriverFactory::createDriver() — forRegistrar()/forDns()/
  * forDiscovery()/build() take a real SupplierConfig itemtype and are out
- * of scope for a DB-less unit test (see TESTING.md for that coverage).
+ * of scope for a DB-less unit test (see TESTING-dev.md for that coverage).
  * All three concrete drivers' constructors are confirmed trivial property
  * assignments (no network, no side effects), so instantiating them here is
  * safe.

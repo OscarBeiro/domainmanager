@@ -37,7 +37,7 @@ use PHPUnit\Framework\TestCase;
 /**
  * Only the input-validation guard, which returns [] before any
  * dns_get_record() call — deliberately not testing the real lookup branch,
- * which needs a live network call (see TESTING.md for that coverage; this
+ * which needs a live network call (see TESTING-dev.md for that coverage; this
  * plugin's own request is that not every feature needs automating).
  */
 final class NsResolverTest extends TestCase

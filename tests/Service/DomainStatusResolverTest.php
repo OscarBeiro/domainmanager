@@ -39,7 +39,7 @@ use ReflectionClass;
 /**
  * Real bug precedent this guards against: a status constant that gained no
  * matching label/class entry rendered blank instead of failing loudly (see
- * TESTING.md). Reflection over DomainState's own STATUS_* constants means
+ * TESTING-dev.md). Reflection over DomainState's own STATUS_* constants means
  * a newly-added constant with a forgotten label/class fails this test
  * immediately, instead of silently shipping a blank badge.
  */
