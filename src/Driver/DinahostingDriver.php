@@ -45,6 +45,7 @@ use GlpiPlugin\Domainmanager\Dto\DomainLifecycle;
 use GlpiPlugin\Domainmanager\Dto\LifecycleStatus;
 use GlpiPlugin\Domainmanager\Dto\ZoneRecord;
 use GlpiPlugin\Domainmanager\Exception\DriverException;
+use GlpiPlugin\Domainmanager\Exception\ErrorCategory;
 use GlpiPlugin\Domainmanager\Service\PluginLogger;
 use GuzzleHttp\Exception\GuzzleException;
 use InvalidArgumentException;
@@ -425,7 +426,7 @@ class DinahostingDriver extends AbstractDriver implements RegistrarDriverInterfa
 
         $found = $this->findByIdentity($domain, $id['type'], $id['name']);
         if ($found === null) {
-            throw new DriverException(__('Dinahosting no longer reports this record', 'domainmanager'));
+            throw DriverException::buildFromProvider('Dinahosting', ErrorCategory::RecordNotFound, null, null);
         }
 
         return $found;
@@ -483,7 +484,7 @@ class DinahostingDriver extends AbstractDriver implements RegistrarDriverInterfa
                 'zone now reports: ' . (empty($seen) ? '(empty)' : implode(', ', $seen)),
             );
 
-            throw new DriverException(__('Dinahosting did not report the newly created record', 'domainmanager'));
+            throw DriverException::buildFromProvider('Dinahosting', ErrorCategory::WriteVerification, null, null);
         }
 
         return $found;
@@ -858,7 +859,7 @@ class DinahostingDriver extends AbstractDriver implements RegistrarDriverInterfa
             $responseCode = (int) ($decoded['responseCode'] ?? 0);
 
             if ($responseCode === self::CODE_OBJECT_NOT_EXISTS) {
-                throw new DriverException(__('Domain is not managed by this Dinahosting account', 'domainmanager'));
+                throw DriverException::buildFromProvider('Dinahosting', ErrorCategory::DomainNotFound, (string) $responseCode, null);
             }
 
             // Same treatment for every other code (including
