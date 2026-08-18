@@ -341,6 +341,52 @@ class HookHandler
     }
 
     /**
+     * Records which DomainRecord ids already got a restore history entry
+     * logged in this request — same double-run hazard as
+     * $logged_record_deletes above (RecordReconciler can restore a record
+     * that GLPI's own restore pipeline is already in the middle of
+     * restoring).
+     *
+     * @var array<int, bool>
+     */
+    private static array $logged_record_restores = [];
+
+    /**
+     * item_restore on DomainRecord (GitHub issue #21): logs a
+     * restore entry to the parent Domain's Historical tab. GLPI core has no
+     * automatic parent-logging for restores (unlike
+     * HISTORY_ADD_SUBITEM/HISTORY_UPDATE_SUBITEM on add/update), and core's
+     * own HISTORY_RESTORE_ITEM (14) is never used on this path either, so a
+     * restored DomainRecord otherwise leaves no trace on the Domain it
+     * belongs to — mirrors domainRecordDeleted() above.
+     *
+     * @param  DomainRecord $record
+     * @return void
+     */
+    public static function domainRecordRestored(DomainRecord $record): void
+    {
+        $records_id = (int) $record->getID();
+        if (isset(self::$logged_record_restores[$records_id])) {
+            return;
+        }
+        self::$logged_record_restores[$records_id] = true;
+
+        $domains_id = (int) $record->fields['domains_id'];
+        if ($domains_id <= 0) {
+            return;
+        }
+
+        $name = (string) $record->fields['name'] ?: '@';
+        $type = self::domainRecordTypeName((int) $record->fields['domainrecordtypes_id']);
+
+        $message = $type !== null
+            ? sprintf(__('DNS record %1$s (%2$s) restored', 'domainmanager'), $name, $type)
+            : sprintf(__('DNS record %s restored', 'domainmanager'), $name);
+
+        Log::history($domains_id, Domain::class, [0, '', '[' . __('Domain Manager', 'domainmanager') . '] ' . $message]);
+    }
+
+    /**
      * Resolve a DomainRecordType id to its display name
      *
      * @param  int $type_id

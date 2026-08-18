@@ -50,7 +50,7 @@ use GlpiPlugin\Domainmanager\Profile as DomainmanagerProfile;
 use GlpiPlugin\Domainmanager\Service\DnsRecordWriteback;
 use GlpiPlugin\Domainmanager\SupplierTab;
 
-define('PLUGIN_DOMAINMANAGER_VERSION', '1.8.0-alpha8');
+define('PLUGIN_DOMAINMANAGER_VERSION', '1.8.0-beta1');
 define('PLUGIN_DOMAINMANAGER_MIN_GLPI', '11.0.0');
 define('PLUGIN_DOMAINMANAGER_MAX_GLPI', '11.0.99');
 define('PLUGIN_DOMAINMANAGER_REPOSITORY_URL', 'https://github.com/TICGAL-GLPI-Plugins/domainmanager');
@@ -942,6 +942,13 @@ function plugin_init_domainmanager(): void
         // locally and the next sync re-trashed it, looking like a no-op.
         $PLUGIN_HOOKS[Hooks::PRE_ITEM_RESTORE]['domainmanager'] = [
             DomainRecord::class => [DnsRecordWriteback::class, 'onPreRestore'],
+        ];
+
+        // GitHub issue #21: paired counterpart to the ITEM_DELETE entry
+        // above — logs a restore entry to the parent Domain's Historical
+        // tab, since core has no automatic parent-logging for restores.
+        $PLUGIN_HOOKS[Hooks::ITEM_RESTORE]['domainmanager'] = [
+            DomainRecord::class => [HookHandler::class, 'domainRecordRestored'],
         ];
 
         // Resolves to /plugins/domainmanager/Config, which redirects to the
