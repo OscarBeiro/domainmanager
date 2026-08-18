@@ -3638,9 +3638,9 @@ blocked IP — every 403 branch in `CloudflareDriver` previously discarded that 
   "[Domain Manager] Create/Update ... at \<provider\>: failed: ..." Historical-tab line — the
   failure-path logging is unchanged.
   - [ ] Not yet verified live
-- **Trash a write-back-managed record, then restore it.** Expected: unchanged from before this
-  phase — a "[Domain Manager] Delete ... succeeded"/"Restore ... succeeded" line for each, since
-  native soft-delete/restore logging doesn't fire for non-dynamic items.
+- **Trash a write-back-managed record, then restore it.** Expected (superseded by Phase 100 for
+  the trash/delete half — see below): a "[Domain Manager] Restore ... succeeded" line still
+  appears on restore, since native restore logging doesn't fire for non-dynamic items.
   - [ ] Not yet verified live
 - **Toggle a Cloudflare record's proxy status.** Expected: unchanged — a
   "[Domain Manager] Proxy toggle ... succeeded" line still appears (this path never had a native
@@ -3966,3 +3966,61 @@ don't rely on the "click date" UI in this GLPI version.
   direction — a network-latency edge case doesn't need per-provider config surface).
   - [x] Pass — no new plugin setting/config field added; `connect_timeout => 10` is a plain
     array literal in both call sites.
+## Phase 102: domain import no longer crashes on the `DomainState` row it shares with `domainSaved()`
+
+- **Import a brand-new domain (one with a resolvable TLD) from a supplier's "Import Domains"
+  modal.** Expected: no uncaught exception, a clean redirect back to the Supplier tab with a
+  "N domain imported" success message; the new domain's `DomainState` row has
+  `is_glpi_created = 0` (not left at the `domainSaved()` hook's own default) and an `Infocom`
+  row exists with `suppliers_id` set to the importing supplier.
+  - [x] Pass — verified live against `glpi-65108-web` (GLPI 11.0.8) with a real Dinahosting
+    account: imported `zzz.gal`, confirmed via direct DB query
+    (`glpi_plugin_domainmanager_states`/`glpi_infocoms`) both fields are correct, no exception
+    in `domainmanager-errors.log` or the GLPI error log.
+- **Before the fix: reproduce the crash.** Expected: `RuntimeException: Duplicate entry ... for
+  key 'domains_id'` in the GLPI error log, thrown from
+  `DomainImportController.php`'s explicit `(new DomainState())->add()` call colliding with the
+  row `HookHandler::domainSaved()` (registered on `Hooks::ITEM_ADD`) already created
+  synchronously inside `$domain->add()`.
+  - [x] Pass (root cause confirmed) — reproduced live by re-submitting an already-imported
+    domain a second time (hit the same collision since a state row for that `domains_id` already
+    existed); confirmed via `git log -S"domainSaved"`/`-S"ITEM_ADD"` this predates the current
+    work (not a new regression, broken since the hook was added in Phase 17).
+- **Import a batch containing more than one new domain.** Expected: every domain in the batch
+  gets created and assigned, not just the first one before a crash aborts the rest.
+  - [ ] Not yet verified live (single-domain import confirmed above; multi-domain batch not
+    separately exercised this session)
+- **Restore-from-trash import path (a previously-imported-then-trashed domain re-appearing in
+  discovery) is unaffected.** Expected: unchanged — that branch already calls `$domain->update()`
+  and never touches `DomainState` directly, so it was never affected by this bug.
+  - [ ] Not yet verified live (reasoned from code: the `isset($trashed[$normalized])` branch at
+    `DomainImportController.php` has no `DomainState` insert at all)
+## Phase 100: no duplicate history entry on write-back record delete
+
+- **On a write-back-managed domain (Cloudflare/IONOS/Dinahosting driver configured and
+  write-eligible), trash a writable-type record (A/AAAA/CNAME/TXT) via the native "Put in
+  trashbin" action.** Expected: the Domain's Historical tab shows exactly one entry for the
+  deletion (the native "Deleted" line) — no second "[Domain Manager] Delete ... at \<provider\>:
+  succeeded" line alongside it.
+  - [x] Partially verified live 2026-08-16 against `glpi-65108-web` (GLPI 11.0.8): created a
+    domain (#1) + TXT record (#1) with **no** write-back driver configured, trashed the record,
+    confirmed `glpi_logs` shows exactly one `DomainRecord` entry (`linked_action=13`,
+    `HISTORY_DELETE_ITEM`) and no plugin-added line — proves the general soft-delete path is
+    unaffected and produces a single entry. Could not exercise the write-back-managed branch
+    itself end-to-end (no real Cloudflare/IONOS/Dinahosting credentials available in this
+    environment — the one configured supplier, Dinahosting, has an empty `api_credentials`), so
+    the specific "was 2 entries, now 1" delta on a genuinely managed record wasn't observed
+    directly. Code-reviewed instead: `onPreDelete()`'s success branch returns `true` without
+    calling `self::abort()`, so the native soft-delete always proceeds afterward regardless of
+    write-back status — the removed lines had no control-flow role, only a logging side effect,
+    so this is a low-risk deletion. Test fixtures purged afterward.
+- **Force a delete failure** (e.g. temporarily break the driver's credentials or otherwise make
+  the upstream `deleteRecord()` call throw). Expected: still see the plugin's own
+  "[Domain Manager] Delete ... at \<provider\>: failed: ..." Historical-tab line — the
+  failure-path logging is unchanged.
+  - [ ] Not yet verified live (blocked on the same missing-credentials gap above)
+- **Restore that record.** Expected: unchanged — the "[Domain Manager] Restore ... succeeded"
+  line still appears on restore, since native restore logging doesn't fire for non-dynamic items
+  (this half of the delete/restore pair was intentionally left alone — see the open ticket about
+  giving restore its own history verb).
+  - [ ] Not yet verified live
