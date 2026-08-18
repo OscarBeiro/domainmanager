@@ -25,8 +25,8 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 - Fixed importing domains from a supplier (Dinahosting, Cloudflare, IONOS) failing with a database error.
 - Fixed DNS records being duplicated on each synchronization when the provider returns inconsistent TTL values.
 - Fixed deleting a Dinahosting TXT record always failing with "Domain is not managed by this Dinahosting account".
-- Fixed editing or deleting a root-level (apex) TXT record on Dinahosting always failing with the same "Domain is not managed" error.
 - Fixed editing a Dinahosting TXT record sometimes silently changing or deleting a different TXT record at the same name (e.g. an SPF record instead of the DKIM one you meant to edit).
+- Editing a Dinahosting TXT record now allows more time for a slow response before giving up, reducing the risk of the record being removed without its updated version being saved.
 - Fixed a proxied record's Cloudflare IP address not showing right after enabling the proxy toggle, requiring a sync to appear.
 
 ## [1.7.1]

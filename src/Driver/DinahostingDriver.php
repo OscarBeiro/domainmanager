@@ -96,7 +96,19 @@ class DinahostingDriver extends AbstractDriver implements RegistrarDriverInterfa
 {
     private const BASE_URI = 'https://dinahosting.com/special/';
 
-    private const REQUEST_TIMEOUT = 15;
+    // §101-dinahosting: bumped from 15s after two live client-side timeouts
+    // on `Domain_Zone_DeleteTypeTXT` calls (2026-08-18, `dev.gal`, a zone
+    // with only 8 TXT records — not large enough to explain the slowness by
+    // record count alone, so the real cause on Dinahosting's side is
+    // unconfirmed) that later turned out to have succeeded server-side
+    // despite no response in time — `updateRecord()`'s delete-then-add has
+    // no rollback, so a client timeout on the delete half left two real
+    // records deleted at Dinahosting with no replacement ever created (§
+    // updateRecord()'s own docblock already documented this non-atomicity
+    // risk; this is it materializing live, not a new failure mode). 45s is a
+    // mitigation, not a fix — it does not remove the non-atomicity risk,
+    // only shrinks the window it can occur in.
+    private const REQUEST_TIMEOUT = 45;
 
     private const TEST_TIMEOUT = 9;
 
@@ -544,9 +556,22 @@ class DinahostingDriver extends AbstractDriver implements RegistrarDriverInterfa
         $existing  = $this->findByIdentity($domain, $type, $hostname, $dataHash);
         if ($existing !== null) {
             $params += match ($type) {
+                // §101-dinahosting: Dinahosting's own API docs (fetched
+                // 2026-08-18, dinahosting.com/api/documentation/command/
+                // Domain_Zone_DeleteType*) confirm each delete command's own
+                // disambiguator param name — CNAME's has none at all (only
+                // domain+hostname), and TXT's is `value`, not `text` (the
+                // wrong key `text` — copied from Domain_Zone_AddTypeTXT's own
+                // param name, which is a different command with its own
+                // param names — silently did nothing every time, since
+                // `value` is documented optional; that's *why* the previous
+                // "fixed deleting a TXT record" commit appeared to work for
+                // single-record-per-name cases, but could never actually
+                // disambiguate an apex with two TXT siblings, e.g. this
+                // account's SPF + verification-token pair at `dev.gal`).
                 'A', 'AAAA' => ['ip' => $existing->data],
-                'CNAME'     => ['destinationHostname' => $existing->data],
-                default     => ['text' => $existing->data],
+                'CNAME'     => [],
+                default     => ['value' => $existing->data],
             };
         }
 
@@ -891,23 +916,36 @@ class DinahostingDriver extends AbstractDriver implements RegistrarDriverInterfa
      * itself reports for those types (confirmed live, § qualifyHostname()'s
      * own docblock).
      *
-     * §101-dinahosting: the correct de-qualified apex form for a TXT/MX
-     * delete is **still not confirmed** against a live account — sending
-     * `@` (the A/AAAA/CNAME convention) got responseCode 2303 ("Param
-     * \"hostname\" value doesn't exist."); the bare zone name below (a
-     * hypothesis, matching `Domain_Zone_GetAll`'s read-side report for that
-     * apex per `qualifyHostname()`'s docblock) was tried next and got the
-     * *identical* 2303/message live-tested 2026-08-17 on `dev.gal` — so
-     * neither guess is right yet. `request()` no longer collapses 2303 into
-     * a fixed "Domain is not managed" sentence (§101-dinahosting) precisely
-     * so the next live attempt surfaces Dinahosting's real per-parameter
-     * message instead of hiding it; use that real message to find the
-     * actual expected value rather than guessing a third form blind.
+     * §101-dinahosting: **still an open, unsolved problem.** Every
+     * de-qualified apex form tried so far for a TXT/MX delete has been
+     * rejected, all live-tested against `dev.gal` (2026-08-17/18):
+     * - `@` (the A/AAAA/CNAME convention) → 2303 ("Param \"hostname\" value
+     *   doesn't exist.")
+     * - the bare zone name (matching `Domain_Zone_GetAll`'s own read-side
+     *   report for that apex, per `qualifyHostname()`'s docblock) →
+     *   identical 2303
+     * - an empty string (Dinahosting's docs document `hostname` as
+     *   accepting 0-64 characters, so `""` looked like a documented legal
+     *   value) → 2003 ("Required param \"hostname\" is missing") —
+     *   Dinahosting treats an empty value as absent regardless of what the
+     *   length validator allows
+     * - the dot-terminated FQDN (`dev.gal.`, the zone-file convention for
+     *   "this exact name") → identical 2303 again
+     *
+     * The bare zone name (current return value below) is kept only because
+     * it's the one value confirmed to at least match `Domain_Zone_GetAll`'s
+     * own read-side convention — not because it's confirmed to work for a
+     * delete. A TXT/MX apex record cannot currently be edited or deleted
+     * through this driver; this needs escalating to Dinahosting support
+     * (or their raw API sandbox) rather than more blind guessing, since the
+     * documented parameter shape has now been exhausted.
      *
      * @param  string $domain       already-normalized FQDN
      * @param  string $absoluteName as returned by qualifyHostname()
      * @param  string $type         one of self::WRITABLE_TYPES
-     * @return string relative label, or `@`/the bare zone name for the apex
+     * @return string relative label, `@` for an A/AAAA/CNAME apex, or the
+     *                 bare zone name for a TXT/MX apex (unconfirmed — see
+     *                 above)
      */
     private static function relativeHostname(string $domain, string $absoluteName, string $type): string
     {
