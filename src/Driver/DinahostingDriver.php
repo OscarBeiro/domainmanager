@@ -340,7 +340,7 @@ class DinahostingDriver extends AbstractDriver implements RegistrarDriverInterfa
                     $name,
                     $content,
                     (int) ($row['ttl'] ?? 0),
-                    self::encodeRemoteId($type, $name),
+                    self::encodeRemoteId($type, $name, $content),
                 );
             } catch (InvalidArgumentException $e) {
                 PluginLogger::activity("Dinahosting record skipped for $domain: " . $e->getMessage());
@@ -367,7 +367,7 @@ class DinahostingDriver extends AbstractDriver implements RegistrarDriverInterfa
         $type   = self::assertWritableType($type);
         $domain = self::normalizeDomain($domain);
 
-        $this->assertSingleRecordAtName($domain, $type, $name);
+        $this->assertSingleRecordAtName($domain, $type, $name, null, $data);
 
         return $this->createRecordRaw($domain, $type, $name, $data);
     }
@@ -390,12 +390,12 @@ class DinahostingDriver extends AbstractDriver implements RegistrarDriverInterfa
         $type   = self::assertWritableType($type);
         $domain = self::normalizeDomain($domain);
 
-        $this->assertSingleRecordAtName($domain, $old['type'], $old['name'], $remoteId);
+        $this->assertSingleRecordAtName($domain, $old['type'], $old['name'], $remoteId, $data);
         if ($old['type'] !== $type || $old['name'] !== $name) {
-            $this->assertSingleRecordAtName($domain, $type, $name);
+            $this->assertSingleRecordAtName($domain, $type, $name, null, $data);
         }
 
-        $this->deleteByIdentity($domain, $old['type'], $old['name']);
+        $this->deleteByIdentity($domain, $old['type'], $old['name'], $old['dataHash']);
 
         return $this->createRecordRaw($domain, $type, $name, $data);
     }
@@ -409,7 +409,7 @@ class DinahostingDriver extends AbstractDriver implements RegistrarDriverInterfa
         $id     = self::decodeRemoteId($remoteId);
         $domain = self::normalizeDomain($domain);
 
-        $this->deleteByIdentity($domain, $id['type'], $id['name']);
+        $this->deleteByIdentity($domain, $id['type'], $id['name'], $id['dataHash']);
     }
 
     /**
@@ -424,7 +424,7 @@ class DinahostingDriver extends AbstractDriver implements RegistrarDriverInterfa
         $id     = self::decodeRemoteId($remoteId);
         $domain = self::normalizeDomain($domain);
 
-        $found = $this->findByIdentity($domain, $id['type'], $id['name']);
+        $found = $this->findByIdentity($domain, $id['type'], $id['name'], $id['dataHash']);
         if ($found === null) {
             throw DriverException::buildFromProvider('Dinahosting', ErrorCategory::RecordNotFound, null, null);
         }
@@ -473,7 +473,7 @@ class DinahostingDriver extends AbstractDriver implements RegistrarDriverInterfa
 
         $this->request($command, $params);
 
-        $found = $this->findByIdentity($domain, $type, $name);
+        $found = $this->findByIdentity($domain, $type, $name, self::contentHash($type, $data));
         if ($found === null) {
             $seen = array_map(
                 static fn(ZoneRecord $record): string => "{$record->type}:{$record->name}",
@@ -507,12 +507,17 @@ class DinahostingDriver extends AbstractDriver implements RegistrarDriverInterfa
      * omitted and the delete is attempted anyway so that outcome surfaces
      * through the normal API error path.
      *
-     * @param  string $domain   already-normalized FQDN
-     * @param  string $type     one of self::WRITABLE_TYPES
-     * @param  string $hostname absolute record name
+     * @param  string      $domain    already-normalized FQDN
+     * @param  string      $type      one of self::WRITABLE_TYPES
+     * @param  string      $hostname  absolute record name
+     * @param  string|null $dataHash  contentHash() of the record's own data,
+     *                                as decoded from its remoteId — disambiguates
+     *                                among TXT/MX siblings at the same name
+     *                                (§101-dinahosting); null for A/AAAA/CNAME,
+     *                                where type+name is already unique.
      * @throws DriverException
      */
-    private function deleteByIdentity(string $domain, string $type, string $hostname): void
+    private function deleteByIdentity(string $domain, string $type, string $hostname, ?string $dataHash = null): void
     {
         $command = match ($type) {
             'A'     => 'Domain_Zone_DeleteTypeA',
@@ -535,8 +540,8 @@ class DinahostingDriver extends AbstractDriver implements RegistrarDriverInterfa
         // `findByIdentity()` below still needs the absolute form, since
         // that's what `fetchZoneRecords()` normalizes every record's name
         // to (§ qualifyHostname()).
-        $params    = ['domain' => $domain, 'hostname' => self::relativeHostname($domain, $hostname)];
-        $existing  = $this->findByIdentity($domain, $type, $hostname);
+        $params    = ['domain' => $domain, 'hostname' => self::relativeHostname($domain, $hostname, $type)];
+        $existing  = $this->findByIdentity($domain, $type, $hostname, $dataHash);
         if ($existing !== null) {
             $params += match ($type) {
                 'A', 'AAAA' => ['ip' => $existing->data],
@@ -563,21 +568,57 @@ class DinahostingDriver extends AbstractDriver implements RegistrarDriverInterfa
      * not a placeholder limitation to be lifted later — see the
      * DnsRecordWriterInterface implementation notes in ARCHITECTURE.md.
      *
+     * §101-dinahosting: TXT/MX are excluded from the "more than one at this
+     * name" refusal — multiple TXT records at one name (SPF + DKIM + a
+     * verification token) is normal and expected, not a data-integrity
+     * problem (live-confirmed 2026-08-17 on `dev.gal`: legitimate SPF+DKIM
+     * apex TXT records were being refused/collided as if they were the same
+     * unsafe-to-touch case as two A records at one name). Those two types
+     * are still checked for the one case that *is* a genuine, safe-to-flag
+     * oddity: an exact-content duplicate.
+     *
      * @param  string      $domain            already-normalized FQDN
      * @param  string      $type
      * @param  string      $name
      * @param  string|null $excludeRemoteId   the record being updated/deleted
      *                                        itself, excluded from the count
+     * @param  string|null $data              the content being written, used
+     *                                        only for TXT/MX's exact-duplicate
+     *                                        check; ignored for other types
      * @throws DriverException
      */
-    private function assertSingleRecordAtName(string $domain, string $type, string $name, ?string $excludeRemoteId = null): void
-    {
+    private function assertSingleRecordAtName(
+        string $domain,
+        string $type,
+        string $name,
+        ?string $excludeRemoteId = null,
+        ?string $data = null
+    ): void {
         $matches = array_filter(
             $this->fetchZoneRecords($domain),
             static fn(ZoneRecord $record): bool => $record->type === $type
                 && strcasecmp($record->name, $name) === 0
                 && $record->remoteId !== $excludeRemoteId,
         );
+
+        if (in_array($type, ['TXT', 'MX'], true)) {
+            $duplicate = $data === null ? [] : array_filter(
+                $matches,
+                static fn(ZoneRecord $record): bool => $record->data === $data,
+            );
+
+            if (count($duplicate) > 0) {
+                throw new DriverException(
+                    sprintf(
+                        __('Dinahosting already has an identical %s record at %s', 'domainmanager'),
+                        $type,
+                        $name,
+                    ),
+                );
+            }
+
+            return;
+        }
 
         if (count($matches) > 0) {
             throw new DriverException(
@@ -591,20 +632,40 @@ class DinahostingDriver extends AbstractDriver implements RegistrarDriverInterfa
     }
 
     /**
-     * @param  string $domain already-normalized FQDN
-     * @param  string $type
-     * @param  string $name
+     * §101-dinahosting: for TXT/MX, `$dataHash` (from `contentHash()`)
+     * disambiguates among siblings sharing `type`+`name` — without it, the
+     * first Dinahosting-listed match wins, which is arbitrary and was the
+     * root cause of the `dev.gal` apex-TXT bug (an update to one TXT record
+     * silently deleted a different one, § encodeRemoteId()). Ignored for
+     * A/AAAA/CNAME, where `assertSingleRecordAtName()` already guarantees
+     * type+name is unique.
+     *
+     * @param  string      $domain   already-normalized FQDN
+     * @param  string      $type
+     * @param  string      $name
+     * @param  string|null $dataHash contentHash() of the wanted record's data
      * @return ZoneRecord|null
      */
-    private function findByIdentity(string $domain, string $type, string $name): ?ZoneRecord
+    private function findByIdentity(string $domain, string $type, string $name, ?string $dataHash = null): ?ZoneRecord
     {
+        $first = null;
         foreach ($this->fetchZoneRecords($domain) as $record) {
-            if ($record->type === $type && strcasecmp($record->name, $name) === 0) {
-                return $record;
+            if ($record->type !== $type || strcasecmp($record->name, $name) !== 0) {
+                continue;
             }
+
+            if ($dataHash !== null) {
+                if (self::contentHash($record->type, $record->data) === $dataHash) {
+                    return $record;
+                }
+
+                continue;
+            }
+
+            $first ??= $record;
         }
 
-        return null;
+        return $first;
     }
 
     /**
@@ -624,22 +685,51 @@ class DinahostingDriver extends AbstractDriver implements RegistrarDriverInterfa
 
     /**
      * Synthetic remoteId: Dinahosting's zone API returns no per-record id,
-     * so identity is encoded as `type|name` instead. Not meant to be
-     * opaque/secret — just a stable, round-trippable token that this
-     * driver's own read/write paths agree on (§11-dinahosting).
+     * so identity is encoded as `type|name` instead — except for TXT/MX,
+     * where multiple legitimate records can share one `type`+`name` (SPF +
+     * DKIM + a verification token at one apex, for example). For those two
+     * types a third segment, `contentHash($data)`, is appended so each
+     * sibling still gets a distinct remoteId (§101-dinahosting, live bug:
+     * two apex TXT records on `dev.gal` collapsed onto the identical
+     * `type|name` remoteId, so editing one silently deleted the other).
+     * A/AAAA/CNAME are unchanged — `assertSingleRecordAtName()` already
+     * guarantees at most one record per `type`+`name` for those.
+     *
+     * Not meant to be opaque/secret — just a stable, round-trippable token
+     * that this driver's own read/write paths agree on.
      *
      * @param  string $type
      * @param  string $name
+     * @param  string $data record content, only used for TXT/MX
      * @return string
      */
-    private static function encodeRemoteId(string $type, string $name): string
+    private static function encodeRemoteId(string $type, string $name, string $data = ''): string
     {
-        return base64_encode($type . '|' . $name);
+        $payload = $type . '|' . $name;
+        if (in_array($type, ['TXT', 'MX'], true)) {
+            $payload .= '|' . self::contentHash($type, $data);
+        }
+
+        return base64_encode($payload);
+    }
+
+    /**
+     * Short, non-cryptographic fingerprint of a record's content, used only
+     * to disambiguate TXT/MX siblings sharing one `type`+`name` — never
+     * meant to hide or protect the content itself (§101-dinahosting).
+     *
+     * @param  string $type
+     * @param  string $data
+     * @return string
+     */
+    private static function contentHash(string $type, string $data): string
+    {
+        return substr(sha1($data), 0, 16);
     }
 
     /**
      * @param  string $remoteId
-     * @return array{type: string, name: string}
+     * @return array{type: string, name: string, dataHash: string|null}
      * @throws DriverException on malformed input
      */
     private static function decodeRemoteId(string $remoteId): array
@@ -649,9 +739,13 @@ class DinahostingDriver extends AbstractDriver implements RegistrarDriverInterfa
             throw new DriverException(__('This record reference is no longer valid', 'domainmanager'));
         }
 
-        [$type, $name] = explode('|', $decoded, 2);
+        $parts = explode('|', $decoded, 3);
 
-        return ['type' => strtoupper($type), 'name' => $name];
+        return [
+            'type'     => strtoupper($parts[0]),
+            'name'     => $parts[1],
+            'dataHash' => $parts[2] ?? null,
+        ];
     }
 
     /**
@@ -680,7 +774,48 @@ class DinahostingDriver extends AbstractDriver implements RegistrarDriverInterfa
             return null;
         }
 
-        return self::encodeRemoteId($decoded['type'], self::qualifyHostname($domain, $decoded['name']));
+        // Preserve the existing dataHash segment (if any) verbatim rather
+        // than recomputing it — this migration only re-normalizes the
+        // hostname portion, and no record content is available here.
+        $payload = $decoded['type'] . '|' . self::qualifyHostname($domain, $decoded['name']);
+        if ($decoded['dataHash'] !== null) {
+            $payload .= '|' . $decoded['dataHash'];
+        }
+
+        return base64_encode($payload);
+    }
+
+    /**
+     * §101-dinahosting migration: re-encodes a TXT/MX `ImportedRecord.remote_id`
+     * that predates the content-aware `encodeRemoteId()` scheme (no third
+     * segment, or a stale one) to carry `contentHash($data)`, given the
+     * record's current content. Used by
+     * `Installer::renormalizeDinahostingContentHashes()`. Returns null when
+     * `$remoteId` doesn't decode, or when it already carries the correct
+     * hash (no-op, so callers can skip the DB write).
+     *
+     * @param  string $remoteId a previously-stored ImportedRecord.remote_id
+     * @param  string $data     that record's current content
+     * @return string|null the re-encoded remote id, or null if unchanged/invalid
+     */
+    public static function renormalizeContentHash(string $remoteId, string $data): ?string
+    {
+        try {
+            $decoded = self::decodeRemoteId($remoteId);
+        } catch (DriverException $e) {
+            return null;
+        }
+
+        if (!in_array($decoded['type'], ['TXT', 'MX'], true)) {
+            return null;
+        }
+
+        $expectedHash = self::contentHash($decoded['type'], $data);
+        if ($decoded['dataHash'] === $expectedHash) {
+            return null;
+        }
+
+        return self::encodeRemoteId($decoded['type'], $decoded['name'], $data);
     }
 
     /**
@@ -752,22 +887,32 @@ class DinahostingDriver extends AbstractDriver implements RegistrarDriverInterfa
      * Inverse of `qualifyHostname()`, for `deleteByIdentity()`'s outgoing
      * `hostname` param — see that method's docblock for why the delete
      * commands need this and the add commands don't. Apex is de-qualified
-     * to `@`, matching the raw form `Domain_Zone_GetAll` itself reports
-     * for an A/AAAA/CNAME apex record (confirmed live, § qualifyHostname()'s
-     * own docblock); TXT/MX apex delete specifically is unconfirmed against
-     * a live account (untested — no existing TXT/MX apex record was safe to
-     * delete for verification) but this is the only convention Dinahosting
-     * has shown us so far, so it's used uniformly rather than guessing at a
-     * type-specific exception.
+     * to `@` for A/AAAA/CNAME, matching the raw form `Domain_Zone_GetAll`
+     * itself reports for those types (confirmed live, § qualifyHostname()'s
+     * own docblock).
+     *
+     * §101-dinahosting: the correct de-qualified apex form for a TXT/MX
+     * delete is **still not confirmed** against a live account — sending
+     * `@` (the A/AAAA/CNAME convention) got responseCode 2303 ("Param
+     * \"hostname\" value doesn't exist."); the bare zone name below (a
+     * hypothesis, matching `Domain_Zone_GetAll`'s read-side report for that
+     * apex per `qualifyHostname()`'s docblock) was tried next and got the
+     * *identical* 2303/message live-tested 2026-08-17 on `dev.gal` — so
+     * neither guess is right yet. `request()` no longer collapses 2303 into
+     * a fixed "Domain is not managed" sentence (§101-dinahosting) precisely
+     * so the next live attempt surfaces Dinahosting's real per-parameter
+     * message instead of hiding it; use that real message to find the
+     * actual expected value rather than guessing a third form blind.
      *
      * @param  string $domain       already-normalized FQDN
      * @param  string $absoluteName as returned by qualifyHostname()
-     * @return string relative label, or `@` for the zone apex
+     * @param  string $type         one of self::WRITABLE_TYPES
+     * @return string relative label, or `@`/the bare zone name for the apex
      */
-    private static function relativeHostname(string $domain, string $absoluteName): string
+    private static function relativeHostname(string $domain, string $absoluteName, string $type): string
     {
         if (strcasecmp($absoluteName, $domain) === 0) {
-            return '@';
+            return in_array($type, ['TXT', 'MX'], true) ? $domain : '@';
         }
 
         $suffix = '.' . $domain;
@@ -858,8 +1003,21 @@ class DinahostingDriver extends AbstractDriver implements RegistrarDriverInterfa
         if (!self::envelopeSucceeded($decoded)) {
             $responseCode = (int) ($decoded['responseCode'] ?? 0);
 
+            // §101-dinahosting: CODE_OBJECT_NOT_EXISTS (2303) used to always
+            // map to a fixed "Domain is not managed by this Dinahosting
+            // account" sentence, on the assumption that was its only cause.
+            // Live-caught 2026-08-17: Dinahosting reuses 2303 for any
+            // "referenced object/param doesn't exist" failure — including a
+            // rejected `hostname` value on a delete call, which is a
+            // completely different problem the fixed sentence actively hid
+            // (`errors[0].message` in that case: `Param "hostname" value
+            // doesn't exist.`). Falling through to the same real-message
+            // treatment as every other code, below, instead of guessing.
             if ($responseCode === self::CODE_OBJECT_NOT_EXISTS) {
-                throw DriverException::buildFromProvider('Dinahosting', ErrorCategory::DomainNotFound, (string) $responseCode, null);
+                PluginLogger::error(
+                    "Dinahosting API returned CODE_OBJECT_NOT_EXISTS (2303) on $command",
+                    'params: ' . json_encode($extraParams) . ' — raw response: ' . $body,
+                );
             }
 
             // Same treatment for every other code (including
