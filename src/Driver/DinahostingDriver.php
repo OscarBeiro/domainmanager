@@ -749,7 +749,7 @@ class DinahostingDriver extends AbstractDriver implements RegistrarDriverInterfa
      */
     private static function contentHash(string $type, string $data): string
     {
-        return substr(sha1($data), 0, 16);
+        return substr(hash('sha256', $data), 0, 16);
     }
 
     /**
