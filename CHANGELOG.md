@@ -15,6 +15,7 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 - The Domains list on a Supplier's Domain Manager tab now supports real sorting, filtering (by domain name, registrar status, and DNS status — each now its own clearly labeled column, separate from the Registrar/DNS Provider name), and pagination, matching GLPI's own list screens instead of a plain static table.
 - The Supplier's Domain Manager tab now shows the RDAP-reported registrar name and IANA number again, in their own "RDAP cross-check" section below the connection diagnostics.
 ### Bugs
+- Deleting a DNS record now also shows up in its domain's own history, not just the record's.
 - Cloudflare, IONOS, and Dinahosting connection errors now show the provider's own error code and message instead of a guessed cause, so a failed Check Connection no longer claims a specific permission is missing when that isn't actually why it failed.
 - Cloudflare, IONOS, and Dinahosting sync errors (record not found, write not confirmed, domain not managed by this account) are now worded consistently instead of each having its own one-off message.
 - The "Domain Manager" dashboard no longer gets re-created as a duplicate every time the plugin is updated.

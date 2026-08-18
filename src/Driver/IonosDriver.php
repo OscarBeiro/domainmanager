@@ -855,5 +855,4 @@ class IonosDriver extends AbstractDriver implements RegistrarDriverInterface, Dn
 
         return [null, $fallback !== '' ? $fallback : null];
     }
-
 }

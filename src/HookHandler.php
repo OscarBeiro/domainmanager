@@ -33,6 +33,7 @@ namespace GlpiPlugin\Domainmanager;
 
 use Domain;
 use DomainRecord;
+use DomainRecordType;
 use Dropdown;
 use Infocom;
 use Log;
@@ -275,6 +276,86 @@ class HookHandler
     public static function domainDeleted(Domain $domain): void
     {
         LockEnforcer::domainRemovalComplete();
+    }
+
+    /**
+     * Records which DomainRecord ids already got a delete history entry
+     * logged in this request — see domainRecordDeleted()'s docblock.
+     *
+     * @var array<int, bool>
+     */
+    private static array $logged_record_deletes = [];
+
+    /**
+     * item_delete on DomainRecord (Phase 102, GitHub issue #20): logs a
+     * HISTORY_DELETE_SUBITEM-style entry to the parent Domain's Historical
+     * tab. GLPI core's CommonDBChild logs
+     * `HISTORY_ADD_SUBITEM`/`HISTORY_UPDATE_SUBITEM` to the parent for free
+     * on add/update (dohistory=true), but only logs `HISTORY_DELETE_SUBITEM`
+     * on a hard purge (post_deleteFromDB()) — a plain soft delete
+     * (`cleanDBonMarkDeleted()`) is guarded behind `isDynamic()`, which
+     * DomainRecord isn't, so it stays silent on the parent by default. Runs
+     * unconditionally, including when cascaded from a Domain-level soft
+     * delete (LockEnforcer's `$domain_removal_in_progress` only suppresses
+     * the *write-back push*, not history) — matches core's own behavior of
+     * logging every subitem add during import regardless of volume.
+     *
+     * Deliberately de-duplicated per record id within the request
+     * (`$logged_record_deletes`): `DnsRecordWriteback::onPreDelete()`'s
+     * `finally` block runs `resyncAfterWrite()` — a full `SyncEngine::sync()`
+     * — before the outer soft-delete has actually committed, and
+     * `RecordReconciler::reconcile()` can see the still-not-yet-committed
+     * local row as "missing upstream" and trash it itself first; GLPI then
+     * unconditionally re-runs the outer delete's own pipeline (including this
+     * hook) once control returns, even though the row is already deleted.
+     * Without this guard, a single user-initiated delete would log twice —
+     * exactly the kind of duplicate Phase 100 already had to remove once
+     * from this same record's own Historical tab (`logWriteAttempt()`'s
+     * success-case call). Live-caught via Playwright verification, not
+     * anticipated up front.
+     *
+     * @param  DomainRecord $record
+     * @return void
+     */
+    public static function domainRecordDeleted(DomainRecord $record): void
+    {
+        $records_id = (int) $record->getID();
+        if (isset(self::$logged_record_deletes[$records_id])) {
+            return;
+        }
+        self::$logged_record_deletes[$records_id] = true;
+
+        $domains_id = (int) $record->fields['domains_id'];
+        if ($domains_id <= 0) {
+            return;
+        }
+
+        $name = (string) $record->fields['name'] ?: '@';
+        $type = self::domainRecordTypeName((int) $record->fields['domainrecordtypes_id']);
+
+        $message = $type !== null
+            ? sprintf(__('DNS record %1$s (%2$s) deleted', 'domainmanager'), $name, $type)
+            : sprintf(__('DNS record %s deleted', 'domainmanager'), $name);
+
+        Log::history($domains_id, Domain::class, [0, '', '[' . __('Domain Manager', 'domainmanager') . '] ' . $message]);
+    }
+
+    /**
+     * Resolve a DomainRecordType id to its display name
+     *
+     * @param  int $type_id
+     * @return string|null
+     */
+    private static function domainRecordTypeName(int $type_id): ?string
+    {
+        if ($type_id <= 0) {
+            return null;
+        }
+        $type = new DomainRecordType();
+        if ($type->getFromDB($type_id)) {
+            return $type->fields['name'] ?? null;
+        }
+        return null;
     }
 
     /**
