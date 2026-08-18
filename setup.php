@@ -923,8 +923,15 @@ function plugin_init_domainmanager(): void
         // ARCHITECTURE.md §20.11 (Phase 90): resets the Domain-removal flag
         // once the soft-delete (and its cascade) has finished — paired with
         // domainPurged() above for the purge path.
+        // Phase 102: logs a HISTORY_DELETE_SUBITEM-style entry on the parent
+        // Domain's Historical tab — GLPI core's
+        // CommonDBChild only does this for hard purges (post_deleteFromDB()),
+        // not soft deletes (cleanDBonMarkDeleted() is guarded behind
+        // isDynamic()), so a soft-deleted DomainRecord otherwise leaves no
+        // trace on the Domain it belonged to.
         $PLUGIN_HOOKS[Hooks::ITEM_DELETE]['domainmanager'] = [
-            Domain::class => [HookHandler::class, 'domainDeleted'],
+            Domain::class       => [HookHandler::class, 'domainDeleted'],
+            DomainRecord::class => [HookHandler::class, 'domainRecordDeleted'],
         ];
 
         // ARCHITECTURE.md §14.3 (Phase 48 bug fix): paired counterpart to the
