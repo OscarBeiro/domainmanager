@@ -3638,9 +3638,9 @@ blocked IP — every 403 branch in `CloudflareDriver` previously discarded that 
   "[Domain Manager] Create/Update ... at \<provider\>: failed: ..." Historical-tab line — the
   failure-path logging is unchanged.
   - [ ] Not yet verified live
-- **Trash a write-back-managed record, then restore it.** Expected: unchanged from before this
-  phase — a "[Domain Manager] Delete ... succeeded"/"Restore ... succeeded" line for each, since
-  native soft-delete/restore logging doesn't fire for non-dynamic items.
+- **Trash a write-back-managed record, then restore it.** Expected (superseded by Phase 100 for
+  the trash/delete half — see below): a "[Domain Manager] Restore ... succeeded" line still
+  appears on restore, since native restore logging doesn't fire for non-dynamic items.
   - [ ] Not yet verified live
 - **Toggle a Cloudflare record's proxy status.** Expected: unchanged — a
   "[Domain Manager] Proxy toggle ... succeeded" line still appears (this path never had a native
@@ -3964,3 +3964,32 @@ don't rely on the "click date" UI in this GLPI version.
   and never touches `DomainState` directly, so it was never affected by this bug.
   - [ ] Not yet verified live (reasoned from code: the `isset($trashed[$normalized])` branch at
     `DomainImportController.php` has no `DomainState` insert at all)
+## Phase 100: no duplicate history entry on write-back record delete
+
+- **On a write-back-managed domain (Cloudflare/IONOS/Dinahosting driver configured and
+  write-eligible), trash a writable-type record (A/AAAA/CNAME/TXT) via the native "Put in
+  trashbin" action.** Expected: the Domain's Historical tab shows exactly one entry for the
+  deletion (the native "Deleted" line) — no second "[Domain Manager] Delete ... at \<provider\>:
+  succeeded" line alongside it.
+  - [x] Partially verified live 2026-08-16 against `glpi-65108-web` (GLPI 11.0.8): created a
+    domain (#1) + TXT record (#1) with **no** write-back driver configured, trashed the record,
+    confirmed `glpi_logs` shows exactly one `DomainRecord` entry (`linked_action=13`,
+    `HISTORY_DELETE_ITEM`) and no plugin-added line — proves the general soft-delete path is
+    unaffected and produces a single entry. Could not exercise the write-back-managed branch
+    itself end-to-end (no real Cloudflare/IONOS/Dinahosting credentials available in this
+    environment — the one configured supplier, Dinahosting, has an empty `api_credentials`), so
+    the specific "was 2 entries, now 1" delta on a genuinely managed record wasn't observed
+    directly. Code-reviewed instead: `onPreDelete()`'s success branch returns `true` without
+    calling `self::abort()`, so the native soft-delete always proceeds afterward regardless of
+    write-back status — the removed lines had no control-flow role, only a logging side effect,
+    so this is a low-risk deletion. Test fixtures purged afterward.
+- **Force a delete failure** (e.g. temporarily break the driver's credentials or otherwise make
+  the upstream `deleteRecord()` call throw). Expected: still see the plugin's own
+  "[Domain Manager] Delete ... at \<provider\>: failed: ..." Historical-tab line — the
+  failure-path logging is unchanged.
+  - [ ] Not yet verified live (blocked on the same missing-credentials gap above)
+- **Restore that record.** Expected: unchanged — the "[Domain Manager] Restore ... succeeded"
+  line still appears on restore, since native restore logging doesn't fire for non-dynamic items
+  (this half of the delete/restore pair was intentionally left alone — see the open ticket about
+  giving restore its own history verb).
+  - [ ] Not yet verified live

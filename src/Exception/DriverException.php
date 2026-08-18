@@ -54,4 +54,42 @@ class DriverException extends RuntimeException
         parent::__construct($message, 0, $previous);
         $this->isPermissionDenied = $isPermissionDenied;
     }
+
+    /**
+     * Consolidated frame for a driver failure classified into a shared
+     * `ErrorCategory` (DESIGN-error-consolidation.md): "<driver>: <category>
+     * (<code>: <message>)". The driver owns the code→category mapping as
+     * data; this helper only ever composes the frame, never asserts what a
+     * code means (ARCHITECTURE.md §12.6).
+     *
+     * @param  string        $driverLabel     e.g. "Cloudflare"
+     * @param  ErrorCategory $category
+     * @param  string|null   $providerCode    provider's own error/status code, passed through unchanged
+     * @param  string|null   $providerMessage provider's own error text (already sanitized), or null/'' if none
+     * @param  bool          $isPermissionDenied
+     * @return self
+     */
+    public static function buildFromProvider(
+        string $driverLabel,
+        ErrorCategory $category,
+        ?string $providerCode,
+        ?string $providerMessage,
+        bool $isPermissionDenied = false,
+    ): self {
+        $providerCode    = $providerCode !== null && $providerCode !== '' ? $providerCode : null;
+        $providerMessage = $providerMessage !== null && $providerMessage !== '' ? $providerMessage : null;
+
+        if ($providerCode === null && $providerMessage === null) {
+            $message = sprintf(__('%1$s: %2$s', 'domainmanager'), $driverLabel, $category->label());
+        } else {
+            $message = sprintf(
+                __('%1$s: %2$s (%3$s)', 'domainmanager'),
+                $driverLabel,
+                $category->label(),
+                trim(($providerCode ?? '') . ($providerCode !== null && $providerMessage !== null ? ': ' : '') . ($providerMessage ?? '')),
+            );
+        }
+
+        return new self($message, $isPermissionDenied);
+    }
 }
