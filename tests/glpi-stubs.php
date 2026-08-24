@@ -263,7 +263,16 @@ class CommonDBTM
         foreach (self::$store[$class_name] as $record) {
             $match = true;
             foreach ($where as $field => $value) {
-                if (!isset($record[$field]) || $record[$field] != $value) {
+                if (!isset($record[$field])) {
+                    $match = false;
+                    break;
+                }
+                if (is_array($value)) {
+                    if (!in_array($record[$field], $value, false)) {
+                        $match = false;
+                        break;
+                    }
+                } elseif ($record[$field] != $value) {
                     $match = false;
                     break;
                 }
