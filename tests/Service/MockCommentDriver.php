@@ -29,24 +29,35 @@
  * -------------------------------------------------------------------------
  */
 
-// Pure unit-test bootstrap: no GLPI installation, no database. The tiny
-// slice of GLPI the tested units actually touch (a translation function,
-// the base itemtype class one DTO's constants live behind) is stubbed in
-// glpi-stubs.php, not booted from a real GLPI checkout — see this repo's
-// TESTING-dev.md for the live-container regression suite that covers
-// everything this deliberately doesn't (drivers, sync, itemtype CRUD).
+namespace GlpiPlugin\Domainmanager\Tests\Service;
 
-require __DIR__ . '/../vendor/autoload.php';
-require __DIR__ . '/glpi-stubs.php';
-require __DIR__ . '/plugin-stubs.php';
+use GlpiPlugin\Domainmanager\Contract\DnsRecordCommentSyncInterface;
 
-// Global fake database instance
-$GLOBALS['DB'] = new FakeDB();
+/**
+ * Mock comment driver for testing RecordReconciler
+ */
+class MockCommentDriver implements DnsRecordCommentSyncInterface
+{
+    /** @var array<int, array{domain: string, remoteId: string, comment: string}> */
+    private array $pushed_comments = [];
 
-// Initialize $_SESSION for Session global access
-if (!isset($_SESSION)) {
-    $_SESSION = [
-        'glpi_currenttime' => date('Y-m-d H:i:s'),
-        'glpiactiveprofile' => [],
-    ];
+    /**
+     * Record a comment push attempt
+     */
+    public function pushComment(string $domain, string $remoteId, string $comment): void
+    {
+        $this->pushed_comments[] = [
+            'domain' => $domain,
+            'remoteId' => $remoteId,
+            'comment' => $comment,
+        ];
+    }
+
+    /**
+     * Get all recorded comment pushes
+     */
+    public function getPushedComments(): array
+    {
+        return $this->pushed_comments;
+    }
 }
