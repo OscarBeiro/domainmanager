@@ -600,7 +600,7 @@ final class RecordReconcilerTest extends TestCase
                 1,
                 (int) $record['is_deleted'],
                 'All records should be soft-deleted (N+1 pattern processes each individually). ' .
-                'After batch-loading refactor, this behavior remains the same, only the query count improves.'
+                'After batch-loading refactor, this behavior remains the same, only the query count improves.',
             );
         }
     }
@@ -629,11 +629,11 @@ final class RecordReconcilerTest extends TestCase
 
         // Verify domain 1 only has its record
         $domain1_imported = ImportedRecord::queryStore(ImportedRecord::class);
-        $domain1_owned = array_filter($domain1_imported, fn ($row) => (int) $row['domains_id'] === 1);
+        $domain1_owned = array_filter($domain1_imported, fn($row) => (int) $row['domains_id'] === 1);
         $this->assertCount(1, $domain1_owned);
 
         // Verify domain 2 only has its record
-        $domain2_owned = array_filter($domain1_imported, fn ($row) => (int) $row['domains_id'] === 2);
+        $domain2_owned = array_filter($domain1_imported, fn($row) => (int) $row['domains_id'] === 2);
         $this->assertCount(1, $domain2_owned);
     }
 
