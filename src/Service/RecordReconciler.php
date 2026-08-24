@@ -72,6 +72,22 @@ class RecordReconciler
 
     private int $proxyLookupCount = 0;
 
+    /**
+     * Memoized {@see resolveTypeIds()} result. Record types are shared,
+     * near-static reference data (rarely more than a handful of rows,
+     * created once and never renamed by this plugin) — recomputing it
+     * per domain was one call per {@see ZoneRecord::TYPES} entry
+     * (~11 queries) on every single reconcile(), and this reconciler
+     * instance is reused across an entire cron batch (SyncEngine/Cron.php
+     * construct one RecordReconciler and call reconcile() once per domain
+     * in the batch), so at a few hundred domains this alone was thousands
+     * of redundant queries per cron tick for data that cannot have
+     * changed since the first lookup.
+     *
+     * @var array<string, int>|null
+     */
+    private ?array $typeIdsCache = null;
+
     public function __construct(
         private SyncLogger $logger = new SyncLogger(),
         private PublicIpResolver $publicIpResolver = new PublicIpResolver(),
@@ -296,11 +312,30 @@ class RecordReconciler
         // threshold. Computed here, after the match loop above has already
         // populated $claimed, and before any trash-bin mutation runs.
         if (!$force) {
+            // Read-only existence/is_deleted check ahead of any mutation:
+            // batched into a single query over every owned
+            // domainrecords_id, rather than one DomainRecord::getById()
+            // call per owned row (this loop runs on every sync, including
+            // the common case where nothing ends up trashed, so it was
+            // pure per-domain overhead that grows with a domain's own
+            // record count).
+            $native_status = [];
+            if ($ownership !== []) {
+                $native_status_iterator = $DB->request([
+                    'FROM'   => DomainRecord::getTable(),
+                    'FIELDS' => ['id', 'is_deleted'],
+                    'WHERE'  => ['id' => array_column($ownership, 'domainrecords_id')],
+                ]);
+                foreach ($native_status_iterator as $row) {
+                    $native_status[(int) $row['id']] = (bool) $row['is_deleted'];
+                }
+            }
+
             $would_trash = 0;
             $total_owned = 0;
             foreach ($ownership as $oid => $own_row) {
-                $native = DomainRecord::getById((int) $own_row['domainrecords_id']);
-                if ($native === false || (bool) $native->fields['is_deleted']) {
+                $records_id = (int) $own_row['domainrecords_id'];
+                if (!isset($native_status[$records_id]) || $native_status[$records_id]) {
                     continue;
                 }
                 $total_owned++;
@@ -530,6 +565,10 @@ class RecordReconciler
      */
     private function resolveTypeIds(): array
     {
+        if ($this->typeIdsCache !== null) {
+            return $this->typeIdsCache;
+        }
+
         $ids = [];
         foreach (ZoneRecord::TYPES as $name) {
             $type = new DomainRecordType();
@@ -544,6 +583,6 @@ class RecordReconciler
             }
         }
 
-        return $ids;
+        return $this->typeIdsCache = $ids;
     }
 }

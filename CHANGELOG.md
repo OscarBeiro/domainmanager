@@ -11,7 +11,7 @@ Entries are grouped into **Features** and **Bugs**, one line each.
 
 ## [Unreleased]
 ### Features
-- Laid the groundwork for faster synchronization on installations with hundreds of domains and thousands of DNS records.
+- Cut the number of database queries run during a synchronization batch on installations with hundreds of domains and thousands of DNS records, speeding up scheduled syncs.
 - Reworked the Domain Manager panel on a Domain's form to match GLPI's own look: fields are now grouped by topic in a clean grid instead of two wide tables, the domain name itself is now the clickable link to visit the site, and the WHOIS/Unlink registrar buttons moved to a proper button row at the bottom of the panel.
 - The Domains list on a Supplier's Domain Manager tab now supports real sorting, filtering (by domain name, registrar status, and DNS status — each now its own clearly labeled column, separate from the Registrar/DNS Provider name), and pagination, matching GLPI's own list screens instead of a plain static table.
 - The Supplier's Domain Manager tab now shows the RDAP-reported registrar name and IANA number again, in their own "RDAP cross-check" section below the connection diagnostics.
